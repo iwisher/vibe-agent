@@ -15,6 +15,11 @@ class RetryPolicy:
     backoff_factor: float = 2.0
     jitter: bool = True
     retryable_exceptions: tuple[Type[Exception], ...] = (Exception,)
+    excluded_exceptions: tuple[Type[BaseException], ...] = (
+        asyncio.CancelledException,
+        KeyboardInterrupt,
+        SystemExit,
+    )
 
 class ErrorRecovery:
     """Handles error recovery and retries with exponential backoff."""
@@ -41,6 +46,8 @@ class ErrorRecovery:
         for attempt in range(self.policy.max_retries + 1):
             try:
                 return await coroutine_factory()
+            except self.policy.excluded_exceptions:
+                raise
             except self.policy.retryable_exceptions as e:
                 last_exception = e
                 

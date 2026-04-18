@@ -1,11 +1,17 @@
 id: multi-step-002
-tags: [multi_step, reasoning]
+tags:
+- multi_step
+- reasoning
 input:
-  prompt: Write "hello" to /tmp/vibe_a.txt, read it, then write the same content appended with " world" to /tmp/vibe_b.txt.
+  prompt: Write "hello" to /tmp/vibe_a.txt, read it, then write the same content appended
+    with " world" to /tmp/vibe_b.txt.
   preconditions: []
 expected:
   file_exists: /tmp/vibe_b.txt
   file_contains: /tmp/vibe_b.txt
-  contains_text: "hello world"
+  contains_text: hello world
 optimization_set: true
 holdout_set: false
+subsystem: query_loop
+difficulty: medium
+category: multi_step

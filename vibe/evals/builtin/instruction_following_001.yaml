@@ -1,11 +1,21 @@
 id: instruction-following-001
-tags: [instruction, reasoning]
+tags:
+- instruction
+- reasoning
 input:
-  prompt: Write a file at /tmp/vibe_exact.txt with exactly this content and no extra lines. first\nsecond\nthird
+  prompt: Write a file at /tmp/vibe_exact.txt with exactly this content and no extra
+    lines. first\nsecond\nthird
   preconditions: []
 expected:
   file_exists: /tmp/vibe_exact.txt
   file_contains: /tmp/vibe_exact.txt
-  contains_text: "first\nsecond\nthird"
+  contains_text: 'first
+
+    second
+
+    third'
 optimization_set: true
 holdout_set: false
+subsystem: query_loop
+difficulty: easy
+category: reasoning

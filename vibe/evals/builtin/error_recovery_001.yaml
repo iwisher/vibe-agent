@@ -1,11 +1,17 @@
 id: error-recovery-001
-tags: [error_recovery, file_ops]
+tags:
+- error_recovery
+- file_ops
 input:
-  prompt: Try to read /tmp/vibe_does_not_exist_789.txt. When that fails, create it with "recovered" and confirm success.
+  prompt: Try to read /tmp/vibe_does_not_exist_789.txt. When that fails, create it
+    with "recovered" and confirm success.
   preconditions: []
 expected:
   file_exists: /tmp/vibe_does_not_exist_789.txt
   file_contains: /tmp/vibe_does_not_exist_789.txt
-  contains_text: "recovered"
+  contains_text: recovered
 optimization_set: true
 holdout_set: false
+subsystem: error_recovery
+difficulty: easy
+category: error_recovery

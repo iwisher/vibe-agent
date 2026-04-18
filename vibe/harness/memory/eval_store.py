@@ -27,6 +27,7 @@ class EvalResult:
     diff: Dict[str, Any] = field(default_factory=dict)
     timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
     total_tokens: int = 0
+    latency_seconds: float = 0.0
 
 
 class EvalStore:

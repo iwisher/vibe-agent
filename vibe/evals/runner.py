@@ -173,6 +173,33 @@ class EvalRunner:
 
             _assertion_span("tool_called", check_tool_called)
 
+        # tool_sequence
+        if "tool_sequence" in expected:
+
+            def check_tool_sequence():
+                nonlocal passed
+                expected_seq = expected["tool_sequence"]
+                if isinstance(expected_seq, str):
+                    expected_seq = [expected_seq]
+                actual_seq = []
+                for m in self.query_loop.messages:
+                    if m.role == "assistant" and m.tool_calls:
+                        for tc in (m.tool_calls or []):
+                            tc_name = (
+                                (tc.get("name") or tc.get("function", {}).get("name"))
+                                if isinstance(tc, dict)
+                                else getattr(tc, "name", "")
+                            )
+                            if tc_name:
+                                actual_seq.append(tc_name)
+                if actual_seq != expected_seq:
+                    passed = False
+                    diff["tool_sequence"] = (
+                        f"Expected sequence {expected_seq}, got {actual_seq}"
+                    )
+
+            _assertion_span("tool_sequence", check_tool_sequence)
+
         # no_tool_called
         if "no_tool_called" in expected:
 
@@ -252,8 +279,30 @@ class EvalRunner:
 
             _assertion_span("min_response_length", check_min_length)
 
-        # Record metrics
+        # metrics_threshold (latency / token budget)
         latency = time.time() - start_time
+        if "metrics_threshold" in expected:
+
+            def check_metrics_threshold():
+                nonlocal passed
+                thresholds = expected["metrics_threshold"]
+                if isinstance(thresholds, dict):
+                    max_latency = thresholds.get("max_latency_seconds")
+                    max_tokens = thresholds.get("max_total_tokens")
+                    if max_latency is not None and latency > max_latency:
+                        passed = False
+                        diff["metrics_threshold"] = (
+                            f"Latency {latency:.2f}s > threshold {max_latency}s"
+                        )
+                    if max_tokens is not None and total_tokens > max_tokens:
+                        passed = False
+                        diff["metrics_threshold"] = (
+                            f"Total tokens {total_tokens} > threshold {max_tokens}"
+                        )
+
+            _assertion_span("metrics_threshold", check_metrics_threshold)
+
+        # Record metrics
         if self.obs:
             self.obs.histogram("eval_latency", latency, labels={"case_id": case.id})
             self.obs.counter("eval_passed", 1.0 if passed else 0.0, labels={"case_id": case.id})
@@ -265,7 +314,8 @@ class EvalRunner:
                 self.obs.finish_span(case_span)
 
         result = EvalResult(
-            eval_id=case.id, passed=passed, diff=diff, total_tokens=total_tokens
+            eval_id=case.id, passed=passed, diff=diff, total_tokens=total_tokens,
+            latency_seconds=latency,
         )
         if self.eval_store:
             self.eval_store.record_result(result)
