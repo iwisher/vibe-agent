@@ -25,9 +25,10 @@ def test_mcp_bridge_get_schemas():
     assert schemas[0]["function"]["name"] == "read"
 
 
-def test_mcp_bridge_tool_not_found():
+@pytest.mark.asyncio
+async def test_mcp_bridge_tool_not_found():
     bridge = MCPBridge()
-    result = asyncio.run(bridge.execute_tool("missing"))
+    result = await bridge.execute_tool("missing")
     assert result.success is False
     assert "not found" in result.error.lower()
 
@@ -58,17 +59,14 @@ async def test_mcp_bridge_http_success():
                 def json(self): return {"result": 42}
             return Resp()
 
-    import vibe.tools.mcp_bridge as mcp_bridge_module
-    original_httpx = mcp_bridge_module.httpx
-    class FakeHttpx:
-        AsyncClient = FakeClient
-    mcp_bridge_module.httpx = FakeHttpx()
-    try:
+    import types
+    from unittest.mock import patch
+
+    fake_httpx = types.SimpleNamespace(AsyncClient=FakeClient)
+    with patch("vibe.tools.mcp_bridge.httpx", fake_httpx):
         result = await bridge.execute_tool("add", a=1, b=2)
         assert result.success is True
         assert result.content["result"] == 42
-    finally:
-        mcp_bridge_module.httpx = original_httpx
 
 
 @pytest.mark.asyncio

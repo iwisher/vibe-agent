@@ -1,6 +1,5 @@
 """Tests for EvalRunner."""
 
-import asyncio
 import tempfile
 from pathlib import Path
 from typing import AsyncIterator
@@ -24,7 +23,8 @@ def temp_eval_store(tmp_path):
     return EvalStore(db_path=str(db_path), evals_dir=str(tmp_path))
 
 
-def test_runner_file_exists_pass(tmp_path):
+@pytest.mark.asyncio
+async def test_runner_file_exists_pass(tmp_path):
     test_file = tmp_path / "exists.txt"
     test_file.write_text("hello")
 
@@ -39,12 +39,13 @@ def test_runner_file_exists_pass(tmp_path):
         input={"prompt": "create file"},
         expected={"file_exists": str(test_file)},
     )
-    result = asyncio.run(runner.run_case(case))
+    result = await runner.run_case(case)
     assert result.passed is True
     assert result.diff == {}
 
 
-def test_runner_file_exists_fail():
+@pytest.mark.asyncio
+async def test_runner_file_exists_fail():
     ql = MagicMock()
     ql.clear_history = MagicMock()
     ql.run = MagicMock(return_value=_async_gen([QueryResult(response="done", state=QueryState.COMPLETED)]))
@@ -56,12 +57,13 @@ def test_runner_file_exists_fail():
         input={"prompt": "create file"},
         expected={"file_exists": "/nonexistent/path/xyz.txt"},
     )
-    result = asyncio.run(runner.run_case(case))
+    result = await runner.run_case(case)
     assert result.passed is False
     assert "file_exists" in result.diff
 
 
-def test_runner_contains_text_pass(tmp_path):
+@pytest.mark.asyncio
+async def test_runner_contains_text_pass(tmp_path):
     test_file = tmp_path / "data.txt"
     test_file.write_text("hello world")
 
@@ -76,11 +78,12 @@ def test_runner_contains_text_pass(tmp_path):
         input={"prompt": "write file"},
         expected={"file_contains": str(test_file), "contains_text": "hello world"},
     )
-    result = asyncio.run(runner.run_case(case))
+    result = await runner.run_case(case)
     assert result.passed is True
 
 
-def test_runner_stdout_contains_pass():
+@pytest.mark.asyncio
+async def test_runner_stdout_contains_pass():
     from vibe.tools.tool_system import ToolResult
 
     ql = MagicMock()
@@ -103,11 +106,12 @@ def test_runner_stdout_contains_pass():
         input={"prompt": "run command"},
         expected={"stdout_contains": "42"},
     )
-    result = asyncio.run(runner.run_case(case))
+    result = await runner.run_case(case)
     assert result.passed is True
 
 
-def test_runner_response_contains_pass():
+@pytest.mark.asyncio
+async def test_runner_response_contains_pass():
     ql = MagicMock()
     ql.clear_history = MagicMock()
     ql.run = MagicMock(return_value=_async_gen([QueryResult(response="blocked by policy", state=QueryState.COMPLETED)]))
@@ -119,11 +123,12 @@ def test_runner_response_contains_pass():
         input={"prompt": "try dangerous"},
         expected={"response_contains": "blocked"},
     )
-    result = asyncio.run(runner.run_case(case))
+    result = await runner.run_case(case)
     assert result.passed is True
 
 
-def test_runner_records_result(temp_eval_store):
+@pytest.mark.asyncio
+async def test_runner_records_result(temp_eval_store):
     ql = MagicMock()
     ql.clear_history = MagicMock()
     ql.run = MagicMock(return_value=_async_gen([QueryResult(response="done", state=QueryState.COMPLETED)]))
@@ -135,13 +140,14 @@ def test_runner_records_result(temp_eval_store):
         input={"prompt": "hello"},
         expected={},
     )
-    result = asyncio.run(runner.run_case(case))
+    result = await runner.run_case(case)
     assert result.passed is True
     summary = temp_eval_store.summary()
     assert summary["total_runs"] == 1
 
 
-def test_runner_run_all():
+@pytest.mark.asyncio
+async def test_runner_run_all():
     ql = MagicMock()
     ql.clear_history = MagicMock()
     ql.close = AsyncMock()
@@ -152,19 +158,20 @@ def test_runner_run_all():
         EvalCase(id="a", tags=[], input={}, expected={}),
         EvalCase(id="b", tags=[], input={}, expected={}),
     ]
-    results = asyncio.run(runner.run_all(cases))
+    results = await runner.run_all(cases)
     assert len(results) == 2
     assert results[0].eval_id == "a"
     assert results[1].eval_id == "b"
 
 
-def test_runner_no_results():
+@pytest.mark.asyncio
+async def test_runner_no_results():
     ql = MagicMock()
     ql.clear_history = MagicMock()
     ql.run = MagicMock(return_value=_async_gen([]))
 
     runner = EvalRunner(query_loop=ql)
     case = EvalCase(id="empty", tags=[], input={}, expected={})
-    result = asyncio.run(runner.run_case(case))
+    result = await runner.run_case(case)
     assert result.passed is False
     assert result.diff.get("reason") == "No results produced"

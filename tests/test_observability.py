@@ -1,6 +1,5 @@
 """Tests for observability integration with EvalRunner."""
 
-import asyncio
 from pathlib import Path
 
 import pytest
@@ -54,7 +53,8 @@ class FakeToolResult:
         self.error = error
 
 
-def test_observability_spans_created():
+@pytest.mark.asyncio
+async def test_observability_spans_created():
     """Test that EvalRunner creates spans when observability is provided."""
     from vibe.evals.runner import EvalRunner
 
@@ -69,7 +69,7 @@ def test_observability_spans_created():
         expected={"response_contains": "hello"},
     )
 
-    result = asyncio.run(runner.run_case(case))
+    result = await runner.run_case(case)
 
     # Should have created spans
     span_names = [s.name for s in obs._spans]
@@ -83,7 +83,8 @@ def test_observability_spans_created():
     assert eval_spans[0].attributes.get("case_id") == "test-span-001"
 
 
-def test_observability_metrics_recorded():
+@pytest.mark.asyncio
+async def test_observability_metrics_recorded():
     """Test that EvalRunner records metrics."""
     from vibe.evals.runner import EvalRunner
 
@@ -98,7 +99,7 @@ def test_observability_metrics_recorded():
         expected={"response_contains": "42"},
     )
 
-    result = asyncio.run(runner.run_case(case))
+    result = await runner.run_case(case)
 
     # Check metrics
     assert result.passed
@@ -113,7 +114,8 @@ def test_observability_metrics_recorded():
     assert len(latency_keys) >= 1
 
 
-def test_observability_no_double_counting():
+@pytest.mark.asyncio
+async def test_observability_no_double_counting():
     """Test that metrics are not duplicated between runner and caller."""
     from vibe.evals.runner import EvalRunner
 
@@ -128,7 +130,7 @@ def test_observability_no_double_counting():
         expected={"response_contains": "ok"},
     )
 
-    asyncio.run(runner.run_case(case))
+    await runner.run_case(case)
 
     # Should only have one eval_case span per run_case call
     eval_spans = [s for s in obs._spans if s.name == "eval_case"]
