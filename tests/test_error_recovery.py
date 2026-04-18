@@ -21,7 +21,7 @@ async def test_execute_with_retry_success():
 
 @pytest.mark.asyncio
 async def test_execute_with_retry_eventual_success():
-    policy = RetryPolicy(max_retries=3, initial_delay=0.01)
+    policy = RetryPolicy(max_retries=3, initial_delay=0.01, retryable_exceptions=(RuntimeError,))
     recovery = ErrorRecovery(policy)
 
     calls = []

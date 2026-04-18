@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional
 from vibe.core.query_loop import QueryLoop, QueryResult
 from vibe.harness.memory.eval_store import EvalCase, EvalResult, EvalStore
 from vibe.evals.observability import Observability
+from vibe.tools._utils import extract_tool_call_name
 
 
 class EvalRunner:
@@ -99,211 +100,81 @@ class EvalRunner:
 
         # file_exists
         if "file_exists" in expected:
-
-            def check_file_exists():
-                nonlocal passed
-                path = Path(expected["file_exists"]).expanduser()
-                if not path.exists():
-                    passed = False
-                    diff["file_exists"] = f"Missing {path}"
-
-            _assertion_span("file_exists", check_file_exists)
+            ok, msg = _assertion_span("file_exists", lambda: self._check_file_exists(expected))
+            if not ok:
+                passed = False
+                diff["file_exists"] = msg
 
         # file_contains + contains_text
         if "file_contains" in expected and "contains_text" in expected:
-
-            def check_file_contains():
-                nonlocal passed
-                path = Path(expected["file_contains"]).expanduser()
-                try:
-                    content = path.read_text(encoding="utf-8")
-                except Exception as e:
-                    passed = False
-                    diff["file_contains"] = str(e)
-                    content = ""
-                if expected["contains_text"] not in content:
-                    passed = False
-                    diff["contains_text"] = (
-                        f"Expected '{expected['contains_text']}' not found in {path}"
-                    )
-
-            _assertion_span("file_contains", check_file_contains)
+            ok, msg = _assertion_span("file_contains", lambda: self._check_file_contains(expected))
+            if not ok:
+                passed = False
+                diff["contains_text"] = msg
 
         # stdout_contains
         if "stdout_contains" in expected:
-
-            def check_stdout():
-                nonlocal passed
-                target = expected["stdout_contains"]
-                found = False
-                for r in results:
-                    for tr in r.tool_results:
-                        text = str(tr.content) if tr.content is not None else (tr.error or "")
-                        if target in text:
-                            found = True
-                            break
-                    if found:
-                        break
-                if not found:
-                    passed = False
-                    diff["stdout_contains"] = f"Expected '{target}' not found in tool outputs"
-
-            _assertion_span("stdout_contains", check_stdout)
+            ok, msg = _assertion_span("stdout_contains", lambda: self._check_stdout_contains(expected, results))
+            if not ok:
+                passed = False
+                diff["stdout_contains"] = msg
 
         # tool_called
         if "tool_called" in expected:
-
-            def check_tool_called():
-                nonlocal passed
-                target_tool = expected["tool_called"]
-                found = False
-                for m in self.query_loop.messages:
-                    if m.role == "assistant" and m.tool_calls:
-                        for tc in (m.tool_calls or []):
-                            tc_name = (
-                                (tc.get("name") or tc.get("function", {}).get("name"))
-                                if isinstance(tc, dict)
-                                else getattr(tc, "name", "")
-                            )
-                            if tc_name == target_tool:
-                                found = True
-                                break
-                        if found:
-                            break
-                if not found:
-                    passed = False
-                    diff["tool_called"] = f"Expected tool '{target_tool}' was not called"
-
-            _assertion_span("tool_called", check_tool_called)
+            ok, msg = _assertion_span("tool_called", lambda: self._check_tool_called(expected))
+            if not ok:
+                passed = False
+                diff["tool_called"] = msg
 
         # tool_sequence
         if "tool_sequence" in expected:
-
-            def check_tool_sequence():
-                nonlocal passed
-                expected_seq = expected["tool_sequence"]
-                if isinstance(expected_seq, str):
-                    expected_seq = [expected_seq]
-                actual_seq = []
-                for m in self.query_loop.messages:
-                    if m.role == "assistant" and m.tool_calls:
-                        for tc in (m.tool_calls or []):
-                            tc_name = (
-                                (tc.get("name") or tc.get("function", {}).get("name"))
-                                if isinstance(tc, dict)
-                                else getattr(tc, "name", "")
-                            )
-                            if tc_name:
-                                actual_seq.append(tc_name)
-                if actual_seq != expected_seq:
-                    passed = False
-                    diff["tool_sequence"] = (
-                        f"Expected sequence {expected_seq}, got {actual_seq}"
-                    )
-
-            _assertion_span("tool_sequence", check_tool_sequence)
+            ok, msg = _assertion_span("tool_sequence", lambda: self._check_tool_sequence(expected))
+            if not ok:
+                passed = False
+                diff["tool_sequence"] = msg
 
         # no_tool_called
         if "no_tool_called" in expected:
-
-            def check_no_tool():
-                nonlocal passed
-                any_tool = any(r.tool_results for r in results)
-                if any_tool:
-                    passed = False
-                    diff["no_tool_called"] = "Expected no tool calls, but tools were invoked"
-
-            _assertion_span("no_tool_called", check_no_tool)
+            ok, msg = _assertion_span("no_tool_called", lambda: self._check_no_tool_called(results))
+            if not ok:
+                passed = False
+                diff["no_tool_called"] = msg
 
         # context_truncated
         if "context_truncated" in expected:
-
-            def check_truncated():
-                nonlocal passed
-                truncated = any(r.context_truncated for r in results)
-                if expected["context_truncated"] and not truncated:
-                    passed = False
-                    diff["context_truncated"] = "Expected context truncation, but it did not occur"
-                elif not expected["context_truncated"] and truncated:
-                    passed = False
-                    diff["context_truncated"] = "Context was truncated unexpectedly"
-
-            _assertion_span("context_truncated", check_truncated)
+            ok, msg = _assertion_span("context_truncated", lambda: self._check_context_truncated(expected, results))
+            if not ok:
+                passed = False
+                diff["context_truncated"] = msg
 
         # response_contains
         if "response_contains" in expected:
-
-            def check_response():
-                nonlocal passed
-                targets = expected["response_contains"]
-                if isinstance(targets, str):
-                    targets = [targets]
-                for target in targets:
-                    found = any(target in (r.response or "") for r in results)
-                    if not found:
-                        passed = False
-                        key = f"response_contains_{target[:20]}"
-                        diff[key] = f"Expected '{target}' not found in responses"
-
-            _assertion_span("response_contains", check_response)
+            ok, msg = _assertion_span("response_contains", lambda: self._check_response_contains(expected, results))
+            if not ok:
+                passed = False
+                diff.update(msg)
 
         # response_contains_any
         if "response_contains_any" in expected:
-
-            def check_response_any():
-                nonlocal passed
-                targets = expected["response_contains_any"]
-                if isinstance(targets, str):
-                    targets = [targets]
-                responses = [r.response or "" for r in results]
-                combined = "\n".join(responses)
-                found_any = any(target.lower() in combined.lower() for target in targets)
-                if not found_any:
-                    passed = False
-                    diff["response_contains_any"] = (
-                        f"Expected at least one of {targets} not found in responses"
-                    )
-
-            _assertion_span("response_contains_any", check_response_any)
+            ok, msg = _assertion_span("response_contains_any", lambda: self._check_response_contains_any(expected, results))
+            if not ok:
+                passed = False
+                diff["response_contains_any"] = msg
 
         # min_response_length
         if "min_response_length" in expected:
-
-            def check_min_length():
-                nonlocal passed
-                min_len = expected["min_response_length"]
-                responses = [r.response or "" for r in results]
-                total_len = sum(len(r) for r in responses)
-                if total_len < min_len:
-                    passed = False
-                    diff["min_response_length"] = (
-                        f"Total response length {total_len} < required {min_len}"
-                    )
-
-            _assertion_span("min_response_length", check_min_length)
+            ok, msg = _assertion_span("min_response_length", lambda: self._check_min_response_length(expected, results))
+            if not ok:
+                passed = False
+                diff["min_response_length"] = msg
 
         # metrics_threshold (latency / token budget)
         latency = time.time() - start_time
         if "metrics_threshold" in expected:
-
-            def check_metrics_threshold():
-                nonlocal passed
-                thresholds = expected["metrics_threshold"]
-                if isinstance(thresholds, dict):
-                    max_latency = thresholds.get("max_latency_seconds")
-                    max_tokens = thresholds.get("max_total_tokens")
-                    if max_latency is not None and latency > max_latency:
-                        passed = False
-                        diff["metrics_threshold"] = (
-                            f"Latency {latency:.2f}s > threshold {max_latency}s"
-                        )
-                    if max_tokens is not None and total_tokens > max_tokens:
-                        passed = False
-                        diff["metrics_threshold"] = (
-                            f"Total tokens {total_tokens} > threshold {max_tokens}"
-                        )
-
-            _assertion_span("metrics_threshold", check_metrics_threshold)
+            ok, msg = _assertion_span("metrics_threshold", lambda: self._check_metrics_threshold(expected, latency, total_tokens))
+            if not ok:
+                passed = False
+                diff["metrics_threshold"] = msg
 
         # Record metrics
         if self.obs:
@@ -323,6 +194,115 @@ class EvalRunner:
         if self.eval_store:
             self.eval_store.record_result(result)
         return result
+
+    # ─── Named assertion check methods (return (bool, str|dict)) ───
+
+    def _check_file_exists(self, expected: Dict[str, Any]) -> tuple[bool, str]:
+        path = Path(expected["file_exists"]).expanduser()
+        if not path.exists():
+            return False, f"Missing {path}"
+        return True, ""
+
+    def _check_file_contains(self, expected: Dict[str, Any]) -> tuple[bool, str]:
+        path = Path(expected["file_contains"]).expanduser()
+        try:
+            content = path.read_text(encoding="utf-8")
+        except Exception as e:
+            return False, str(e)
+        if expected["contains_text"] not in content:
+            return False, f"Expected '{expected['contains_text']}' not found in {path}"
+        return True, ""
+
+    def _check_stdout_contains(self, expected: Dict[str, Any], results: List[QueryResult]) -> tuple[bool, str]:
+        target = expected["stdout_contains"]
+        for r in results:
+            for tr in r.tool_results:
+                text = str(tr.content) if tr.content is not None else (tr.error or "")
+                if target in text:
+                    return True, ""
+        return False, f"Expected '{target}' not found in tool outputs"
+
+    def _check_tool_called(self, expected: Dict[str, Any]) -> tuple[bool, str]:
+        target_tool = expected["tool_called"]
+        for m in self.query_loop.messages:
+            if m.role == "assistant" and m.tool_calls:
+                for tc in (m.tool_calls or []):
+                    if extract_tool_call_name(tc) == target_tool:
+                        return True, ""
+        return False, f"Expected tool '{target_tool}' was not called"
+
+    def _check_tool_sequence(self, expected: Dict[str, Any]) -> tuple[bool, str]:
+        expected_seq = expected["tool_sequence"]
+        if isinstance(expected_seq, str):
+            expected_seq = [expected_seq]
+        actual_seq = []
+        for m in self.query_loop.messages:
+            if m.role == "assistant" and m.tool_calls:
+                for tc in (m.tool_calls or []):
+                    tc_name = extract_tool_call_name(tc)
+                    if tc_name:
+                        actual_seq.append(tc_name)
+        if actual_seq != expected_seq:
+            return False, f"Expected sequence {expected_seq}, got {actual_seq}"
+        return True, ""
+
+    def _check_no_tool_called(self, results: List[QueryResult]) -> tuple[bool, str]:
+        any_tool = any(r.tool_results for r in results)
+        if any_tool:
+            return False, "Expected no tool calls, but tools were invoked"
+        return True, ""
+
+    def _check_context_truncated(self, expected: Dict[str, Any], results: List[QueryResult]) -> tuple[bool, str]:
+        truncated = any(r.context_truncated for r in results)
+        if expected["context_truncated"] and not truncated:
+            return False, "Expected context truncation, but it did not occur"
+        if not expected["context_truncated"] and truncated:
+            return False, "Context was truncated unexpectedly"
+        return True, ""
+
+    def _check_response_contains(self, expected: Dict[str, Any], results: List[QueryResult]) -> tuple[bool, Dict[str, str]]:
+        targets = expected["response_contains"]
+        if isinstance(targets, str):
+            targets = [targets]
+        failures = {}
+        for target in targets:
+            found = any(target in (r.response or "") for r in results)
+            if not found:
+                key = f"response_contains_{target[:20]}"
+                failures[key] = f"Expected '{target}' not found in responses"
+        if failures:
+            return False, failures
+        return True, {}
+
+    def _check_response_contains_any(self, expected: Dict[str, Any], results: List[QueryResult]) -> tuple[bool, str]:
+        targets = expected["response_contains_any"]
+        if isinstance(targets, str):
+            targets = [targets]
+        responses = [r.response or "" for r in results]
+        combined = "\n".join(responses)
+        found_any = any(target.lower() in combined.lower() for target in targets)
+        if not found_any:
+            return False, f"Expected at least one of {targets} not found in responses"
+        return True, ""
+
+    def _check_min_response_length(self, expected: Dict[str, Any], results: List[QueryResult]) -> tuple[bool, str]:
+        min_len = expected["min_response_length"]
+        responses = [r.response or "" for r in results]
+        total_len = sum(len(r) for r in responses)
+        if total_len < min_len:
+            return False, f"Total response length {total_len} < required {min_len}"
+        return True, ""
+
+    def _check_metrics_threshold(self, expected: Dict[str, Any], latency: float, total_tokens: int) -> tuple[bool, str]:
+        thresholds = expected["metrics_threshold"]
+        if isinstance(thresholds, dict):
+            max_latency = thresholds.get("max_latency_seconds")
+            max_tokens = thresholds.get("max_total_tokens")
+            if max_latency is not None and latency > max_latency:
+                return False, f"Latency {latency:.2f}s > threshold {max_latency}s"
+            if max_tokens is not None and total_tokens > max_tokens:
+                return False, f"Total tokens {total_tokens} > threshold {max_tokens}"
+        return True, ""
 
     async def run_all(self, cases: List[EvalCase]) -> List[EvalResult]:
         async def _run(case: EvalCase) -> EvalResult:

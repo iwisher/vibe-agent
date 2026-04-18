@@ -25,12 +25,13 @@ class MCPServerConfig:
 class MCPBridge:
     """Lightweight bridge that exposes MCP server tools as callable schemas.
 
-    For HTTP-based MCP servers, performs POST requests.
+    For HTTP-based MCP servers, performs POST requests with connection pooling.
     For command-based (stdio) servers, spawns subprocesses.
     """
 
     def __init__(self, configs: Optional[List[Dict[str, Any]]] = None):
         self.configs: List[MCPServerConfig] = []
+        self._http_clients: Dict[str, Any] = {}  # url -> httpx.AsyncClient
         for cfg in configs or []:
             self.configs.append(
                 MCPServerConfig(
@@ -42,6 +43,22 @@ class MCPBridge:
                     tools=cfg.get("tools", []),
                 )
             )
+
+    def _get_http_client(self, url: str) -> Any:
+        """Get or create a cached HTTP client for the given URL."""
+        if url in self._http_clients:
+            return self._http_clients[url]
+        if httpx is None:
+            raise RuntimeError("httpx is not installed")
+        client = httpx.AsyncClient(timeout=30.0)
+        self._http_clients[url] = client
+        return client
+
+    async def close(self) -> None:
+        """Close all cached HTTP clients."""
+        for client in self._http_clients.values():
+            await client.aclose()
+        self._http_clients.clear()
 
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
         schemas = []
@@ -79,11 +96,11 @@ class MCPBridge:
                 "tool": tool.get("name"),
                 "arguments": arguments,
             }
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(url, json=payload)
-                response.raise_for_status()
-                data = response.json()
-                return ToolResult(success=True, content=data)
+            client = self._get_http_client(url)
+            response = await client.post(url, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            return ToolResult(success=True, content=data)
         except Exception as e:
             return ToolResult(success=False, content=None, error=str(e))
 

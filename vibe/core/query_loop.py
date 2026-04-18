@@ -15,6 +15,7 @@ from vibe.harness.instructions import InstructionSet
 from vibe.harness.planner import ContextPlanner, PlanRequest, PlanResult
 from vibe.tools.mcp_bridge import MCPBridge
 from vibe.tools.tool_system import ToolSystem, ToolResult
+from vibe.tools._utils import extract_tool_call_name, extract_tool_call_arguments
 
 
 class QueryState(Enum):
@@ -150,37 +151,12 @@ class QueryLoop:
             self._set_state(QueryState.PROCESSING)
             try:
                 llm_msgs = self._build_llm_messages()
-                if self.compactor.should_compact(llm_msgs):
-                    compacted = self.compactor.compact(llm_msgs)
-                    self.messages = [
-                        Message(
-                            role=m["role"],
-                            content=m.get("content", ""),
-                            tool_calls=m.get("tool_calls"),
-                            tool_call_id=m.get("tool_call_id"),
-                        )
-                        for m in compacted.messages
-                    ]
-                    yield QueryResult(
-                        response="",
-                        context_truncated=compacted.was_compacted,
-                        state=QueryState.PROCESSING,
-                    )
+                compacted = await self._maybe_compact(llm_msgs)
+                if compacted:
+                    yield compacted
                     llm_msgs = self._build_llm_messages()
 
-                # Select tools based on planner result (fallback to all if no plan)
-                internal_schemas = self.tools.get_tool_schemas()
-                mcp_schemas = self.mcp_bridge.get_tool_schemas() if self.mcp_bridge else []
-                all_schemas = internal_schemas + mcp_schemas
-                tools_for_llm = all_schemas
-                if self._plan_result and self._plan_result.selected_tool_names:
-                    tools_for_llm = [
-                        t for t in all_schemas if t.get("function", {}).get("name") in self._plan_result.selected_tool_names
-                    ]
-                # Safety fallback: if planner filtered out everything, expose all tools
-                if not tools_for_llm:
-                    tools_for_llm = all_schemas
-
+                tools_for_llm = self._select_tools_for_llm()
                 start_time = time.time()
                 response = await self.error_recovery.execute_with_retry(
                     lambda: self.llm.complete(llm_msgs, tools=tools_for_llm)
@@ -203,70 +179,13 @@ class QueryLoop:
                     break
 
                 if response.tool_calls:
-                    self._set_state(QueryState.TOOL_EXECUTION)
-                    tool_results = await self._execute_tool_calls(response.tool_calls)
-                    self.messages.append(
-                        Message(
-                            role="assistant",
-                            content=response.content or "",
-                            tool_calls=response.tool_calls,
-                            model_version=self.llm.model,
-                        )
-                    )
-                    for call, result in zip(response.tool_calls, tool_results):
-                        if isinstance(call, dict):
-                            tool_call_id = call.get("id")
-                        else:
-                            tool_call_id = getattr(call, "id", None)
-                        self.messages.append(
-                            Message(
-                                role="tool",
-                                content=result.content if result.success else result.error,
-                                tool_call_id=tool_call_id,
-                            )
-                        )
-                    self._set_state(QueryState.SYNTHESIZING)
-                    yield QueryResult(
-                        response=response.content or "",
-                        tool_results=tool_results,
-                        metrics=metrics,
-                        state=self._state,
-                    )
+                    yield await self._process_tool_response(response, metrics)
                 else:
-                    self.messages.append(
-                        Message(role="assistant", content=response.content or "", model_version=self.llm.model)
-                    )
-                    # Feedback loop: evaluate response before completing
-                    if (
-                        self.feedback_engine
-                        and response.content
-                        and self._feedback_retries < self.max_feedback_retries
-                    ):
-                        fb = await self.feedback_engine.self_verify(response.content)
-                        if fb.score < self.feedback_threshold:
-                            self._feedback_retries += 1
-                            fix_hint = fb.suggested_fix or "Please improve your response."
-                            issues_text = "\n".join(f"- {i}" for i in fb.issues) if fb.issues else ""
-                            self.messages.append(
-                                Message(
-                                    role="system",
-                                    content=(
-                                        f"Feedback score {fb.score:.2f} below threshold "
-                                        f"({self.feedback_threshold}). Issues:\n{issues_text}\n"
-                                        f"Suggested fix: {fix_hint}"
-                                    ),
-                                )
-                            )
-                            self._set_state(QueryState.PROCESSING)
-                            yield QueryResult(
-                                response=response.content or "",
-                                metrics=metrics,
-                                state=QueryState.PROCESSING,
-                            )
-                            continue
-                    self._set_state(QueryState.COMPLETED)
-                    yield QueryResult(response=response.content or "", metrics=metrics, state=self._state)
-                    break
+                    should_continue, result = await self._process_content_response(response, metrics)
+                    if result:
+                        yield result
+                    if not should_continue:
+                        break
 
             except Exception as e:
                 self._set_state(QueryState.ERROR)
@@ -280,6 +199,115 @@ class QueryLoop:
             else:
                 self._set_state(QueryState.COMPLETED)
 
+    async def _maybe_compact(self, llm_msgs: list[dict]) -> Optional[QueryResult]:
+        """Compact context if needed. Returns a QueryResult if compaction occurred."""
+        if not self.compactor.should_compact(llm_msgs):
+            return None
+        compacted = await self.compactor.compact_async(llm_msgs)
+        self.messages = [
+            Message(
+                role=m["role"],
+                content=m.get("content", ""),
+                tool_calls=m.get("tool_calls"),
+                tool_call_id=m.get("tool_call_id"),
+            )
+            for m in compacted.messages
+        ]
+        return QueryResult(
+            response="",
+            context_truncated=compacted.was_compacted,
+            state=QueryState.PROCESSING,
+        )
+
+    def _select_tools_for_llm(self) -> list[dict]:
+        """Select tools based on planner result, with safety fallback."""
+        internal_schemas = self.tools.get_tool_schemas()
+        mcp_schemas = self.mcp_bridge.get_tool_schemas() if self.mcp_bridge else []
+        all_schemas = internal_schemas + mcp_schemas
+        tools_for_llm = all_schemas
+        if self._plan_result and self._plan_result.selected_tool_names:
+            tools_for_llm = [
+                t for t in all_schemas if t.get("function", {}).get("name") in self._plan_result.selected_tool_names
+            ]
+        # Safety fallback: if planner filtered out everything, expose all tools
+        if not tools_for_llm:
+            tools_for_llm = all_schemas
+        return tools_for_llm
+
+    async def _process_tool_response(self, response: LLMResponse, metrics: Metrics) -> QueryResult:
+        """Handle a response containing tool calls."""
+        self._set_state(QueryState.TOOL_EXECUTION)
+        tool_results = await self._execute_tool_calls(response.tool_calls)
+        self.messages.append(
+            Message(
+                role="assistant",
+                content=response.content or "",
+                tool_calls=response.tool_calls,
+                model_version=self.llm.model,
+            )
+        )
+        for call, result in zip(response.tool_calls, tool_results):
+            if isinstance(call, dict):
+                tool_call_id = call.get("id")
+            else:
+                tool_call_id = getattr(call, "id", None)
+            self.messages.append(
+                Message(
+                    role="tool",
+                    content=result.content if result.success else result.error,
+                    tool_call_id=tool_call_id,
+                )
+            )
+        self._set_state(QueryState.SYNTHESIZING)
+        return QueryResult(
+            response=response.content or "",
+            tool_results=tool_results,
+            metrics=metrics,
+            state=self._state,
+        )
+
+    async def _process_content_response(self, response: LLMResponse, metrics: Metrics) -> tuple[bool, Optional[QueryResult]]:
+        """Handle a response with no tool calls. Returns (should_continue, result_to_yield)."""
+        self.messages.append(
+            Message(role="assistant", content=response.content or "", model_version=self.llm.model)
+        )
+        # Feedback loop: evaluate response before completing
+        should_continue = await self._apply_feedback(response, metrics)
+        if should_continue:
+            return True, QueryResult(
+                response=response.content or "",
+                metrics=metrics,
+                state=QueryState.PROCESSING,
+            )
+        self._set_state(QueryState.COMPLETED)
+        return False, QueryResult(response=response.content or "", metrics=metrics, state=self._state)
+
+    async def _apply_feedback(self, response: LLMResponse, metrics: Metrics) -> bool:
+        """Apply feedback engine evaluation. Returns True if loop should continue."""
+        if (
+            self.feedback_engine
+            and response.content
+            and self._feedback_retries < self.max_feedback_retries
+        ):
+            fb = await self.feedback_engine.self_verify(response.content)
+            if fb.score < self.feedback_threshold:
+                self._feedback_retries += 1
+                fix_hint = fb.suggested_fix or "Please improve your response."
+                issues_text = "\n".join(f"- {i}" for i in fb.issues) if fb.issues else ""
+                self.messages.append(
+                    Message(
+                        role="system",
+                        content=(
+                            f"Feedback score {fb.score:.2f} below threshold "
+                            f"({self.feedback_threshold}). Issues:\n{issues_text}\n"
+                            f"Suggested fix: {fix_hint}"
+                        ),
+                    )
+                )
+                self._set_state(QueryState.PROCESSING)
+                return True
+        return False
+
     async def _execute_tool_calls(self, tool_calls: list) -> list[ToolResult]:
         import json
 
@@ -287,13 +315,11 @@ class QueryLoop:
         for call in tool_calls:
             try:
                 if isinstance(call, dict):
-                    call_name = call.get("name") or call.get("function", {}).get("name")
-                    arguments = call.get("arguments") or call.get("function", {}).get("arguments", "{}")
-                    if isinstance(arguments, str):
-                        arguments = json.loads(arguments)
+                    call_name = extract_tool_call_name(call)
+                    arguments = extract_tool_call_arguments(call)
                 else:
-                    call_name = call.name
-                    arguments = call.arguments
+                    call_name = getattr(call, "name", None)
+                    arguments = getattr(call, "arguments", {})
 
                 # Run pre-hooks (Constraints: PRE_VALIDATE, PRE_MODIFY, PRE_ALLOW)
                 pre_outcome = self.hook_pipeline.run_pre_hooks(call_name, arguments)
@@ -366,3 +392,5 @@ class QueryLoop:
         """Closes the underlying LLM client and releases resources."""
         if self.llm is not None:
             await self.llm.close()
+        if self.mcp_bridge is not None:
+            await self.mcp_bridge.close()

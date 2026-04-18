@@ -4,6 +4,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Coroutine, Optional, Type, TypeVar, Union
 
+import httpx
+
 T = TypeVar("T")
 
 @dataclass
@@ -14,7 +16,12 @@ class RetryPolicy:
     max_delay: float = 60.0
     backoff_factor: float = 2.0
     jitter: bool = True
-    retryable_exceptions: tuple[Type[Exception], ...] = (Exception,)
+    retryable_exceptions: tuple[Type[Exception], ...] = (
+        httpx.HTTPStatusError,
+        httpx.NetworkError,
+        httpx.TimeoutException,
+        ConnectionError,
+    )
     excluded_exceptions: tuple[Type[BaseException], ...] = (
         asyncio.CancelledError,
         KeyboardInterrupt,
