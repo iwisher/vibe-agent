@@ -8,15 +8,15 @@ from vibe.tools.tool_system import Tool, ToolResult
 class SkillManageTool(Tool):
     """Tool that allows the agent to create / update skills by writing SKILL.md files."""
 
-    def __init__(self, skills_dir: str = "~/.hermes/skills"):
+    def __init__(self, skills_dir: str = "~/.vibe/skills"):
         super().__init__(
             name="skill_manage",
             description=(
                 "Create or update a Hermes skill. "
-                "Writes a SKILL.md file under ~/.hermes/skills/<skill_name>/."
+                "Writes a SKILL.md file under ~/.vibe/skills/<skill_name>/."
             ),
         )
-        self.skills_dir = Path(skills_dir).expanduser()
+        self.skills_dir = Path(skills_dir).expanduser().resolve()
 
     def get_schema(self) -> Dict[str, Any]:
         return {
@@ -57,16 +57,17 @@ class SkillManageTool(Tool):
             skill_dir = skill_dir / category
         skill_dir = skill_dir / name
 
-        # Path traversal guard
+        # Path traversal guard — use relative_to() which is robust against
+        # partial-string prefix attacks (e.g. /home/user/.vibe/skills-evil).
         try:
             resolved = skill_dir.resolve()
-            base = self.skills_dir.resolve()
-            if not str(resolved).startswith(str(base)):
-                return ToolResult(
-                    success=False, content=None, error="Path traversal blocked."
-                )
-        except (OSError, RuntimeError) as e:
-            return ToolResult(success=False, content=None, error=f"Path resolution error: {e}")
+            # resolve() follows symlinks; a symlink pointing outside the jail
+            # will resolve to a path outside base, which relative_to catches.
+            resolved.relative_to(self.skills_dir)
+        except (ValueError, OSError, RuntimeError) as e:
+            return ToolResult(
+                success=False, content=None, error=f"Path traversal blocked: {e}"
+            )
 
         if action == "create" and skill_dir.exists():
             return ToolResult(

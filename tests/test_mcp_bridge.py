@@ -95,5 +95,9 @@ def test_mcpserver_config_defaults():
     cfg = MCPServerConfig(name="test", description="test desc")
     assert cfg.url is None
     assert cfg.command is None
-    assert cfg.args is None
-    assert cfg.tools is None
+    assert cfg.args == []
+    assert cfg.tools == []
+    # Mutable defaults must be isolated per instance
+    cfg2 = MCPServerConfig(name="test2", description="test2 desc")
+    cfg.args.append("--foo")
+    assert "--foo" not in cfg2.args  # no shared mutable default bug

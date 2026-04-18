@@ -1,7 +1,10 @@
 """Bash execution tool with sandboxing support."""
 
+import asyncio
 import os
 import re
+import shlex
+import signal
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -11,6 +14,10 @@ from .tool_system import Tool, ToolResult
 
 
 # Dangerous pattern denylist (regex-based to catch obfuscation and variants)
+# NOTE: This is a SECONDARY defense layer. The PRIMARY defense is:
+# 1. Using create_subprocess_exec (no shell interpretation)
+# 2. Rejecting unquoted shell metacharacters
+# 3. Exact-token whitelist matching
 _DEFAULT_DANGEROUS_PATTERNS = [
     # Filesystem destruction
     r"rm\s+-rf\s+/+",
@@ -81,14 +88,48 @@ class BashTool(Tool):
         return None
 
     def _check_whitelist(self, command: str) -> bool:
-        """If allowed_commands is set, only permit commands that start with one of them."""
+        """If allowed_commands is set, only permit commands whose first token exactly matches."""
         if self.sandbox.allowed_commands is None:
             return True
-        cmd_stripped = command.strip().lower()
+        try:
+            tokens = shlex.split(command.strip())
+        except ValueError:
+            return False  # Malformed command (e.g., unbalanced quotes)
+        if not tokens:
+            return False
+        first_token = tokens[0].lower()
         for allowed in self.sandbox.allowed_commands:
-            if cmd_stripped.startswith(allowed.lower()):
+            if first_token == allowed.lower():
                 return True
         return False
+
+    def _has_unquoted_shell_chars(self, command: str) -> Optional[str]:
+        """Return the first unquoted shell metacharacter found, or None if safe.
+
+        Uses a simple state machine to track whether we're inside single quotes,
+        double quotes, or an escape sequence. Only characters outside quotes count.
+        """
+        in_single_quote = False
+        in_double_quote = False
+        escaped = False
+
+        for ch in command:
+            if escaped:
+                escaped = False
+                continue
+            if ch == "\\":
+                escaped = True
+                continue
+            if ch == "'" and not in_double_quote:
+                in_single_quote = not in_single_quote
+                continue
+            if ch == '"' and not in_single_quote:
+                in_double_quote = not in_double_quote
+                continue
+            if not in_single_quote and not in_double_quote:
+                if ch in "|&;><$`":
+                    return ch
+        return None
 
     def _redirect_path(self, text: str) -> str:
         """Redirect /tmp/vibe_* paths to VIBE_EVAL_WORK_DIR if set.
@@ -126,24 +167,55 @@ class BashTool(Tool):
                 error="Command not in allowed_commands whitelist.",
             )
 
-        try:
-            result = subprocess.run(
-                command,
-                shell=True,
-                cwd=self.sandbox.working_dir,
-                capture_output=True,
-                text=True,
-                timeout=self.sandbox.timeout,
-            )
-            output = result.stdout
-            if result.stderr:
-                output += f"\n[stderr]\n{result.stderr}"
+        # PRIMARY defense: reject any command with unquoted shell metacharacters.
+        # We use create_subprocess_exec (not shell), so pipes, redirects,
+        # command chaining, and variable expansion are not supported.
+        shell_char = self._has_unquoted_shell_chars(command)
+        if shell_char:
             return ToolResult(
-                success=result.returncode == 0,
-                content=output.strip(),
-                error=f"Exit code: {result.returncode}" if result.returncode != 0 else None,
+                success=False,
+                content=None,
+                error=(
+                    f"Shell metacharacter '{shell_char}' detected. "
+                    "Only simple commands are supported (no pipes, redirects, "
+                    "command chaining, or variable expansion). "
+                    "Split complex operations into multiple tool calls."
+                ),
             )
-        except subprocess.TimeoutExpired:
+
+        try:
+            args = shlex.split(command)
+            if not args:
+                return ToolResult(success=False, content=None, error="Empty command.")
+
+            proc = await asyncio.create_subprocess_exec(
+                *args,
+                cwd=self.sandbox.working_dir,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
+            )
+            stdout_data, stderr_data = await asyncio.wait_for(
+                proc.communicate(), timeout=self.sandbox.timeout
+            )
+            output = stdout_data.decode(errors="replace") if stdout_data else ""
+            if stderr_data:
+                output += f"\n[stderr]\n{stderr_data.decode(errors='replace')}"
+            return ToolResult(
+                success=proc.returncode == 0,
+                content=output.strip(),
+                error=f"Exit code: {proc.returncode}" if proc.returncode != 0 else None,
+            )
+        except asyncio.TimeoutError:
+            try:
+                # Kill the entire process group to avoid orphaned children
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            except (ProcessLookupError, OSError):
+                pass  # Process already dead
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=5)
+            except asyncio.TimeoutError:
+                pass
             return ToolResult(
                 success=False,
                 content=None,

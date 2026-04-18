@@ -67,7 +67,7 @@ async def test_bash_tool_regex_variants():
 async def test_read_file_tool(tmp_path):
     f = tmp_path / "test.txt"
     f.write_text("line1\nline2\nline3\n")
-    tool = ReadFileTool()
+    tool = ReadFileTool(root_dir=str(tmp_path))
     result = await tool.execute(path=str(f), offset=1, limit=2)
     assert result.success
     assert "line1" in result.content
@@ -78,7 +78,7 @@ async def test_read_file_tool(tmp_path):
 @pytest.mark.asyncio
 async def test_read_file_not_found():
     tool = ReadFileTool()
-    result = await tool.execute(path="/nonexistent/file.txt")
+    result = await tool.execute(path="nonexistent_file_12345.txt")
     assert not result.success
     assert "not found" in result.error.lower()
 
@@ -86,7 +86,7 @@ async def test_read_file_not_found():
 @pytest.mark.asyncio
 async def test_write_file_tool(tmp_path):
     f = tmp_path / "out.txt"
-    tool = WriteFileTool()
+    tool = WriteFileTool(root_dir=str(tmp_path))
     result = await tool.execute(path=str(f), content="hello world")
     assert result.success
     assert f.read_text() == "hello world"

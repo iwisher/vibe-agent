@@ -1,7 +1,7 @@
 """MCP bridge for exposing external tool servers to the Vibe Agent harness."""
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 try:
@@ -18,8 +18,8 @@ class MCPServerConfig:
     description: str
     url: Optional[str] = None
     command: Optional[str] = None
-    args: List[str] = None
-    tools: List[Dict[str, Any]] = None
+    args: List[str] = field(default_factory=list)
+    tools: List[Dict[str, Any]] = field(default_factory=list)
 
 
 class MCPBridge:
@@ -46,7 +46,7 @@ class MCPBridge:
     def get_tool_schemas(self) -> List[Dict[str, Any]]:
         schemas = []
         for cfg in self.configs:
-            for tool in cfg.tools or []:
+            for tool in cfg.tools:
                 schemas.append({
                     "type": "function",
                     "function": {
@@ -59,7 +59,7 @@ class MCPBridge:
 
     async def execute_tool(self, name: str, **kwargs) -> ToolResult:
         for cfg in self.configs:
-            for tool in cfg.tools or []:
+            for tool in cfg.tools:
                 if tool.get("name") == name:
                     return await self._invoke(cfg, tool, kwargs)
         return ToolResult(success=False, content=None, error=f"MCP tool '{name}' not found")
