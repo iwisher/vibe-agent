@@ -1,0 +1,12 @@
+id: edge-unicode-001
+tags: [edge, robustness, i18n]
+subsystem: query_loop
+difficulty: easy
+category: edge
+input:
+  prompt: "Translate 'test' to Chinese. Just give me the Chinese word."
+  preconditions: []
+expected:
+  response_contains: "测试"
+optimization_set: true
+holdout_set: false

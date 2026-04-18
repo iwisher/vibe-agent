@@ -1,0 +1,9 @@
+id: multi-step-001
+tags: [multi_step, reasoning]
+input:
+  prompt: Write "step1" to /tmp/vibe_step1.txt, then read it and append "-done" to the same file, then read it again.
+expected:
+  file_contains: /tmp/vibe_step1.txt
+  contains_text: "step1-done"
+optimization_set: true
+holdout_set: false

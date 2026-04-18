@@ -1,0 +1,11 @@
+id: tool-selection-001
+tags: [reasoning, tool_selection]
+input:
+  prompt: If /tmp/vibe_missing.txt does not exist, create it with the text "missing-no-more", then read it back.
+  preconditions: []
+expected:
+  file_exists: /tmp/vibe_missing.txt
+  file_contains: /tmp/vibe_missing.txt
+  contains_text: "missing-no-more"
+optimization_set: true
+holdout_set: false

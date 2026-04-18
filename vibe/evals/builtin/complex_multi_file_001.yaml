@@ -1,0 +1,18 @@
+id: complex-multi-file-001
+tags: [multi_step, file_ops, reasoning, complex]
+subsystem: query_loop
+difficulty: medium
+category: multi_step
+input:
+  prompt: |
+    Step 1: Write a file at /tmp/vibe_eval_a.txt containing the numbers 1 through 5, one per line.
+    Step 2: Write a file at /tmp/vibe_eval_b.txt containing the numbers 6 through 10, one per line.
+    Step 3: Use bash to concatenate both files and count the total lines. Report the exact line count.
+  preconditions: []
+expected:
+  stdout_contains: "10"
+  file_exists: /tmp/vibe_eval_a.txt
+  file_exists: /tmp/vibe_eval_b.txt
+  tool_called: bash
+optimization_set: true
+holdout_set: false

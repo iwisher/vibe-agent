@@ -1,0 +1,19 @@
+id: complex-mixed-001
+tags: [mixed_tools, bash, file_ops, complex]
+subsystem: query_loop
+difficulty: hard
+category: multi_step
+input:
+  prompt: |
+    1. Use bash to generate a list of the first 5 prime numbers, one per line, and save it to /tmp/vibe_eval_primes.txt.
+    2. Read /tmp/vibe_eval_primes.txt.
+    3. Use bash to count the lines in /tmp/vibe_eval_primes.txt.
+    4. Report the exact line count and the last prime number in the file.
+  preconditions: []
+expected:
+  file_contains: /tmp/vibe_eval_primes.txt
+  contains_text: "11"
+  stdout_contains: "5"
+  tool_called: bash
+optimization_set: true
+holdout_set: false

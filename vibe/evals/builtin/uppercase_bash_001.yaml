@@ -1,0 +1,12 @@
+id: uppercase-bash-001
+tags: [bash, text_processing]
+subsystem: query_loop
+difficulty: easy
+category: bash
+input:
+  prompt: "Convert 'HELLO' to lowercase. You may use bash with 'tr' if needed, or just tell me the result."
+  preconditions: []
+expected:
+  response_contains: "hello"
+optimization_set: true
+holdout_set: false

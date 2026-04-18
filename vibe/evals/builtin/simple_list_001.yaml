@@ -1,0 +1,12 @@
+id: simple-list-001
+tags: [bash, basic]
+subsystem: query_loop
+difficulty: easy
+category: bash
+input:
+  prompt: "Use the bash tool to list files in /tmp. Show me what the tool outputs."
+  preconditions: []
+expected:
+  response_contains: "tmp"
+optimization_set: true
+holdout_set: false

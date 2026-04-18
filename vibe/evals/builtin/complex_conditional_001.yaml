@@ -1,0 +1,18 @@
+id: complex-conditional-001
+tags: [conditional, reasoning, file_ops, complex]
+subsystem: query_loop
+difficulty: medium
+category: reasoning
+input:
+  prompt: |
+    Check if the file /tmp/vibe_eval_flag.txt exists.
+    If it does NOT exist, create it with the content "flag_created".
+    If it DOES exist, append "_updated" to its content.
+    Then read the file and report its exact content.
+  preconditions: []
+expected:
+  file_contains: /tmp/vibe_eval_flag.txt
+  contains_text: "flag_created"
+  tool_called: read_file
+optimization_set: true
+holdout_set: false

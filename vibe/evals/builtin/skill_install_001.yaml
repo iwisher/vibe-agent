@@ -1,0 +1,20 @@
+id: skill-install-001
+tags: [skill, tool_use, meta]
+subsystem: query_loop
+difficulty: medium
+category: tool_use
+input:
+  prompt: |
+    Use the skill_manage tool to create a new skill named "test-e2e-skill".
+    The skill content should be exactly:
+    "This is a test skill created by the e2e eval suite."
+    After creating it, report the exact path where the skill file was written.
+  preconditions: []
+expected:
+  tool_called: skill_manage
+  stdout_contains: "test-e2e-skill"
+  file_exists: ~/.hermes/skills/test-e2e-skill/SKILL.md
+  file_contains: ~/.hermes/skills/test-e2e-skill/SKILL.md
+  contains_text: "test skill created by the e2e eval suite"
+optimization_set: true
+holdout_set: false

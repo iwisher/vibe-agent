@@ -1,0 +1,12 @@
+id: bash-echo-001
+tags: [bash, basic]
+subsystem: query_loop
+difficulty: easy
+category: bash
+input:
+  prompt: "Use the bash tool to run: echo 'vibe-test-ok'. Report the EXACT output from the tool."
+  preconditions: []
+expected:
+  response_contains: "vibe-test-ok"
+optimization_set: true
+holdout_set: false

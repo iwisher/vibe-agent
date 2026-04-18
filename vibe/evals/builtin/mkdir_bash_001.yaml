@@ -1,0 +1,12 @@
+id: mkdir-bash-001
+tags: [bash, file_ops]
+subsystem: query_loop
+difficulty: easy
+category: bash
+input:
+  prompt: "Create a directory at /tmp/vibe_mkdir_test using bash, then confirm it exists."
+  preconditions: []
+expected:
+  file_exists: /tmp/vibe_mkdir_test
+optimization_set: true
+holdout_set: false

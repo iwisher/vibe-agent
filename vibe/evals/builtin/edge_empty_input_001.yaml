@@ -1,0 +1,12 @@
+id: edge-empty-input-001
+tags: [edge, robustness, basic]
+subsystem: query_loop
+difficulty: easy
+category: edge
+input:
+  prompt: ""
+  preconditions: []
+expected:
+  no_tool_called: true
+optimization_set: true
+holdout_set: false

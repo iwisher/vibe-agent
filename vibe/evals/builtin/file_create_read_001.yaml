@@ -1,0 +1,12 @@
+id: file-create-read-001
+tags: [file_ops, basic]
+subsystem: query_loop
+difficulty: easy
+category: file_ops
+input:
+  prompt: "Create a file at /tmp/vibe_create_test.txt with the content 'created-by-vibe'. Then read it back and report the content."
+  preconditions: []
+expected:
+  response_contains: "created-by-vibe"
+optimization_set: true
+holdout_set: false

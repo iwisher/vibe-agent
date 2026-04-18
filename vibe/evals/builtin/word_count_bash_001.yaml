@@ -1,0 +1,12 @@
+id: word-count-bash-001
+tags: [bash, text_processing]
+subsystem: query_loop
+difficulty: easy
+category: bash
+input:
+  prompt: "How many words are in 'one two three'? You may use bash with 'wc -w' if needed, or just tell me."
+  preconditions: []
+expected:
+  response_contains: "3"
+optimization_set: true
+holdout_set: false

@@ -1,0 +1,13 @@
+id: bash-stats-001
+tags: [bash, math]
+subsystem: query_loop
+difficulty: easy
+category: bash
+input:
+  prompt: "Create a file at /tmp/vibe_numbers.txt with numbers 1 to 5 each on a new line. Then count how many lines it has and tell me the count."
+  preconditions: []
+expected:
+  file_contains: /tmp/vibe_numbers.txt
+  contains_text: "5"
+optimization_set: true
+holdout_set: false

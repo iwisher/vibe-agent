@@ -1,0 +1,12 @@
+id: file-overwrite-001
+tags: [file_ops, basic]
+subsystem: query_loop
+difficulty: easy
+category: file_ops
+input:
+  prompt: "Create a file at /tmp/vibe_overwrite.txt with 'first', then overwrite it with 'second'. Report the final content."
+  preconditions: []
+expected:
+  response_contains: "second"
+optimization_set: true
+holdout_set: false

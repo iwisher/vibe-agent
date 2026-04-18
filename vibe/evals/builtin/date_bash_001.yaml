@@ -1,0 +1,12 @@
+id: date-bash-001
+tags: [bash, basic]
+subsystem: query_loop
+difficulty: easy
+category: bash
+input:
+  prompt: "What is the current year? You may use the bash tool with 'date +%Y' if needed, or just tell me."
+  preconditions: []
+expected:
+  response_contains: "202"
+optimization_set: true
+holdout_set: false

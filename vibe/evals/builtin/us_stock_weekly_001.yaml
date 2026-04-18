@@ -1,0 +1,33 @@
+id: us-stock-weekly-001
+tags: [finance, reasoning, complex, open_ended]
+subsystem: query_loop
+difficulty: hard
+category: multi_step
+input:
+  prompt: |
+    Analyze the current U.S. stock market landscape based on your latest knowledge.
+
+    Your analysis must include:
+    1. A brief summary of recent performance for the major indices (S&P 500, Nasdaq, Dow).
+    2. At least one key macroeconomic factor (e.g., CPI, Fed policy, GDP, unemployment, PCE) that is influencing the market.
+    3. A clear directional outlook for next week: bullish, bearish, or neutral. Explain your reasoning in 2-3 sentences.
+
+    Constraints:
+    - Do not use any tools; answer from your internal knowledge.
+    - Minimum 400 characters.
+  preconditions: []
+expected:
+  response_contains_any:
+    - "bullish"
+    - "bearish"
+    - "neutral"
+    - "upward"
+    - "downward"
+    - "sideways"
+    - "rally"
+    - "correction"
+  response_contains:
+    - "market"
+  min_response_length: 400
+optimization_set: true
+holdout_set: false

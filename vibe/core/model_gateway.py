@@ -1,0 +1,256 @@
+import json
+import os
+from dataclasses import dataclass, field
+from enum import Enum, auto
+from typing import Any, Dict, List, Optional, Union
+
+import httpx
+from vibe.core.error_recovery import ErrorRecovery, RetryPolicy
+
+
+class ErrorType(Enum):
+    """Types of errors that can occur during LLM communication."""
+    NONE = auto()
+    HTTP_ERROR = auto()
+    JSON_DECODE_ERROR = auto()
+    NETWORK_ERROR = auto()
+    CONNECTION_ERROR = auto()
+    TIMEOUT_ERROR = auto()
+    RATE_LIMIT_ERROR = auto()
+    AUTHENTICATION_ERROR = auto()
+    SERVER_ERROR = auto()
+    UNKNOWN_ERROR = auto()
+    MODEL_UNAVAILABLE = auto()
+
+
+@dataclass
+class LLMResponse:
+    """Standardized response from LLM."""
+    content: str
+    usage: Dict[str, int] = field(default_factory=lambda: {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})
+    finish_reason: Optional[str] = None
+    tool_calls: Optional[List[Dict[str, Any]]] = None
+    error: Optional[str] = None
+    error_type: ErrorType = ErrorType.NONE
+    actionable_hint: Optional[str] = None
+    model_used: Optional[str] = None  # Actual model after fallback resolution
+
+    @property
+    def is_error(self) -> bool:
+        return self.error is not None
+
+
+class LLMClient:
+    """Gateway for communicating with LLM models."""
+
+    def __init__(
+        self,
+        base_url: str = "http://ai-api.applesay.cn",
+        model: str = "qwen3.5-plus",
+        api_key: Optional[str] = None,
+        timeout: float = 300.0,
+        retry_policy: Optional[RetryPolicy] = None,
+        fallback_chain: Optional[List[str]] = None,
+        auto_fallback: bool = False,
+    ):
+        self.base_url = base_url.rstrip("/")
+        self.model = model
+        self.api_key = api_key or os.getenv("LLM_API_KEY")
+        self.timeout = timeout
+        self.recovery = ErrorRecovery(retry_policy)
+        self.client = httpx.AsyncClient(timeout=self.timeout)
+        self.fallback_chain = fallback_chain or []
+        self.auto_fallback = auto_fallback
+
+    def _get_headers(self) -> Dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
+
+    async def complete(
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: str = "auto",
+    ) -> LLMResponse:
+        """Sends a completion request with built-in retry and optional model fallback."""
+
+        models_to_try = [self.model] + [
+            m for m in self.fallback_chain if m != self.model
+        ]
+
+        last_error: Optional[LLMResponse] = None
+
+        for attempt_model in models_to_try:
+            result = await self._try_complete(
+                attempt_model,
+                messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                tools=tools,
+                tool_choice=tool_choice,
+            )
+            if not result.is_error:
+                result.model_used = attempt_model
+                return result
+
+            # If this is a model-unavailability error and fallback is enabled, continue
+            if self.auto_fallback and result.error_type in (
+                ErrorType.SERVER_ERROR,
+                ErrorType.HTTP_ERROR,
+                ErrorType.MODEL_UNAVAILABLE,
+                ErrorType.AUTHENTICATION_ERROR,  # 401/403 may indicate model-specific unavailability
+            ):
+                # Check for Applesay-specific unavailability message
+                if result.error and ("无可用渠道" in result.error or "no available channel" in result.error.lower()):
+                    last_error = result
+                    continue
+                # Fallback on all 4xx/5xx except rate limit (429)
+                if result.error_type != ErrorType.RATE_LIMIT_ERROR:
+                    last_error = result
+                    continue
+
+            # Rate limit or other non-recoverable errors — don't fallback
+            return result
+
+        # All models exhausted
+        if last_error:
+            last_error.error = f"All models exhausted. Last error: {last_error.error}"
+            last_error.error_type = ErrorType.MODEL_UNAVAILABLE
+            return last_error
+
+        return LLMResponse(
+            content="",
+            error="No models available in fallback chain",
+            error_type=ErrorType.MODEL_UNAVAILABLE,
+        )
+
+    async def _try_complete(
+        self,
+        model: str,
+        messages: List[Dict[str, Any]],
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: str = "auto",
+    ) -> LLMResponse:
+        """Single attempt at a completion request for a specific model."""
+
+        async def _make_request():
+            payload = {
+                "model": model,
+                "messages": messages,
+                "temperature": temperature,
+            }
+            if max_tokens:
+                payload["max_tokens"] = max_tokens
+            if tools:
+                payload["tools"] = tools
+                payload["tool_choice"] = tool_choice
+
+            response = await self.client.post(
+                f"{self.base_url}/v1/chat/completions",
+                json=payload,
+                headers=self._get_headers(),
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            choice = data.get("choices", [{}])[0]
+            message = choice.get("message", {})
+
+            return LLMResponse(
+                content=message.get("content", ""),
+                usage=data.get("usage", {}),
+                finish_reason=choice.get("finish_reason"),
+                tool_calls=message.get("tool_calls"),
+            )
+
+        try:
+            return await self.recovery.execute_with_retry(_make_request)
+        except httpx.HTTPStatusError as e:
+            status = e.response.status_code
+            error_type = ErrorType.HTTP_ERROR
+            if status == 401 or status == 403:
+                error_type = ErrorType.AUTHENTICATION_ERROR
+            elif status == 429:
+                error_type = ErrorType.RATE_LIMIT_ERROR
+            elif status >= 500:
+                error_type = ErrorType.SERVER_ERROR
+
+            return LLMResponse(
+                content="",
+                error=str(e),
+                error_type=error_type,
+                actionable_hint=self.recovery.handle_error(e),
+            )
+        except httpx.TimeoutException as e:
+            return LLMResponse(
+                content="",
+                error=str(e),
+                error_type=ErrorType.TIMEOUT_ERROR,
+                actionable_hint=self.recovery.handle_error(e),
+            )
+        except (httpx.NetworkError, httpx.ConnectError) as e:
+            return LLMResponse(
+                content="",
+                error=str(e),
+                error_type=ErrorType.NETWORK_ERROR,
+                actionable_hint=self.recovery.handle_error(e),
+            )
+        except Exception as e:
+            return LLMResponse(
+                content="",
+                error=str(e),
+                error_type=ErrorType.UNKNOWN_ERROR,
+                actionable_hint=self.recovery.handle_error(e),
+            )
+
+    async def structured_output(
+        self,
+        messages: List[Dict[str, Any]],
+        output_schema: Dict[str, Any],
+        temperature: float = 0.1,
+    ) -> Dict[str, Any]:
+        """
+        Forces the LLM to provide structured JSON output matching the schema.
+        Prepends a system message for guidance.
+        """
+        system_instruction = (
+            "Return only valid JSON that matches this schema exactly:\n"
+            f"{json.dumps(output_schema, indent=2)}\n\n"
+            "Do not include any conversational text or markdown formatting tags like ```json."
+        )
+        
+        # Insert system instruction at the beginning
+        full_messages = [{"role": "system", "content": system_instruction}] + messages
+        
+        response = await self.complete(
+            messages=full_messages,
+            temperature=temperature,
+        )
+
+        if response.is_error:
+            raise RuntimeError(f"LLM failed to provide structured output: {response.error}. Hint: {response.actionable_hint}")
+
+        # Basic cleanup of markdown markers if the LLM ignores instructions
+        content = response.content.strip()
+        if content.startswith("```"):
+            lines = content.split("\n")
+            if lines[0].startswith("```"):
+                content = "\n".join(lines[1:-1])
+            else:
+                content = content.strip("`")
+        content = content.strip()
+
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"LLM output was not valid JSON: {content}") from e
+
+    async def close(self):
+        """Closes the underlying HTTP client."""
+        await self.client.aclose()

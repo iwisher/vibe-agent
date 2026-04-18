@@ -1,0 +1,12 @@
+id: basic-math-002
+tags: [math, basic]
+subsystem: query_loop
+difficulty: easy
+category: math
+input:
+  prompt: "What is 6 times 7?"
+  preconditions: []
+expected:
+  response_contains: "42"
+optimization_set: true
+holdout_set: false

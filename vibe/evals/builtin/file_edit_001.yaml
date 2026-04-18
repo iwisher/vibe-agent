@@ -1,0 +1,11 @@
+id: file-edit-001
+tags: [file_ops, editing]
+input:
+  prompt: Create a file at /tmp/vibe_edit.txt with the content "version 1", then overwrite it with "version 2".
+  preconditions: []
+expected:
+  file_exists: /tmp/vibe_edit.txt
+  file_contains: /tmp/vibe_edit.txt
+  contains_text: "version 2"
+optimization_set: true
+holdout_set: false

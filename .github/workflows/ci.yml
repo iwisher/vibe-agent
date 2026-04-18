@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint & Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install black ruff
+      - name: Check formatting with black
+        run: black --check .
+      - name: Lint with ruff
+        run: ruff check .
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Run pytest
+        run: python -m pytest tests/ -v --tb=short
+
+  syntax-validation:
+    name: Python Syntax Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Validate all Python files parse
+        run: |
+          python -c "
+          import ast
+          from pathlib import Path
+          errors = []
+          for f in Path('.').rglob('*.py'):
+              if '.venv' in str(f) or '__pycache__' in str(f):
+                  continue
+              try:
+                  ast.parse(f.read_text())
+              except SyntaxError as e:
+                  errors.append(f'{f}: {e}')
+          if errors:
+              print('SYNTAX ERRORS:')
+              for e in errors:
+                  print(e)
+              exit(1)
+          print(f'All Python files passed syntax check.')
+          "
+
+  eval-suite-validation:
+    name: Eval Suite Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Validate all eval cases load
+        run: |
+          python -c "
+          from vibe.harness.memory.eval_store import EvalStore
+          store = EvalStore(evals_dir='vibe/evals/builtin')
+          cases = store.load_builtin_evals()
+          print(f'Loaded {len(cases)} eval cases')
+          assert len(cases) >= 10, f'Expected >= 10 cases, got {len(cases)}'
+          for c in cases:
+              assert c.id, f'Missing id in case'
+              assert c.expected, f'Missing expected in {c.id}'
+              assert c.input, f'Missing input in {c.id}'
+          print('All eval cases validated.')
+          "
+      - name: Dry-run eval (no API)
+        run: |
+          python run_e2e_evals.py eval --dry-run --cases file-read-001,bash-math-001,us-stock-weekly-001,skill-install-001
+
+  regression-gate:
+    name: Regression Gate
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    needs: [unit-tests, eval-suite-validation]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Check baseline exists
+        run: |
+          if [ ! -f "docs/baseline_scorecard.json" ]; then
+            echo "⚠️ No baseline scorecard found. Skipping regression check."
+            exit 0
+          fi
+          python -c "
+          import json
+          with open('docs/baseline_scorecard.json') as f:
+              baseline = json.load(f)
+          print(f'Baseline score: {baseline.get(\"overall\", {}).get(\"score\", \"N/A\")}')
+          "

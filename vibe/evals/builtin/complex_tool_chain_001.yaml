@@ -1,0 +1,23 @@
+id: complex-tool-chain-001
+tags: [tool_chain, bash, file_ops, complex]
+subsystem: query_loop
+difficulty: hard
+category: multi_step
+input:
+  prompt: |
+    1. Create a directory /tmp/vibe_eval_dir if it doesn't exist.
+    2. Create 3 files inside it: alpha.txt, beta.txt, gamma.txt with contents "a", "b", "c" respectively.
+    3. List all files in /tmp/vibe_eval_dir.
+    4. Count how many files contain the letter "a" in their filename.
+    5. Write the count to /tmp/vibe_eval_count.txt.
+    6. Read /tmp/vibe_eval_count.txt and report the exact number.
+  preconditions: []
+expected:
+  file_contains: /tmp/vibe_eval_count.txt
+  contains_text: "2"
+  file_exists: /tmp/vibe_eval_dir/alpha.txt
+  file_exists: /tmp/vibe_eval_dir/beta.txt
+  file_exists: /tmp/vibe_eval_dir/gamma.txt
+  tool_called: bash
+optimization_set: true
+holdout_set: false

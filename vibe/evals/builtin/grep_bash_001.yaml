@@ -1,0 +1,12 @@
+id: grep-bash-001
+tags: [bash, text_processing]
+subsystem: query_loop
+difficulty: easy
+category: bash
+input:
+  prompt: "From the lines 'apple', 'banana', 'apple', which contain 'apple'? You may use bash with grep if needed, or just tell me."
+  preconditions: []
+expected:
+  response_contains: "apple"
+optimization_set: true
+holdout_set: false

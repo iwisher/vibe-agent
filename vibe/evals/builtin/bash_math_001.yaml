@@ -1,0 +1,12 @@
+id: bash-math-001
+tags: [bash, math]
+subsystem: query_loop
+difficulty: easy
+category: bash
+input:
+  prompt: "What is 13 times 7? You may use the bash tool if needed, or just tell me the answer."
+  preconditions: []
+expected:
+  response_contains: "91"
+optimization_set: true
+holdout_set: false

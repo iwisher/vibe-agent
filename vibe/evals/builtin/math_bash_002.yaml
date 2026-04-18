@@ -1,0 +1,12 @@
+id: math-bash-002
+tags: [bash, math]
+subsystem: query_loop
+difficulty: easy
+category: bash
+input:
+  prompt: "What is 15 plus 27? You may use the bash tool if needed, or just tell me the answer."
+  preconditions: []
+expected:
+  response_contains: "42"
+optimization_set: true
+holdout_set: false

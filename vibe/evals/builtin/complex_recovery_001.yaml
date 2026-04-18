@@ -1,0 +1,18 @@
+id: complex-recovery-001
+tags: [error_recovery, bash, multi_step, complex]
+subsystem: error_recovery
+difficulty: hard
+category: error_recovery
+input:
+  prompt: |
+    Try to read the file /tmp/vibe_eval_nonexistent.txt. This will fail.
+    After the failure, create the file with content "recovered_data".
+    Then read it back and confirm the content is "recovered_data".
+    Report the final content.
+  preconditions: []
+expected:
+  file_contains: /tmp/vibe_eval_nonexistent.txt
+  contains_text: "recovered_data"
+  tool_called: read_file
+optimization_set: true
+holdout_set: false

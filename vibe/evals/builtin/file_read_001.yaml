@@ -1,0 +1,11 @@
+id: file-read-001
+tags: [file_ops, basic]
+input:
+  prompt: Create a file at /tmp/vibe_test_file.txt with the content "hello world", then read it back.
+  preconditions: []
+expected:
+  file_exists: /tmp/vibe_test_file.txt
+  file_contains: /tmp/vibe_test_file.txt
+  contains_text: "hello world"
+optimization_set: true
+holdout_set: false

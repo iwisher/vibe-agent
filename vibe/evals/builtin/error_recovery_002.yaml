@@ -1,0 +1,12 @@
+id: error-recovery-002
+tags: [error_recovery, bash]
+subsystem: error_recovery
+difficulty: easy
+category: error_recovery
+input:
+  prompt: "Use the bash tool to run: nonexistent_command_xyz_12345. Report what the tool returns."
+  preconditions: []
+expected:
+  response_contains: "not found"
+optimization_set: true
+holdout_set: false
