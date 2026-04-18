@@ -13,18 +13,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from vibe.core.model_gateway import LLMClient
 from vibe.core.query_loop import QueryLoop
-from vibe.core.context_compactor import ContextCompactor
-from vibe.core.error_recovery import ErrorRecovery, RetryPolicy
-from vibe.harness.constraints import HookPipeline
+from vibe.core.query_loop_factory import QueryLoopFactory
 from vibe.harness.memory.eval_store import EvalStore, EvalCase, EvalResult
 from vibe.evals.runner import EvalRunner
 from vibe.evals.model_registry import ModelRegistry, ModelProfile
 from vibe.evals.observability import Observability
-from vibe.tools.tool_system import ToolSystem
-from vibe.tools.bash import BashTool, BashSandbox
-from vibe.tools.file import ReadFileTool, WriteFileTool
 
 
 @dataclass
@@ -70,34 +64,7 @@ class MultiModelRunner:
 
     def _create_query_loop(self, profile: ModelProfile) -> QueryLoop:
         """Create a fresh QueryLoop for a model profile."""
-        api_key = profile.resolve_api_key()
-        if not api_key:
-            raise RuntimeError(f"No API key resolved for model {profile.name}")
-
-        llm = LLMClient(
-            base_url=profile.base_url,
-            model=profile.model_id,
-            api_key=api_key,
-            timeout=profile.timeout,
-            retry_policy=RetryPolicy(max_retries=2, initial_delay=1.0),
-        )
-
-        tool_system = ToolSystem()
-        tool_system.register_tool(
-            BashTool(sandbox=BashSandbox(working_dir="/tmp", timeout=60))
-        )
-        tool_system.register_tool(ReadFileTool())
-        tool_system.register_tool(WriteFileTool())
-
-        return QueryLoop(
-            llm_client=llm,
-            tool_system=tool_system,
-            context_compactor=ContextCompactor(max_tokens=16000),
-            error_recovery=ErrorRecovery(RetryPolicy(max_retries=2, initial_delay=1.0)),
-            hook_pipeline=HookPipeline(),
-            max_iterations=15,
-            max_context_tokens=16000,
-        )
+        return QueryLoopFactory.from_profile(profile)
 
     async def run_model(
         self,
@@ -171,7 +138,7 @@ class MultiModelRunner:
                     # Cleanup LLM client
                     if query_loop is not None:
                         try:
-                            await query_loop.llm.close()
+                            await query_loop.close()
                         except Exception:
                             pass
 

@@ -56,10 +56,18 @@ class EvalStore:
                     eval_id TEXT,
                     passed INTEGER,
                     diff TEXT,
-                    timestamp TEXT
+                    timestamp TEXT,
+                    total_tokens INTEGER,
+                    latency_seconds REAL
                 );
                 """
             )
+            # Schema migration: add missing columns for existing databases
+            cols = {row[1] for row in conn.execute("PRAGMA table_info(eval_results)")}
+            if "total_tokens" not in cols:
+                conn.execute("ALTER TABLE eval_results ADD COLUMN total_tokens INTEGER")
+            if "latency_seconds" not in cols:
+                conn.execute("ALTER TABLE eval_results ADD COLUMN latency_seconds REAL")
 
     def load_builtin_evals(self) -> List[EvalCase]:
         cases = []
@@ -108,8 +116,15 @@ class EvalStore:
     def record_result(self, result: EvalResult) -> None:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
-                "INSERT INTO eval_results (eval_id, passed, diff, timestamp) VALUES (?, ?, ?, ?)",
-                (result.eval_id, int(result.passed), json.dumps(result.diff), result.timestamp),
+                "INSERT INTO eval_results (eval_id, passed, diff, timestamp, total_tokens, latency_seconds) VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    result.eval_id,
+                    int(result.passed),
+                    json.dumps(result.diff),
+                    result.timestamp,
+                    result.total_tokens,
+                    result.latency_seconds,
+                ),
             )
 
     def get_results(self, eval_id: Optional[str] = None) -> List[Dict[str, Any]]:

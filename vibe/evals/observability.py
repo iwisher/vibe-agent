@@ -274,5 +274,5 @@ class Observability:
         return sorted_vals[f] * (c - k) + sorted_vals[c] * (k - f)
 
 
-# Global instance for easy import
-obs = Observability()
+# Global instance for easy import (shares identity with get_default)
+obs = Observability.get_default()

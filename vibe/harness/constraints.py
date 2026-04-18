@@ -1,5 +1,6 @@
 """Constraint hooks and pipeline for the harness."""
 
+import re
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any, Callable, Dict, List, Optional
@@ -71,6 +72,12 @@ class HookPipeline:
         for stage in (HookStage.POST_EXECUTE, HookStage.POST_FIX):
             for hook in self._stages[stage]:
                 outcome = hook(context)
+                if not outcome.allow:
+                    return ToolResult(
+                        success=False,
+                        content=None,
+                        error=f"Post-hook rejected: {outcome.reason}",
+                    )
                 if outcome.modified_result is not None:
                     current_result = outcome.modified_result
                     context.result = current_result
@@ -107,11 +114,20 @@ def policy_hook(
         if context.tool_name == "bash":
             command = context.arguments.get("command", "")
             for b in blocked:
-                if b in command:
-                    return HookOutcome(
-                        allow=False,
-                        reason=f"Policy violation: blocked pattern '{b}' in command.",
-                    )
+                # Multi-word patterns: exact substring match
+                if " " in b:
+                    if b in command:
+                        return HookOutcome(
+                            allow=False,
+                            reason=f"Policy violation: blocked pattern '{b}' in command.",
+                        )
+                else:
+                    # Single-word patterns: whole-word match to avoid false positives
+                    if re.search(rf"\b{re.escape(b)}\b", command):
+                        return HookOutcome(
+                            allow=False,
+                            reason=f"Policy violation: blocked pattern '{b}' in command.",
+                        )
         return HookOutcome(allow=True, reason="ok")
 
     return hook

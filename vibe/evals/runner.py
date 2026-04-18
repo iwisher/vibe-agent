@@ -1,5 +1,6 @@
 """Eval runner that executes eval cases against a QueryLoop and checks expectations."""
 
+import asyncio
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -17,10 +18,12 @@ class EvalRunner:
         query_loop: QueryLoop,
         eval_store: Optional[EvalStore] = None,
         observability: Optional[Observability] = None,
+        max_concurrency: int = 3,
     ):
         self.query_loop = query_loop
         self.eval_store = eval_store
         self.obs = observability
+        self._semaphore = asyncio.Semaphore(max_concurrency)
 
     async def run_case(self, case: EvalCase) -> EvalResult:
         start_time = time.time()
@@ -322,4 +325,11 @@ class EvalRunner:
         return result
 
     async def run_all(self, cases: List[EvalCase]) -> List[EvalResult]:
-        return [await self.run_case(c) for c in cases]
+        async def _run(case: EvalCase) -> EvalResult:
+            async with self._semaphore:
+                return await self.run_case(case)
+
+        try:
+            return await asyncio.gather(*(_run(c) for c in cases))
+        finally:
+            await self.query_loop.close()

@@ -95,6 +95,7 @@ class SoakTestRunner:
         self._stop = False
         self._snapshots: List[SoakSnapshot] = []
         self._current_loop = 0
+        self._checkpoint_index = 0
         self.obs = observability
 
     def _setup_signal_handlers(self):
@@ -152,8 +153,9 @@ class SoakTestRunner:
                 )
 
                 total_tokens = result.total_tokens
-                prompt_tokens = 0
-                completion_tokens = 0
+                metrics = getattr(result, "metrics", None) or {}
+                prompt_tokens = getattr(metrics, "prompt_tokens", 0) if hasattr(metrics, "prompt_tokens") else metrics.get("prompt_tokens", 0)
+                completion_tokens = getattr(metrics, "completion_tokens", 0) if hasattr(metrics, "completion_tokens") else metrics.get("completion_tokens", 0)
 
                 # Record observability metrics for this iteration
                 if self.obs:
@@ -192,7 +194,7 @@ class SoakTestRunner:
             finally:
                 # Cleanup LLM client regardless of success/failure
                 try:
-                    await query_loop.llm.close()
+                    await query_loop.close()
                 except Exception:
                     pass
 
@@ -221,18 +223,22 @@ class SoakTestRunner:
 
     def _save_checkpoint(self):
         checkpoint_path = self.output_dir / f"soak_checkpoint_{self.model.replace('/', '_')}.jsonl"
-        with open(checkpoint_path, "w") as f:
-            for s in self._snapshots:
+        with open(checkpoint_path, "a") as f:
+            for s in self._snapshots[self._checkpoint_index:]:
                 f.write(json.dumps({
                     "timestamp": s.timestamp,
                     "loop_iteration": s.loop_iteration,
                     "case_id": s.case_id,
                     "passed": s.passed,
                     "latency_seconds": s.latency_seconds,
+                    "prompt_tokens": s.prompt_tokens,
+                    "completion_tokens": s.completion_tokens,
+                    "total_tokens": s.total_tokens,
                     "tool_call_count": s.tool_call_count,
                     "turn_count": s.turn_count,
                     "error": s.error,
                 }) + "\n")
+        self._checkpoint_index = len(self._snapshots)
 
     def _generate_report(self, start_time: float, total_iterations: int) -> SoakReport:
         elapsed = time.time() - start_time
@@ -297,8 +303,8 @@ class SoakTestRunner:
             p50_latency=latencies[n // 2] if n > 0 else 0,
             p95_latency=latencies[int(n * 0.95)] if n > 0 else 0,
             p99_latency=latencies[int(n * 0.99)] if n > 0 else 0,
-            avg_tokens_per_case=0.0,  # TODO: wire token metrics
-            tokens_per_second=0.0,
+            avg_tokens_per_case=statistics.mean(s.total_tokens for s in snapshots) if snapshots else 0.0,
+            tokens_per_second=(sum(s.total_tokens for s in snapshots) / elapsed) if elapsed > 0 and snapshots else 0.0,
             error_count=len(errors),
             unique_errors=error_counts,
             degradation_detected=degradation,

@@ -16,7 +16,7 @@ class RetryPolicy:
     jitter: bool = True
     retryable_exceptions: tuple[Type[Exception], ...] = (Exception,)
     excluded_exceptions: tuple[Type[BaseException], ...] = (
-        asyncio.CancelledException,
+        asyncio.CancelledError,
         KeyboardInterrupt,
         SystemExit,
     )

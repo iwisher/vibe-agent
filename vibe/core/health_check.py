@@ -35,10 +35,43 @@ class ModelHealthChecker:
     ) -> bool:
         """Send a minimal request to verify the model is online.
 
+        Uses the free /v1/models endpoint first; falls back to a minimal
+        chat completion probe only if the models endpoint is unavailable.
+
         Returns True if the model responds successfully, False if:
         - HTTP 4xx/5xx (including "无可用渠道")
         - Network/timeout errors
         """
+        # First try the free /v1/models endpoint
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                response = await client.get(
+                    f"{self.base_url}/v1/models",
+                    headers=self._get_headers(),
+                )
+            if response.status_code < 400:
+                # Verify the requested model is in the returned list
+                try:
+                    data = response.json()
+                    models = data.get("data", [])
+                    for m in models:
+                        if m.get("id") == model_id:
+                            return True
+                    # Model not in list — could be hidden or not loaded
+                    # Fall through to chat probe for definitive check
+                except Exception:
+                    pass
+            # If models endpoint returns 4xx/5xx, check for channel errors
+            if response.status_code >= 400:
+                body = response.text
+                if _UNAVAILABLE_CHANNEL_MSG in body:
+                    return False
+        except (httpx.TimeoutException, httpx.NetworkError, httpx.ConnectError):
+            return False
+        except Exception:
+            pass
+
+        # Fallback: minimal chat completion probe
         payload = {
             "model": model_id,
             "messages": [{"role": "user", "content": "."}],

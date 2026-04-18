@@ -24,6 +24,7 @@ class QueryState(Enum):
     TOOL_EXECUTION = auto()
     SYNTHESIZING = auto()
     COMPLETED = auto()
+    INCOMPLETE = auto()
     STOPPED = auto()
     ERROR = auto()
 
@@ -42,6 +43,7 @@ class Message:
     role: str
     content: str
     tool_calls: Optional[list] = None
+    tool_call_id: Optional[str] = None
     model_version: Optional[str] = None
 
 
@@ -151,7 +153,12 @@ class QueryLoop:
                 if self.compactor.should_compact(llm_msgs):
                     compacted = self.compactor.compact(llm_msgs)
                     self.messages = [
-                        Message(role=m["role"], content=m.get("content", ""))
+                        Message(
+                            role=m["role"],
+                            content=m.get("content", ""),
+                            tool_calls=m.get("tool_calls"),
+                            tool_call_id=m.get("tool_call_id"),
+                        )
                         for m in compacted.messages
                     ]
                     yield QueryResult(
@@ -206,11 +213,16 @@ class QueryLoop:
                             model_version=self.llm.model,
                         )
                     )
-                    for result in tool_results:
+                    for call, result in zip(response.tool_calls, tool_results):
+                        if isinstance(call, dict):
+                            tool_call_id = call.get("id")
+                        else:
+                            tool_call_id = getattr(call, "id", None)
                         self.messages.append(
                             Message(
                                 role="tool",
                                 content=result.content if result.success else result.error,
+                                tool_call_id=tool_call_id,
                             )
                         )
                     self._set_state(QueryState.SYNTHESIZING)
@@ -262,7 +274,11 @@ class QueryLoop:
                 break
 
         if self._state not in (QueryState.COMPLETED, QueryState.ERROR, QueryState.STOPPED):
-            self._set_state(QueryState.COMPLETED)
+            # Distinguish between natural completion and max_iterations exhaustion
+            if iteration >= self.max_iterations:
+                self._set_state(QueryState.INCOMPLETE)
+            else:
+                self._set_state(QueryState.COMPLETED)
 
     async def _execute_tool_calls(self, tool_calls: list) -> list[ToolResult]:
         import json
@@ -313,6 +329,7 @@ class QueryLoop:
                 "role": msg.role,
                 "content": msg.content,
                 **({"tool_calls": msg.tool_calls} if msg.tool_calls else {}),
+                **({"tool_call_id": msg.tool_call_id} if msg.tool_call_id else {}),
             }
             for msg in self.messages
         ]
@@ -344,3 +361,8 @@ class QueryLoop:
         self._feedback_retries = 0
         self._running = False
         self._plan_result = None
+
+    async def close(self) -> None:
+        """Closes the underlying LLM client and releases resources."""
+        if self.llm is not None:
+            await self.llm.close()

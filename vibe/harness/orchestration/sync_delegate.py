@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from vibe.core.model_gateway import LLMClient
 from vibe.core.query_loop import QueryLoop
+from vibe.core.query_loop_factory import QueryLoopFactory
 from vibe.tools.tool_system import ToolSystem
 
 
@@ -33,12 +34,20 @@ class SyncDelegate:
 
     def __init__(
         self,
-        llm_client_factory: Callable[[], LLMClient],
-        tool_system_factory: Callable[[], ToolSystem],
+        llm_client_factory: Optional[Callable[[], LLMClient]] = None,
+        tool_system_factory: Optional[Callable[[], ToolSystem]] = None,
+        query_loop_factory: Optional[QueryLoopFactory] = None,
         max_workers: int = 3,
     ):
-        self.llm_factory = llm_client_factory
-        self.tool_factory = tool_system_factory
+        if query_loop_factory is not None:
+            self.query_loop_factory = query_loop_factory
+        elif llm_client_factory is not None and tool_system_factory is not None:
+            self.llm_factory = llm_client_factory
+            self.tool_factory = tool_system_factory
+        else:
+            raise ValueError(
+                "Either provide query_loop_factory or both llm_client_factory and tool_system_factory"
+            )
         self.max_workers = max_workers
 
     async def run(
@@ -66,9 +75,13 @@ class SyncDelegate:
         return await asyncio.gather(*coros)
 
     async def _execute_task(self, task: DelegateTask) -> DelegateResult:
-        llm = self.llm_factory()
-        tools = self.tool_factory()
-        loop = QueryLoop(llm_client=llm, tool_system=tools, max_iterations=task.max_iterations)
+        if hasattr(self, "query_loop_factory"):
+            loop = self.query_loop_factory.create(max_iterations=task.max_iterations)
+            llm = loop.llm
+        else:
+            llm = self.llm_factory()
+            tools = self.tool_factory()
+            loop = QueryLoop(llm_client=llm, tool_system=tools, max_iterations=task.max_iterations)
 
         prompt = task.description
         if task.context:
@@ -97,7 +110,7 @@ class SyncDelegate:
                 error=str(e),
             )
         finally:
-            await llm.close()
+            await loop.close()
 
         full_output = "\n".join(outputs + tool_results).strip()
         return DelegateResult(

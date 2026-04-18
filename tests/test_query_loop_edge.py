@@ -122,7 +122,7 @@ async def test_edge_003_max_iteration_exhaustion_returns_partial(mock_llm, tool_
         assert len(r.tool_results) == 1
         assert r.tool_results[0].success is True
 
-    # After exhaustion the state is set to COMPLETED (cleanup in run())
-    assert loop.state == QueryState.COMPLETED
+    # After exhaustion the state is set to INCOMPLETE (distinguishes from natural completion)
+    assert loop.state == QueryState.INCOMPLETE
     # LLM was called exactly max_iterations times
     assert mock_llm.complete.call_count == 2

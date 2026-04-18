@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any, Dict, List, Optional, Union
@@ -21,6 +22,57 @@ class ErrorType(Enum):
     SERVER_ERROR = auto()
     UNKNOWN_ERROR = auto()
     MODEL_UNAVAILABLE = auto()
+
+
+@dataclass
+class CircuitBreakerState:
+    """Per-model circuit breaker state."""
+    consecutive_failures: int = 0
+    last_failure_time: float = 0.0
+    open: bool = False
+
+
+class CircuitBreaker:
+    """Simple circuit breaker for LLM model endpoints.
+
+    Opens after `threshold` consecutive failures, stays open for `cooldown_seconds`,
+    then allows a single half-open probe. If the probe succeeds, the breaker closes.
+    """
+
+    def __init__(self, threshold: int = 5, cooldown_seconds: float = 60.0):
+        self.threshold = threshold
+        self.cooldown_seconds = cooldown_seconds
+        self._states: Dict[str, CircuitBreakerState] = {}
+
+    def _state(self, model: str) -> CircuitBreakerState:
+        if model not in self._states:
+            self._states[model] = CircuitBreakerState()
+        return self._states[model]
+
+    def is_open(self, model: str) -> bool:
+        """Return True if the circuit breaker is open for this model."""
+        state = self._state(model)
+        if not state.open:
+            return False
+        # Check if cooldown has elapsed (half-open)
+        if time.time() - state.last_failure_time >= self.cooldown_seconds:
+            state.open = False  # half-open: allow one probe
+            return False
+        return True
+
+    def record_success(self, model: str) -> None:
+        """Reset failure count on success."""
+        state = self._state(model)
+        state.consecutive_failures = 0
+        state.open = False
+
+    def record_failure(self, model: str) -> None:
+        """Increment failure count and open breaker if threshold reached."""
+        state = self._state(model)
+        state.consecutive_failures += 1
+        state.last_failure_time = time.time()
+        if state.consecutive_failures >= self.threshold:
+            state.open = True
 
 
 @dataclass
@@ -52,6 +104,7 @@ class LLMClient:
         retry_policy: Optional[RetryPolicy] = None,
         fallback_chain: Optional[List[str]] = None,
         auto_fallback: bool = False,
+        circuit_breaker: Optional[CircuitBreaker] = None,
     ):
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -61,6 +114,7 @@ class LLMClient:
         self.client = httpx.AsyncClient(timeout=self.timeout)
         self.fallback_chain = fallback_chain or []
         self.auto_fallback = auto_fallback
+        self.circuit_breaker = circuit_breaker or CircuitBreaker()
 
     def _get_headers(self) -> Dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -85,6 +139,10 @@ class LLMClient:
         last_error: Optional[LLMResponse] = None
 
         for attempt_model in models_to_try:
+            # Circuit breaker: skip models that are continuously failing
+            if self.circuit_breaker.is_open(attempt_model):
+                continue
+
             result = await self._try_complete(
                 attempt_model,
                 messages,
@@ -94,8 +152,11 @@ class LLMClient:
                 tool_choice=tool_choice,
             )
             if not result.is_error:
+                self.circuit_breaker.record_success(attempt_model)
                 result.model_used = attempt_model
                 return result
+
+            self.circuit_breaker.record_failure(attempt_model)
 
             # If this is a model-unavailability error and fallback is enabled, continue
             if self.auto_fallback and result.error_type in (

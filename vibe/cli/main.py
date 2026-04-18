@@ -11,14 +11,11 @@ from rich.panel import Panel
 from rich.table import Table
 
 from vibe.core.config import VibeConfig
-from vibe.core.model_gateway import LLMClient
 from vibe.core.query_loop import QueryLoop
+from vibe.core.query_loop_factory import QueryLoopFactory
 from vibe.evals.model_registry import ModelRegistry
 from vibe.evals.runner import EvalRunner
 from vibe.harness.memory.eval_store import EvalStore
-from vibe.tools.bash import BashSandbox, BashTool
-from vibe.tools.file import ReadFileTool, WriteFileTool
-from vibe.tools.tool_system import ToolSystem
 
 app = typer.Typer(help="Vibe Agent — an open agent harness platform")
 eval_app = typer.Typer(help="Run and manage evals")
@@ -26,14 +23,6 @@ app.add_typer(eval_app, name="eval")
 console = Console()
 
 DEFAULT_CONFIG = VibeConfig.load()
-
-
-def setup_tool_system(working_dir: str) -> ToolSystem:
-    ts = ToolSystem()
-    ts.register_tool(BashTool(sandbox=BashSandbox(working_dir=working_dir)))
-    ts.register_tool(ReadFileTool())
-    ts.register_tool(WriteFileTool())
-    return ts
 
 
 async def interactive_mode(query_loop: QueryLoop) -> None:
@@ -103,23 +92,21 @@ def main(
 ):
     """Run Vibe Agent in interactive or single-query mode."""
     working_dir = str(Path(working_dir).expanduser().resolve())
-    
+
     registry = ModelRegistry()
     fallback_chain = []
     for name in DEFAULT_CONFIG.get_fallback_chain():
         profile = registry.get(name)
         model_id = profile.model_id if profile else name
         fallback_chain.append(model_id)
-    
-    llm = LLMClient(
+
+    query_loop = QueryLoopFactory(
         base_url=server,
         model=model,
         api_key=api_key,
+        working_dir=working_dir,
         fallback_chain=fallback_chain,
-        auto_fallback=True,
-    )
-    tools = setup_tool_system(working_dir)
-    query_loop = QueryLoop(llm_client=llm, tool_system=tools)
+    ).create()
 
     if ctx.args:
         query = " ".join(ctx.args)
@@ -139,23 +126,21 @@ def run_evals(
 ):
     """Run built-in eval cases and display results."""
     working_dir = str(Path(working_dir).expanduser().resolve())
-    
+
     registry = ModelRegistry()
     fallback_chain = []
     for name in DEFAULT_CONFIG.get_fallback_chain():
         profile = registry.get(name)
         model_id = profile.model_id if profile else name
         fallback_chain.append(model_id)
-    
-    llm = LLMClient(
+
+    query_loop = QueryLoopFactory(
         base_url=server,
         model=model,
         api_key=api_key,
+        working_dir=working_dir,
         fallback_chain=fallback_chain,
-        auto_fallback=True,
-    )
-    tools = setup_tool_system(working_dir)
-    query_loop = QueryLoop(llm_client=llm, tool_system=tools)
+    ).create()
 
     store = EvalStore()
     cases = store.load_builtin_evals()

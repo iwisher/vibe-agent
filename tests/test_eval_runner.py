@@ -4,7 +4,7 @@ import asyncio
 import tempfile
 from pathlib import Path
 from typing import AsyncIterator
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -144,6 +144,7 @@ def test_runner_records_result(temp_eval_store):
 def test_runner_run_all():
     ql = MagicMock()
     ql.clear_history = MagicMock()
+    ql.close = AsyncMock()
     ql.run = MagicMock(return_value=_async_gen([QueryResult(response="done", state=QueryState.COMPLETED)]))
 
     runner = EvalRunner(query_loop=ql)
