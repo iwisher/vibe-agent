@@ -2,7 +2,15 @@
 
 from pathlib import Path
 
+import pytest
+
 from vibe.harness.memory.trace_store import TraceStore
+
+try:
+    import sentence_transformers  # noqa: F401
+    HAS_SENTENCE_TRANSFORMERS = True
+except ImportError:
+    HAS_SENTENCE_TRANSFORMERS = False
 
 
 def test_log_and_retrieve_similar_sessions(tmp_path):
@@ -42,6 +50,7 @@ def test_get_similar_sessions_empty_query(tmp_path):
     assert store.get_similar_sessions("a") == []
 
 
+@pytest.mark.skipif(not HAS_SENTENCE_TRANSFORMERS, reason="sentence-transformers not installed")
 def test_vector_similarity_search(tmp_path):
     db_path = tmp_path / "traces.db"
     store = TraceStore(db_path=str(db_path))

@@ -69,7 +69,7 @@ class SkillManageTool(Tool):
                 success=False, content=None, error=f"Path traversal blocked: {e}"
             )
 
-        if action == "create" and skill_dir.exists():
+        if action == "create" and resolved.exists():
             return ToolResult(
                 success=False,
                 content=None,
@@ -77,8 +77,8 @@ class SkillManageTool(Tool):
             )
 
         try:
-            skill_dir.mkdir(parents=True, exist_ok=True)
-            skill_file = skill_dir / "SKILL.md"
+            resolved.mkdir(parents=True, exist_ok=True)
+            skill_file = resolved / "SKILL.md"
             skill_file.write_text(str(content), encoding="utf-8")
             return ToolResult(
                 success=True,

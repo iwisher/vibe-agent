@@ -1,7 +1,7 @@
 """Tests for vibe.core.model_gateway."""
 
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -27,7 +27,7 @@ async def test_complete_success(client):
         ],
         "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
     }
-    mock_resp.raise_for_status = AsyncMock()
+    mock_resp.raise_for_status = MagicMock()
 
     with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_resp):
         result = await client.complete(messages=[{"role": "user", "content": "hi"}])
@@ -85,7 +85,7 @@ async def test_structured_output_valid_json(client):
         "choices": [{"message": {"content": '{"answer": 42}'}, "finish_reason": "stop"}],
         "usage": {},
     }
-    mock_resp.raise_for_status = AsyncMock()
+    mock_resp.raise_for_status = MagicMock()
 
     with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_resp):
         output = await client.structured_output(
@@ -111,7 +111,7 @@ async def test_structured_output_with_markdown_fencing(client):
         ],
         "usage": {},
     }
-    mock_resp.raise_for_status = AsyncMock()
+    mock_resp.raise_for_status = MagicMock()
 
     with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_resp):
         output = await client.structured_output(

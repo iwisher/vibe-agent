@@ -14,13 +14,20 @@ _MAX_WRITE_SIZE = 5 * 1024 * 1024  # 5 MB
 
 def _redirect_path(path: str) -> str:
     """Redirect /tmp/vibe_* paths to VIBE_EVAL_WORK_DIR if set.
-    Preserves relative subdirectories under the work dir."""
+    Preserves relative subdirectories under the work dir.
+    Validates that the redirected path stays within work_dir to prevent traversal."""
     work_dir = os.environ.get("VIBE_EVAL_WORK_DIR")
     if not work_dir:
         return path
     if path.startswith("/tmp/"):
         rel = path[len("/tmp/"):]  # e.g., vibe_work/data/file.txt
-        return os.path.join(work_dir, rel)
+        redirected = os.path.join(work_dir, rel)
+        resolved = os.path.realpath(redirected)
+        resolved_work = os.path.realpath(work_dir)
+        if not resolved.startswith(resolved_work + os.sep) and resolved != resolved_work:
+            # Traversal attempt — keep original path, let it fail normally
+            return path
+        return redirected
     return path
 
 
