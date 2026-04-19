@@ -261,12 +261,12 @@ async def run_standard_eval(config: dict, cases: list, obs: Observability, dry_r
 async def run_benchmark(models: list, cases: list, parallel: bool, obs: Observability):
     registry = ModelRegistry()
 
-    # Ensure applesay API key is set for all profiles
+    # Ensure API key is set for profiles that need one
     api_key = os.getenv("LLM_API_KEY") or os.getenv("APPLEsay_API_KEY")
     if api_key:
         for name in models:
             p = registry.get(name)
-            if p and p.provider == "applesay":
+            if p and not p.api_key:
                 p.api_key = api_key
 
     runner = MultiModelRunner(registry=registry, observability=obs)
@@ -336,7 +336,7 @@ Modes:
 
 Examples:
   python run_e2e_evals.py eval
-  python run_e2e_evals.py benchmark --models qwen3.5-plus,kimi-k2.5,minimax-m2.5
+  python run_e2e_evals.py benchmark --models default
   python run_e2e_evals.py soak --duration 60 --cpm 6
         """,
     )
@@ -361,7 +361,7 @@ Examples:
     bench_parser = subparsers.add_parser("benchmark", help="Multi-model benchmark")
     bench_parser.add_argument(
         "--models",
-        default="qwen3.5-plus,kimi-k2.5,minimax-m2.5",
+        default="default",
         help="Comma-separated model names from registry",
     )
     bench_parser.add_argument("--parallel", action="store_true", help="Run models in parallel")
@@ -395,14 +395,11 @@ Examples:
         config["api_key"] = args.api_key
 
     if not config["api_key"] and not getattr(args, "dry_run", False):
-        print("\n[ERROR] No API key found. Set LLM_API_KEY or APPLEsay_API_KEY env var, or use --dry-run.")
+        print("\n[ERROR] No API key found. Set LLM_API_KEY env var, or use --dry-run.")
         sys.exit(1)
 
     if config["api_key"]:
         os.environ["LLM_API_KEY"] = config["api_key"]
-        # Set APPLEsay_API_KEY only if not already set (preserves multi-provider configs)
-        if "APPLEsay_API_KEY" not in os.environ:
-            os.environ["APPLEsay_API_KEY"] = config["api_key"]
 
     # Load eval cases
     evals_dir = Path(__file__).parent / "vibe" / "evals" / "builtin"

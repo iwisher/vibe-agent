@@ -36,12 +36,12 @@ class TestLLMClientFallback:
             assert result.model_used == "primary-model"
             mock_try.assert_called_once()
 
-    async def test_fallback_on_unavailable_channel(self, client_with_fallback):
+    async def test_fallback_on_server_error(self, client_with_fallback):
         with patch.object(client_with_fallback, "_try_complete") as mock_try:
-            # Primary fails with 无可用渠道, fallback-1 succeeds
+            # Primary fails with 503, fallback-1 succeeds
             primary_error = LLMResponse(
                 content="",
-                error="当前分组无可用渠道",
+                error="Service Unavailable",
                 error_type=ErrorType.SERVER_ERROR,
             )
             fallback_success = LLMResponse(content="from fallback")
@@ -86,7 +86,7 @@ class TestLLMClientFallback:
         with patch.object(client_no_fallback, "_try_complete") as mock_try:
             error = LLMResponse(
                 content="",
-                error="无可用渠道",
+                error="Service Unavailable",
                 error_type=ErrorType.SERVER_ERROR,
             )
             mock_try.return_value = error
@@ -99,7 +99,7 @@ class TestLLMClientFallback:
         with patch.object(client_with_fallback, "_try_complete") as mock_try:
             error = LLMResponse(
                 content="",
-                error="无可用渠道",
+                error="Service Unavailable",
                 error_type=ErrorType.SERVER_ERROR,
             )
             mock_try.return_value = error

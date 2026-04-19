@@ -1,6 +1,6 @@
 """Model health checking with availability detection and fallback resolution.
 
-Detects Applesay-specific "无可用渠道" errors and generic 4xx/5xx failures.
+Detects generic HTTP 4xx/5xx failures and network errors.
 """
 
 from typing import Any, Dict, List, Optional
@@ -11,16 +11,12 @@ from vibe.core.config import VibeConfig
 from vibe.evals.model_registry import ModelRegistry, ModelProfile
 
 
-# Applesay-specific error indicating no available channel for the model
-_UNAVAILABLE_CHANNEL_MSG = "无可用渠道"
-
-
 class ModelHealthChecker:
     """Checks if a model is available before committing to it."""
 
     def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
         self.api_key = api_key
-        self.base_url = (base_url or "http://ai-api.applesay.cn").rstrip("/")
+        self.base_url = (base_url or "http://localhost:11434").rstrip("/")
 
     def _get_headers(self) -> Dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -39,7 +35,7 @@ class ModelHealthChecker:
         chat completion probe only if the models endpoint is unavailable.
 
         Returns True if the model responds successfully, False if:
-        - HTTP 4xx/5xx (including "无可用渠道")
+        - HTTP 4xx/5xx
         - Network/timeout errors
         """
         # First try the free /v1/models endpoint
@@ -61,11 +57,9 @@ class ModelHealthChecker:
                     # Fall through to chat probe for definitive check
                 except Exception:
                     pass
-            # If models endpoint returns 4xx/5xx, check for channel errors
+            # Any 4xx/5xx from models endpoint means unavailable
             if response.status_code >= 400:
-                body = response.text
-                if _UNAVAILABLE_CHANNEL_MSG in body:
-                    return False
+                return False
         except (httpx.TimeoutException, httpx.NetworkError, httpx.ConnectError):
             return False
         except Exception:
@@ -85,9 +79,6 @@ class ModelHealthChecker:
                     headers=self._get_headers(),
                 )
             if response.status_code >= 400:
-                body = response.text
-                if _UNAVAILABLE_CHANNEL_MSG in body:
-                    return False
                 # Any 4xx/5xx is treated as unavailable for fallback purposes
                 return False
             return True
@@ -143,10 +134,3 @@ class ModelHealthChecker:
             await asyncio.sleep(2 ** (attempt - 1))
 
         return config.llm.default_model
-
-
-def is_unavailable_error(error_text: str) -> bool:
-    """Check if an error text indicates the model channel is unavailable."""
-    if not error_text:
-        return False
-    return _UNAVAILABLE_CHANNEL_MSG in error_text or "no available channel" in error_text.lower()

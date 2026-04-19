@@ -1,7 +1,7 @@
 """Model registry for multi-model benchmarking with fallback chains.
 
-Supports applesay endpoints which proxy multiple models through
-a single base_url with different model IDs.
+Supports OpenAI-compatible endpoints (Ollama, vLLM, etc.) which proxy
+multiple models through a single base_url with different model IDs.
 """
 
 import os
@@ -41,72 +41,21 @@ class ModelProfile:
 class ModelRegistry:
     """Registry of available LLM models for eval benchmarking."""
 
-    # Built-in profiles for applesay endpoint
-    APPLEsay_BASE = "http://ai-api.applesay.cn"
+    # Default base URL (Ollama local endpoint)
+    DEFAULT_BASE_URL = os.getenv("VIBE_BASE_URL", "http://localhost:11434")
 
     BUILTIN_PROFILES: List[ModelProfile] = [
         ModelProfile(
-            name="qwen3.5-plus",
-            provider="applesay",
-            base_url=APPLEsay_BASE,
-            model_id="qwen3.5-plus",
-            api_key_env_var="APPLEsay_API_KEY",
-            cost_per_1k_prompt=0.0005,
-            cost_per_1k_completion=0.0015,
-            tags=["cheap", "fast", "reliable"],
-            is_ci_model=True,
-        ),
-        ModelProfile(
-            name="kimi-k2.5",
-            provider="applesay",
-            base_url=APPLEsay_BASE,
-            model_id="kimi-k2.5",
-            api_key_env_var="APPLEsay_API_KEY",
-            cost_per_1k_prompt=0.002,
-            cost_per_1k_completion=0.006,
-            tags=["coding", "reasoning", "high-quality"],
-        ),
-        ModelProfile(
-            name="minimax-m2.5",
-            provider="applesay",
-            base_url=APPLEsay_BASE,
-            model_id="MiniMax-M2.5",
-            api_key_env_var="APPLEsay_API_KEY",
-            cost_per_1k_prompt=0.001,
-            cost_per_1k_completion=0.003,
-            tags=["balanced", "multilingual"],
+            name="default",
+            provider="ollama",
+            base_url=DEFAULT_BASE_URL,
+            model_id="default",
+            api_key_env_var="LLM_API_KEY",
+            cost_per_1k_prompt=0.0,
+            cost_per_1k_completion=0.0,
+            tags=["local", "free"],
             is_default=True,
             is_ci_model=True,
-        ),
-        ModelProfile(
-            name="minimax-m2.7",
-            provider="applesay",
-            base_url=APPLEsay_BASE,
-            model_id="MiniMax-M2.7",
-            api_key_env_var="APPLEsay_API_KEY",
-            cost_per_1k_prompt=0.0015,
-            cost_per_1k_completion=0.0045,
-            tags=["balanced", "multilingual", "large-context"],
-        ),
-        ModelProfile(
-            name="qwen3-max",
-            provider="applesay",
-            base_url=APPLEsay_BASE,
-            model_id="qwen3-max-2026-01-23",
-            api_key_env_var="APPLEsay_API_KEY",
-            cost_per_1k_prompt=0.001,
-            cost_per_1k_completion=0.003,
-            tags=["reasoning", "long-context"],
-        ),
-        ModelProfile(
-            name="glm-5",
-            provider="applesay",
-            base_url=APPLEsay_BASE,
-            model_id="glm-5",
-            api_key_env_var="APPLEsay_API_KEY",
-            cost_per_1k_prompt=0.001,
-            cost_per_1k_completion=0.003,
-            tags=["reasoning", "chinese-optimized"],
         ),
     ]
 

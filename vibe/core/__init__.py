@@ -1,0 +1,28 @@
+"""Core modules for vibe-agent: LLM gateway, query loop, configuration, and error recovery."""
+
+__all__ = [
+    "VibeConfig",
+    "LLMConfig",
+    "FallbackConfig",
+    "CompactorConfig",
+    "QueryLoopConfig",
+    "RetryConfig",
+    "EvalConfig",
+    "LLMClient",
+    "LLMResponse",
+    "ErrorType",
+    "CircuitBreaker",
+    "CircuitBreakerState",
+    "QueryLoop",
+    "QueryState",
+    "QueryResult",
+    "Message",
+    "Metrics",
+    "QueryLoopFactory",
+    "ContextCompactor",
+    "CompactionResult",
+    "SummarizationStrategy",
+    "ErrorRecovery",
+    "RetryPolicy",
+    "ModelHealthChecker",
+]

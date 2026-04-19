@@ -9,7 +9,7 @@ import json
 import statistics
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -244,7 +244,7 @@ class MultiModelRunner:
             best_by_tag[tag] = best_model
 
         scorecard = Scorecard(
-            timestamp=datetime.utcnow().isoformat(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
             eval_suite_version="unknown",
             models=model_results,
             by_tag=by_tag,
@@ -290,7 +290,7 @@ class MultiModelRunner:
 
     def save_scorecard(self, scorecard: Scorecard, path: Optional[str] = None) -> str:
         """Save scorecard to JSON and Markdown."""
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         output_dir = Path.home() / ".vibe" / "scorecards"
         output_dir.mkdir(parents=True, exist_ok=True)
 

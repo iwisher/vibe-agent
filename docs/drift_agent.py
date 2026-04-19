@@ -12,8 +12,8 @@ async def run_drift_agent():
     inspects them for docstring mismatches, and writes a report.
     """
     llm = LLMClient(
-        base_url="http://ai-api.applesay.cn",
-        model="qwen3.5-plus",
+        base_url="http://localhost:11434",
+        model="default",
     )
 
     ts = ToolSystem()

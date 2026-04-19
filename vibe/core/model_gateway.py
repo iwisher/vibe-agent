@@ -3,10 +3,14 @@ import os
 import time
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import httpx
 from vibe.core.error_recovery import ErrorRecovery, RetryPolicy
+
+
+RequestHook = Callable[[Dict[str, Any], str], None]
+ResponseHook = Callable[["LLMResponse", str], None]
 
 
 class ErrorType(Enum):
@@ -97,14 +101,16 @@ class LLMClient:
 
     def __init__(
         self,
-        base_url: str = "http://ai-api.applesay.cn",
-        model: str = "qwen3.5-plus",
+        base_url: str = "http://localhost:11434",
+        model: str = "default",
         api_key: Optional[str] = None,
         timeout: float = 300.0,
         retry_policy: Optional[RetryPolicy] = None,
         fallback_chain: Optional[List[str]] = None,
         auto_fallback: bool = False,
         circuit_breaker: Optional[CircuitBreaker] = None,
+        on_request: Optional[RequestHook] = None,
+        on_response: Optional[ResponseHook] = None,
     ):
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -115,6 +121,8 @@ class LLMClient:
         self.fallback_chain = fallback_chain or []
         self.auto_fallback = auto_fallback
         self.circuit_breaker = circuit_breaker or CircuitBreaker()
+        self.on_request = on_request
+        self.on_response = on_response
 
     def _get_headers(self) -> Dict[str, str]:
         headers = {"Content-Type": "application/json"}
@@ -165,10 +173,6 @@ class LLMClient:
                 ErrorType.MODEL_UNAVAILABLE,
                 ErrorType.AUTHENTICATION_ERROR,  # 401/403 may indicate model-specific unavailability
             ):
-                # Check for Applesay-specific unavailability message
-                if result.error and ("无可用渠道" in result.error or "no available channel" in result.error.lower()):
-                    last_error = result
-                    continue
                 # Fallback on all 4xx/5xx except rate limit (429)
                 if result.error_type != ErrorType.RATE_LIMIT_ERROR:
                     last_error = result
@@ -212,6 +216,9 @@ class LLMClient:
                 payload["tools"] = tools
                 payload["tool_choice"] = tool_choice
 
+            if self.on_request:
+                self.on_request(payload, model)
+
             response = await self.client.post(
                 f"{self.base_url}/v1/chat/completions",
                 json=payload,
@@ -231,7 +238,10 @@ class LLMClient:
             )
 
         try:
-            return await self.recovery.execute_with_retry(_make_request)
+            result = await self.recovery.execute_with_retry(_make_request)
+            if self.on_response:
+                self.on_response(result, model)
+            return result
         except httpx.HTTPStatusError as e:
             status = e.response.status_code
             error_type = ErrorType.HTTP_ERROR
@@ -242,33 +252,45 @@ class LLMClient:
             elif status >= 500:
                 error_type = ErrorType.SERVER_ERROR
 
-            return LLMResponse(
+            result = LLMResponse(
                 content="",
                 error=str(e),
                 error_type=error_type,
                 actionable_hint=self.recovery.handle_error(e),
             )
+            if self.on_response:
+                self.on_response(result, model)
+            return result
         except httpx.TimeoutException as e:
-            return LLMResponse(
+            result = LLMResponse(
                 content="",
                 error=str(e),
                 error_type=ErrorType.TIMEOUT_ERROR,
                 actionable_hint=self.recovery.handle_error(e),
             )
+            if self.on_response:
+                self.on_response(result, model)
+            return result
         except (httpx.NetworkError, httpx.ConnectError) as e:
-            return LLMResponse(
+            result = LLMResponse(
                 content="",
                 error=str(e),
                 error_type=ErrorType.NETWORK_ERROR,
                 actionable_hint=self.recovery.handle_error(e),
             )
+            if self.on_response:
+                self.on_response(result, model)
+            return result
         except Exception as e:
-            return LLMResponse(
+            result = LLMResponse(
                 content="",
                 error=str(e),
                 error_type=ErrorType.UNKNOWN_ERROR,
                 actionable_hint=self.recovery.handle_error(e),
             )
+            if self.on_response:
+                self.on_response(result, model)
+            return result
 
     async def structured_output(
         self,

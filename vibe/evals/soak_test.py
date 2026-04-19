@@ -12,7 +12,7 @@ import statistics
 import sys
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -164,7 +164,7 @@ class SoakTestRunner:
                     self.obs.gauge("soak_tokens", total_tokens, labels={"case_id": case.id})
 
                 snapshot = SoakSnapshot(
-                    timestamp=datetime.utcnow().isoformat(),
+                    timestamp=datetime.now(timezone.utc).isoformat(),
                     loop_iteration=loop_iteration,
                     case_id=case.id,
                     passed=result.passed,
@@ -179,7 +179,7 @@ class SoakTestRunner:
             except Exception as e:
                 latency = time.time() - snapshot_start
                 snapshot = SoakSnapshot(
-                    timestamp=datetime.utcnow().isoformat(),
+                    timestamp=datetime.now(timezone.utc).isoformat(),
                     loop_iteration=loop_iteration,
                     case_id=case.id,
                     passed=False,
@@ -315,7 +315,7 @@ class SoakTestRunner:
         return report
 
     def _save_report(self, report: SoakReport):
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         report_path = self.output_dir / f"soak_report_{self.model.replace('/', '_')}_{timestamp}.json"
 
         report_dict = {

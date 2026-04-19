@@ -1,3 +1,28 @@
 __pycache__/
 *.py[cod]
 .DS_Store
+
+# Environment & virtual environments
+.env
+.venv/
+venv/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Project-specific
+~/.vibe/
+*.db

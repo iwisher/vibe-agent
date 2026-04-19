@@ -11,7 +11,7 @@ from collections import defaultdict
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -187,11 +187,11 @@ class Observability:
 
     def export_metrics(self, path: Optional[str] = None) -> str:
         """Export metrics as JSON. Returns file path."""
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         path = path or str(self.output_dir / f"metrics_{timestamp}.json")
 
         data = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "counters": dict(self._counters),
             "gauges": dict(self._gauges),
             "histograms": {
@@ -216,7 +216,7 @@ class Observability:
 
     def export_trace(self, path: Optional[str] = None) -> str:
         """Export trace spans as JSON. Returns file path."""
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         path = path or str(self.output_dir / f"trace_{timestamp}.json")
 
         data = {
@@ -245,7 +245,7 @@ class Observability:
 
     def export_all(self, prefix: Optional[str] = None) -> Dict[str, str]:
         """Export both metrics and traces."""
-        prefix = prefix or datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        prefix = prefix or datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         return {
             "metrics": self.export_metrics(str(self.output_dir / f"metrics_{prefix}.json")),
             "trace": self.export_trace(str(self.output_dir / f"trace_{prefix}.json")),

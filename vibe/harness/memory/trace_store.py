@@ -4,7 +4,7 @@ import json
 import sqlite3
 import pickle
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -89,7 +89,7 @@ class TraceStore:
         error: Optional[str] = None,
     ) -> None:
         with sqlite3.connect(self.db_path) as conn:
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             conn.execute(
                 "INSERT OR REPLACE INTO sessions (id, start_time, end_time, success, model, error) VALUES (?, ?, ?, ?, ?, ?)",
                 (session_id, now, now, int(success), model, error),

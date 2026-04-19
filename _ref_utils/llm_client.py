@@ -52,7 +52,7 @@ class LLMResponse:
 class LLMClient:
     """Client for LLM API."""
 
-    def __init__(self, base_url: str = "http://ai-api.applesay.cn", model: str = "qwen3.5-plus", api_key: Optional[str] = "sk-WAEUwVx1GmT3C2CREbBc2fD53fEf4dB6A373773d28CfAfA6"):
+    def __init__(self, base_url: str = "http://localhost:11434", model: str = "default", api_key: Optional[str] = None):
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.api_key = api_key

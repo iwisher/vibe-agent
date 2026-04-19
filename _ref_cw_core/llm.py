@@ -19,8 +19,8 @@ class LLMClient:
     
     def __init__(
         self,
-        base_url: str = "http://ai-api.applesay.cn",
-        model: str = "qwen3.5-plus",
+        base_url: str = "http://localhost:11434",
+        model: str = "default",
         api_key: Optional[str] = None,
     ):
         self.base_url = base_url.rstrip("/")

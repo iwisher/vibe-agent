@@ -173,42 +173,44 @@
 
 ---
 
-## Phase 5: Decoupling & Polish (Low) 🟢
+## Phase 5: Decoupling & Polish (Low) ✅
 
 **Goal:** Remove vendor lock-in, improve configurability, and clean up.
-**Estimated effort:** ~4 hours  
+**Status:** Completed (`e4fbd0c`)  
 **Rationale:** These are nice-to-haves that improve the project's professionalism.
 
-### 5.1 Remove hardcoded Applesay defaults
-- Remove `base_url="http://ai-api.applesay.cn"` from `config.py`, `model_gateway.py`, `health_check.py`
-- Remove `model="qwen3.5-plus"` hardcoded default
-- Remove `"无可用渠道"` checks (use HTTP status codes instead)
-- Keep a neutral default (e.g., `http://localhost:11434` for Ollama or require env var)
-- **Tests:** Add `test_config_001_requires_explicit_url`, `test_model_gateway_002_provider_agnostic`
+### 5.1 Remove hardcoded Applesay defaults ✅
+- Removed `base_url="http://ai-api.applesay.cn"` from `config.py`, `model_gateway.py`, `health_check.py`
+- Removed `model="qwen3.5-plus"` hardcoded default (now `default`)
+- Removed `"无可用渠道"` checks (using HTTP status codes instead)
+- Neutral default: `http://localhost:11434` for Ollama
+- Removed all 6 Applesay profiles from `ModelRegistry`; replaced with single `default` Ollama profile
+- Updated `run_e2e_evals.py`, `_ref_utils/`, `_ref_cw_core/`, `docs/` to neutral defaults
 
-### 5.2 Configurability improvements
-- Move magic numbers to `VibeConfig`:
-  - `context_compactor.py`: `max_chars`, `keep_n_messages`
-  - `query_loop.py`: `feedback_threshold`, `max_feedback_retries`
-  - `query_loop_factory.py`: `timeout`, `max_iterations`
-- Add validation (pydantic or dataclass constraints)
+### 5.2 Configurability improvements ✅
+- Moved magic numbers to `VibeConfig`:
+  - `CompactorConfig`: `max_tokens`, `chars_per_token`, `preserve_recent`, `max_chars_per_msg`
+  - `QueryLoopConfig`: `feedback_threshold`, `max_feedback_retries`, `max_iterations`, `max_context_tokens`
+  - `RetryConfig`: `max_retries`, `initial_delay`
+- All configs support env-var overrides (`VIBE_*` prefix)
+- Added `__post_init__` validation for all new dataclasses
 
-### 5.3 Replace deprecated `datetime.utcnow()`
-- Global find/replace with `datetime.now(timezone.utc)`
+### 5.3 Replace deprecated `datetime.utcnow()` ✅
+- Global replacement with `datetime.now(timezone.utc)` in 5 files
 
-### 5.4 Add missing .gitignore entries
-- `.env`, `.venv/`, `dist/`, `build/`, `.pytest_cache/`
+### 5.4 Add missing .gitignore entries ✅
+- `.env`, `.venv/`, `dist/`, `build/`, `.pytest_cache/`, `.coverage`, `htmlcov/`, `.vscode/`, `.idea/`
 
-### 5.5 Add `__all__` to package `__init__.py` files
+### 5.5 Add `__all__` to package `__init__.py` files ✅
 - `vibe/core/__init__.py`, `vibe/tools/__init__.py`, `vibe/harness/__init__.py`
 
-### 5.6 Add request/response logging hooks to LLMClient
-- Optional `on_request` / `on_response` callbacks for debugging
+### 5.6 Add request/response logging hooks to LLMClient ✅
+- Optional `on_request` / `on_response` callbacks for debugging and observability
 
 **Phase 5 exit criteria:**
-- No hardcoded vendor URLs in source
-- All magic numbers configurable
-- Clean git status
+- ✅ No hardcoded vendor URLs in source
+- ✅ All magic numbers configurable
+- ✅ Clean git status
 
 ---
 

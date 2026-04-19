@@ -38,12 +38,22 @@ class ContextCompactor:
         strategy: SummarizationStrategy = SummarizationStrategy.TRUNCATE,
         summarize_fn: Optional[Callable[[List[Dict[str, Any]]], Coroutine[Any, Any, str]]] = None,
         preserve_recent: int = 4,
+        max_chars_per_msg: int = 4000,
+        config: Optional[Any] = None,
     ):
+        if config is not None:
+            # Support passing a CompactorConfig or VibeConfig directly
+            cfg = getattr(config, "compactor", config)
+            max_tokens = getattr(cfg, "max_tokens", max_tokens)
+            chars_per_token = getattr(cfg, "chars_per_token", chars_per_token)
+            preserve_recent = getattr(cfg, "preserve_recent", preserve_recent)
+            max_chars_per_msg = getattr(cfg, "max_chars_per_msg", max_chars_per_msg)
         self.max_tokens = max_tokens
         self.chars_per_token = chars_per_token
         self.strategy = strategy
         self.summarize_fn = summarize_fn
         self.preserve_recent = preserve_recent
+        self.max_chars_per_msg = max_chars_per_msg
         self._encoding = _get_encoding()
 
     def estimate_tokens(self, messages: List[Dict[str, Any]]) -> int:
@@ -142,9 +152,10 @@ class ContextCompactor:
             strategy_used="summarize_middle",
         )
 
-    def _truncate(self, message: Dict[str, Any], max_chars: int = 4000) -> Dict[str, Any]:
+    def _truncate(self, message: Dict[str, Any], max_chars: Optional[int] = None) -> Dict[str, Any]:
+        limit = max_chars if max_chars is not None else self.max_chars_per_msg
         content = message.get("content", "")
-        if isinstance(content, str) and len(content) > max_chars:
-            truncated = content[:max_chars] + f"\n\n[Truncated from {len(content)} chars]"
+        if isinstance(content, str) and len(content) > limit:
+            truncated = content[:limit] + f"\n\n[Truncated from {len(content)} chars]"
             return {**message, "content": truncated}
         return message

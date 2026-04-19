@@ -77,7 +77,27 @@ class QueryLoop:
         mcp_bridge: Optional[MCPBridge] = None,
         context_planner: Optional[ContextPlanner] = None,
         trace_store: Optional[Any] = None,
+        config: Optional[Any] = None,
     ):
+        # Allow VibeConfig to override individual parameters
+        if config is not None:
+            ql_cfg = getattr(config, "query_loop", None)
+            if ql_cfg is not None:
+                feedback_threshold = getattr(ql_cfg, "feedback_threshold", feedback_threshold)
+                max_feedback_retries = getattr(ql_cfg, "max_feedback_retries", max_feedback_retries)
+                max_iterations = getattr(ql_cfg, "max_iterations", max_iterations)
+                max_context_tokens = getattr(ql_cfg, "max_context_tokens", max_context_tokens)
+            retry_cfg = getattr(config, "retry", None)
+            if retry_cfg is not None and error_recovery is None:
+                error_recovery = ErrorRecovery(
+                    RetryPolicy(
+                        max_retries=getattr(retry_cfg, "max_retries", 2),
+                        initial_delay=getattr(retry_cfg, "initial_delay", 1.0),
+                    )
+                )
+            if context_compactor is None:
+                context_compactor = ContextCompactor(max_tokens=max_context_tokens, config=config)
+
         self.llm = llm_client
         self.tools = tool_system
         self.compactor = context_compactor or ContextCompactor(max_tokens=max_context_tokens)

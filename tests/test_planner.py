@@ -96,13 +96,13 @@ def test_planner_uses_trace_store_memory():
             ],
             tool_results=[],
             success=True,
-            model="qwen3.5-plus",
+            model="default",
         )
         planner = ContextPlanner(trace_store=store)
         request = PlanRequest(query="help with rust programming")
         result = planner.plan(request)
         assert "Historical Context" in result.system_prompt_append
-        assert "qwen3.5-plus" in result.system_prompt_append
+        assert "default" in result.system_prompt_append
 
 
 # ─── Phase 2 eval-style planner tests ───

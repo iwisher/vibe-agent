@@ -23,31 +23,38 @@ class TestVibeConfigLoad:
         config_path = tmp_path / "config.yaml"
         cfg = VibeConfig.load(path=config_path, auto_create=True)
         assert config_path.exists()
-        assert cfg.llm.default_model == "qwen3.5-plus"
+        assert cfg.llm.default_model == "default"
+        assert cfg.llm.base_url == "http://localhost:11434"
         assert cfg.fallback.enabled is True
-        assert "qwen3.5-plus" in cfg.fallback.chain
+        assert "default" in cfg.fallback.chain
 
     def test_load_existing_config(self, tmp_path):
         config_path = tmp_path / "config.yaml"
         config_path.write_text(
-            "llm:\n  default_model: minimax-m2.5\n  timeout: 60.0\n",
+            "llm:\n  default_model: model-a\n  timeout: 60.0\n",
             encoding="utf-8",
         )
         cfg = VibeConfig.load(path=config_path, auto_create=False)
-        assert cfg.llm.default_model == "minimax-m2.5"
+        assert cfg.llm.default_model == "model-a"
         assert cfg.llm.timeout == 60.0
 
     def test_env_override_model(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("VIBE_MODEL", "kimi-k2.5")
+        monkeypatch.setenv("VIBE_MODEL", "model-b")
         config_path = tmp_path / "config.yaml"
         cfg = VibeConfig.load(path=config_path, auto_create=True)
-        assert cfg.llm.default_model == "kimi-k2.5"
+        assert cfg.llm.default_model == "model-b"
 
     def test_env_override_timeout(self, tmp_path, monkeypatch):
         monkeypatch.setenv("VIBE_TIMEOUT", "90")
         config_path = tmp_path / "config.yaml"
         cfg = VibeConfig.load(path=config_path, auto_create=True)
         assert cfg.llm.timeout == 90.0
+
+    def test_env_override_base_url(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("VIBE_BASE_URL", "http://my-server:8080")
+        config_path = tmp_path / "config.yaml"
+        cfg = VibeConfig.load(path=config_path, auto_create=True)
+        assert cfg.llm.base_url == "http://my-server:8080"
 
     def test_env_override_fallback_chain(self, tmp_path, monkeypatch):
         monkeypatch.setenv("VIBE_FALLBACK_CHAIN", "a,b,c")
@@ -77,8 +84,8 @@ class TestVibeConfigLoad:
     def test_set_resolved_model(self, tmp_path):
         config_path = tmp_path / "config.yaml"
         cfg = VibeConfig.load(path=config_path, auto_create=True)
-        cfg.set_resolved_model("minimax-m2.5")
-        assert cfg.resolved_model == "minimax-m2.5"
+        cfg.set_resolved_model("model-x")
+        assert cfg.resolved_model == "model-x"
 
 
 class TestFallbackChain:
@@ -86,29 +93,29 @@ class TestFallbackChain:
         config_path = tmp_path / "config.yaml"
         cfg = VibeConfig.load(path=config_path, auto_create=True)
         chain = cfg.get_fallback_chain()
-        assert chain[0] == "qwen3.5-plus"
-        assert "kimi-k2.5" in chain
+        assert chain[0] == "default"
+        assert "default" in chain
 
     def test_get_fallback_chain_disabled(self, tmp_path):
         config_path = tmp_path / "config.yaml"
         config_path.write_text(
-            "llm:\n  default_model: qwen3.5-plus\nfallback:\n  enabled: false\n",
+            "llm:\n  default_model: model-a\nfallback:\n  enabled: false\n",
             encoding="utf-8",
         )
         cfg = VibeConfig.load(path=config_path, auto_create=False)
         chain = cfg.get_fallback_chain()
-        assert chain == ["qwen3.5-plus"]
+        assert chain == ["model-a"]
 
     def test_default_model_inserted_if_not_in_chain(self, tmp_path):
         config_path = tmp_path / "config.yaml"
         config_path.write_text(
-            "llm:\n  default_model: glm-5\nfallback:\n  chain:\n    - minimax-m2.5\n",
+            "llm:\n  default_model: model-b\nfallback:\n  chain:\n    - model-a\n",
             encoding="utf-8",
         )
         cfg = VibeConfig.load(path=config_path, auto_create=False)
         chain = cfg.get_fallback_chain()
-        assert chain[0] == "glm-5"
-        assert "minimax-m2.5" in chain
+        assert chain[0] == "model-b"
+        assert "model-a" in chain
 
 
 class TestParseHelpers:
@@ -167,13 +174,12 @@ class TestParseHelpers:
 
 class TestResolveApiKey:
     def test_resolve_from_configured_env_var(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("APPLEsay_API_KEY", "sk-test")
+        monkeypatch.setenv("LLM_API_KEY", "sk-test")
         config_path = tmp_path / "config.yaml"
         cfg = VibeConfig.load(path=config_path, auto_create=True)
         assert cfg.resolve_api_key() == "sk-test"
 
     def test_resolve_fallback_to_llm_api_key(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("APPLEsay_API_KEY", raising=False)
         monkeypatch.setenv("LLM_API_KEY", "sk-fallback")
         config_path = tmp_path / "config.yaml"
         cfg = VibeConfig.load(path=config_path, auto_create=True)

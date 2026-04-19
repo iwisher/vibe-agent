@@ -28,6 +28,7 @@ class QueryLoopFactory:
         with_compactor: bool = False,
         with_error_recovery: bool = False,
         with_hooks: bool = False,
+        config: Optional[Any] = None,
     ):
         self.base_url = base_url
         self.model = model
@@ -40,6 +41,7 @@ class QueryLoopFactory:
         self.with_compactor = with_compactor
         self.with_error_recovery = with_error_recovery
         self.with_hooks = with_hooks
+        self.config = config
 
     def create_llm(self) -> LLMClient:
         kwargs: Dict[str, Any] = {
@@ -55,8 +57,13 @@ class QueryLoopFactory:
 
     def create_tool_system(self) -> ToolSystem:
         tool_system = ToolSystem()
+        bash_timeout = 120
+        if self.config is not None:
+            llm_cfg = getattr(self.config, "llm", None)
+            if llm_cfg is not None:
+                bash_timeout = getattr(llm_cfg, "timeout", 120)
         tool_system.register_tool(
-            BashTool(sandbox=BashSandbox(working_dir=self.working_dir, timeout=120))
+            BashTool(sandbox=BashSandbox(working_dir=self.working_dir, timeout=bash_timeout))
         )
         tool_system.register_tool(ReadFileTool())
         tool_system.register_tool(WriteFileTool())
@@ -74,28 +81,48 @@ class QueryLoopFactory:
             kwargs["max_context_tokens"] = self.max_context_tokens
         if self.with_compactor:
             kwargs["context_compactor"] = ContextCompactor(
-                max_tokens=self.max_context_tokens or 12000
+                max_tokens=self.max_context_tokens or 12000,
+                config=self.config,
             )
         if self.with_error_recovery:
-            kwargs["error_recovery"] = ErrorRecovery(
-                RetryPolicy(max_retries=2, initial_delay=1.0)
-            )
+            retry_cfg = getattr(self.config, "retry", None) if self.config else None
+            if retry_cfg is not None:
+                kwargs["error_recovery"] = ErrorRecovery(
+                    RetryPolicy(
+                        max_retries=getattr(retry_cfg, "max_retries", 2),
+                        initial_delay=getattr(retry_cfg, "initial_delay", 1.0),
+                    )
+                )
+            else:
+                kwargs["error_recovery"] = ErrorRecovery(
+                    RetryPolicy(max_retries=2, initial_delay=1.0)
+                )
         if self.with_hooks:
             kwargs["hook_pipeline"] = HookPipeline()
+        if self.config is not None:
+            kwargs["config"] = self.config
         return QueryLoop(**kwargs)
 
     @classmethod
-    def from_profile(cls, profile, working_dir: str = "/tmp") -> "QueryLoopFactory":
+    def from_profile(cls, profile, working_dir: str = "/tmp", config: Optional[Any] = None) -> "QueryLoopFactory":
         """Create a factory from a ModelProfile (used by multi-model runner)."""
+        max_iterations = 15
+        max_context_tokens = 16000
+        if config is not None:
+            ql_cfg = getattr(config, "query_loop", None)
+            if ql_cfg is not None:
+                max_iterations = getattr(ql_cfg, "max_iterations", max_iterations)
+                max_context_tokens = getattr(ql_cfg, "max_context_tokens", max_context_tokens)
         return cls(
             base_url=profile.base_url,
             model=profile.model_id,
             api_key=profile.resolve_api_key(),
             working_dir=working_dir,
             timeout=profile.timeout,
-            max_iterations=15,
-            max_context_tokens=16000,
+            max_iterations=max_iterations,
+            max_context_tokens=max_context_tokens,
             with_compactor=True,
             with_error_recovery=True,
             with_hooks=True,
+            config=config,
         )

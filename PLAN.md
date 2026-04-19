@@ -12,7 +12,7 @@
 | Eval runner core | `vibe/evals/runner.py` | ✅ With `stdout_contains` bugfix |
 | Eval store (SQLite) | `vibe/harness/memory/eval_store.py` | ✅ |
 | 10 builtin eval cases | `vibe/evals/builtin/*.yaml` | ✅ |
-| **Model Registry** | `vibe/evals/model_registry.py` | ✅ Skeleton — 6 applesay profiles |
+| **Model Registry** | `vibe/evals/model_registry.py` | ✅ Skeleton — 1 default Ollama profile |
 | **Multi-Model Runner** | `vibe/evals/multi_model_runner.py` | ✅ Skeleton — untested end-to-end |
 | **Soak Test** | `vibe/evals/soak_test.py` | ✅ Skeleton — untested |
 | **Observability** | `vibe/evals/observability.py` | ✅ Skeleton — untested |
@@ -24,13 +24,13 @@
 ### PHASE 1: Stabilize What Exists (No New Features)
 
 **1.0 Benchmark End-to-End Validation**
-- Run `qwen3.5-plus + kimi-k2.5 + minimax-m2.5` against all 10 cases
+- Run `default` model against all 10 cases
 - Fix any runtime bugs (API key flow, QueryLoop lifecycle, LLM errors)
 - Generate first real scorecard (JSON + Markdown)
-- Success: 3 models run, scorecard saved to `~/.vibe/scorecards/`
+- Success: model runs, scorecard saved to `~/.vibe/scorecards/`
 
 **1.1 Soak Test Short Run**
-- Run 10-minute soak with `qwen3.5-plus`
+- Run 10-minute soak with `default` model
 - Verify checkpoint JSONL writes correctly
 - Verify degradation detection works
 - Success: report + summary saved, no crashes
@@ -85,7 +85,7 @@
 ### PHASE 3: Multi-Model Benchmarking
 
 **3.1 Model Registry Hardening**
-- Test applesay models: qwen3.5-plus, kimi-k2.5, minimax-m2.5
+- Test default model via configurable endpoint
 - Add fallback chain: primary → same-provider → default
 - Cost estimation: token usage × cost_per_1k
 
@@ -221,7 +221,7 @@ PHASE 6: Soak (6.1–6.4)
 
 ## 💰 Budget / Cost Awareness
 
-- Applesay endpoint: all models share same API key
+- LLM endpoint: configure via `VIBE_BASE_URL` and `VIBE_MODEL`
 - Cost estimates built into ModelProfile
 - CI uses cheapest model by default
 - Soak test cost = (cases/min × minutes × avg_tokens × cost_per_1k)
