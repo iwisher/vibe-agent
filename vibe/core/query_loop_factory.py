@@ -86,10 +86,23 @@ class QueryLoopFactory:
         if self.max_context_tokens is not None:
             kwargs["max_context_tokens"] = self.max_context_tokens
         if self.with_compactor:
-            kwargs["context_compactor"] = ContextCompactor(
+            compactor = ContextCompactor(
                 max_tokens=self.max_context_tokens or 12000,
                 config=self.config,
             )
+            # Wire LLM summarization if the client supports it
+            if hasattr(llm, "acomplete"):
+                async def _summarize(msgs: list[dict[str, Any]]) -> str:
+                    summary_prompt = [
+                        {
+                            "role": "system",
+                            "content": "Summarize the following conversation concisely, preserving key facts, decisions, and action items.",
+                        },
+                        {"role": "user", "content": "\n".join(f"{m.get('role', 'user')}: {m.get('content', '')}" for m in msgs)},
+                    ]
+                    return await llm.acomplete(summary_prompt)
+                compactor.summarize_fn = _summarize
+            kwargs["context_compactor"] = compactor
         if self.with_error_recovery:
             retry_cfg = getattr(self.config, "retry", None) if self.config else None
             if retry_cfg is not None:

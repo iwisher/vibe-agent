@@ -1,6 +1,7 @@
 """Eval store and runner for harness hill-climbing."""
 
 import json
+import os
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -34,7 +35,13 @@ class EvalStore:
     """Loads evals from YAML and records results."""
 
     def __init__(self, db_path: str | None = None, evals_dir: str | None = None):
-        self.db_path = db_path or str(Path.home() / ".vibe" / "memory" / "evals.db")
+        if db_path is None:
+            base = os.environ.get("VIBE_MEMORY_DIR")
+            if base:
+                db_path = str(Path(base) / "evals.db")
+            else:
+                db_path = str(Path.home() / ".vibe" / "memory" / "evals.db")
+        self.db_path = db_path
         self.evals_dir = evals_dir or str(Path(__file__).parent.parent.parent / "evals" / "builtin")
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self._init_db()

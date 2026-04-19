@@ -15,10 +15,13 @@ from vibe.core.query_loop_factory import QueryLoopFactory
 from vibe.evals.model_registry import ModelRegistry
 from vibe.evals.runner import EvalRunner
 from vibe.harness.memory.eval_store import EvalStore
+from vibe.harness.memory.trace_store import TraceStore
 
 app = typer.Typer(help="Vibe Agent — an open agent harness platform")
 eval_app = typer.Typer(help="Run and manage evals")
 app.add_typer(eval_app, name="eval")
+memory_app = typer.Typer(help="Inspect stored traces and eval results")
+app.add_typer(memory_app, name="memory")
 console = Console()
 
 DEFAULT_CONFIG = VibeConfig.load()
@@ -175,6 +178,27 @@ def run_evals(
 
     if score < 1.0:
         raise typer.Exit(code=1)
+
+
+@memory_app.command("traces")
+def list_traces(
+    limit: int = typer.Option(20, "--limit", "-n", help="Max sessions to show"),
+):
+    """List recent trace sessions."""
+    store = TraceStore()
+    sessions = store.get_recent_sessions(limit=limit)
+    if not sessions:
+        console.print("[dim]No traces found.[/dim]")
+        return
+    table = Table(title="Recent Trace Sessions")
+    table.add_column("ID", style="cyan", no_wrap=True)
+    table.add_column("Start", style="dim")
+    table.add_column("Model", style="magenta")
+    table.add_column("Success", style="bold")
+    for s in sessions:
+        success = "[green]✓[/green]" if s.get("success") else "[red]✗[/red]"
+        table.add_row(s.get("id", "?"), s.get("start_time", "?"), s.get("model", "?"), success)
+    console.print(table)
 
 
 if __name__ == "__main__":

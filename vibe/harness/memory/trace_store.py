@@ -1,6 +1,7 @@
 """SQLite trace store for session logging."""
 
 import json
+import os
 import sqlite3
 import pickle
 from dataclasses import asdict
@@ -20,7 +21,13 @@ class TraceStore:
     """Stores execution traces in SQLite."""
 
     def __init__(self, db_path: str | None = None):
-        self.db_path = db_path or str(Path.home() / ".vibe" / "memory" / "traces.db")
+        if db_path is None:
+            base = os.environ.get("VIBE_MEMORY_DIR")
+            if base:
+                db_path = str(Path(base) / "traces.db")
+            else:
+                db_path = str(Path.home() / ".vibe" / "memory" / "traces.db")
+        self.db_path = db_path
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self._model = None
         self._init_db()
@@ -217,6 +224,10 @@ class TraceStore:
 
         sorted_sessions = sorted(scored.values(), key=lambda x: x["score"], reverse=True)
         return [{k: v for k, v in s.items() if k != "score"} for s in sorted_sessions[:limit]]
+
+    def get_recent_sessions(self, limit: int = 20) -> list[dict[str, Any]]:
+        """Return recent sessions ordered by start time descending."""
+        return self.get_sessions(limit=limit)
 
     def get_sessions(self, limit: int = 100, success: bool | None = None) -> list[dict[str, Any]]:
         with sqlite3.connect(self.db_path) as conn:
