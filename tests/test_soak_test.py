@@ -89,6 +89,9 @@ class TestSoakReport:
             p99_latency=3.0,
             avg_tokens_per_case=150.0,
             tokens_per_second=125.0,
+            rss_start_mb=100.0,
+            rss_end_mb=105.0,
+            rss_delta_mb=5.0,
             error_count=2,
             unique_errors={"timeout": 2},
             degradation_detected=False,
@@ -129,6 +132,9 @@ class TestSoakReport:
             p99_latency=0.0,
             avg_tokens_per_case=0.0,
             tokens_per_second=0.0,
+            rss_start_mb=0.0,
+            rss_end_mb=0.0,
+            rss_delta_mb=0.0,
             error_count=0,
             unique_errors={},
             degradation_detected=False,
@@ -148,6 +154,9 @@ class TestSoakReport:
             p99_latency=0.0,
             avg_tokens_per_case=0.0,
             tokens_per_second=0.0,
+            rss_start_mb=0.0,
+            rss_end_mb=0.0,
+            rss_delta_mb=0.0,
             error_count=0,
             unique_errors={},
             degradation_detected=False,
@@ -380,6 +389,9 @@ class TestGenerateReport:
         assert report.error_count == 0
         assert report.unique_errors == {}
         assert report.degradation_detected is False
+        assert report.rss_start_mb == 0.0
+        assert report.rss_end_mb == 0.0
+        assert report.rss_delta_mb == 0.0
         assert report.snapshots == []
 
     def test_computes_correct_metrics(self, runner):
@@ -539,6 +551,9 @@ class TestPrintReport:
             p99_latency=3.7,
             avg_tokens_per_case=150.0,
             tokens_per_second=125.0,
+            rss_start_mb=100.0,
+            rss_end_mb=110.0,
+            rss_delta_mb=10.0,
             error_count=5,
             unique_errors={"timeout": 3, "rate_limit": 2},
             degradation_detected=True,
@@ -573,6 +588,9 @@ class TestPrintReport:
             p99_latency=1.0,
             avg_tokens_per_case=100.0,
             tokens_per_second=200.0,
+            rss_start_mb=50.0,
+            rss_end_mb=52.0,
+            rss_delta_mb=2.0,
             error_count=0,
             unique_errors={},
             degradation_detected=False,

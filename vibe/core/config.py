@@ -6,10 +6,12 @@ Decoupled from Hermes config. Loads from ~/.vibe/config.yaml with env overrides.
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, Optional
 
 import yaml
 from yaml import YAMLError
+
+from vibe.core.provider_registry import ProviderProfile, ProviderRegistry
 
 
 DEFAULT_CONFIG_PATH = Path.home() / ".vibe" / "config.yaml"
@@ -149,9 +151,12 @@ class VibeConfig:
     query_loop: QueryLoopConfig = field(default_factory=QueryLoopConfig)
     retry: RetryConfig = field(default_factory=RetryConfig)
     eval: EvalConfig = field(default_factory=EvalConfig)
+    providers: ProviderRegistry = field(default_factory=ProviderRegistry)
+    # Raw model configs for eval infrastructure (see vibe/evals/model_registry.py)
+    models: Dict[str, Any] = field(default_factory=dict)
 
     # Track the actual model resolved after health-check fallback
-    resolved_model: str | None = None
+    resolved_model: Optional[str] = None
 
     def set_resolved_model(self, model: str) -> None:
         """Record the actual model used after fallback resolution."""
@@ -268,6 +273,14 @@ class VibeConfig:
             ),
         )
 
+        # Parse providers (new multi-provider config)
+        providers = _parse_providers(raw.get("providers", {}), llm)
+
+        # Raw model configs for eval infrastructure
+        models = raw.get("models", {})
+        if not isinstance(models, dict):
+            models = {}
+
         return cls(
             llm=llm,
             fallback=fallback,
@@ -275,6 +288,28 @@ class VibeConfig:
             query_loop=query_loop,
             retry=retry,
             eval=eval_cfg,
+            providers=providers,
+            models=models,
+        )
+
+    def get_default_provider(self) -> ProviderProfile | None:
+        """Return the default provider for backward compatibility.
+
+        If providers are configured, returns the first registered provider.
+        Otherwise falls back to creating one from llm settings.
+        """
+        providers = self.providers.list_providers()
+        if providers:
+            return self.providers.get(providers[0])
+        # Backward compat: synthesize a provider from llm settings
+        return ProviderProfile(
+            name="default",
+            base_url=self.llm.base_url,
+            adapter_type="openai",
+            api_key=self.llm.api_key,
+            api_key_env_var=self.llm.api_key_env_var,
+            timeout=self.llm.timeout,
+            default_model=self.llm.default_model,
         )
 
     def resolve_api_key(self) -> str | None:
@@ -292,6 +327,46 @@ class VibeConfig:
         if self.llm.default_model not in chain:
             chain.insert(0, self.llm.default_model)
         return chain
+
+
+def _parse_providers(raw_providers: dict[str, Any], llm: LLMConfig) -> ProviderRegistry:
+    """Build ProviderRegistry from config YAML.
+
+    If no providers are explicitly configured, synthesizes a default provider
+    from the legacy llm settings for backward compatibility.
+    """
+    if not raw_providers:
+        # Backward compat: create a single provider from llm config
+        return ProviderRegistry({
+            "default": ProviderProfile(
+                name="default",
+                base_url=llm.base_url,
+                adapter_type="openai",
+                api_key=llm.api_key,
+                api_key_env_var=llm.api_key_env_var,
+                timeout=llm.timeout,
+                default_model=llm.default_model,
+            )
+        })
+
+    providers: dict[str, ProviderProfile] = {}
+    for name, cfg in raw_providers.items():
+        if not isinstance(cfg, dict):
+            raise ValueError(f"Provider '{name}' must be a mapping, got {type(cfg).__name__}")
+        base_url = cfg.get("base_url")
+        if not base_url:
+            raise ValueError(f"Provider '{name}' is missing required 'base_url'")
+        providers[name] = ProviderProfile(
+            name=name,
+            base_url=base_url,
+            adapter_type=cfg.get("adapter", "openai"),
+            api_key=cfg.get("api_key"),
+            api_key_env_var=cfg.get("api_key_env_var", "LLM_API_KEY"),
+            timeout=float(cfg.get("timeout", 120.0)),
+            default_model=cfg.get("default_model"),
+            extra_headers=cfg.get("extra_headers", {}),
+        )
+    return ProviderRegistry(providers)
 
 
 def _parse_bool(value: str) -> bool:

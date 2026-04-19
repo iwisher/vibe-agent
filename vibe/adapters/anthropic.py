@@ -5,10 +5,11 @@ Also works with proxies that expose Anthropic-compatible endpoints
 (e.g., Kimi coding endpoint when used with Anthropic SDK format).
 """
 
+import json
 from typing import Any, Dict, List, Optional, Tuple
 
 from vibe.adapters.base import BaseLLMAdapter
-from vibe.core.model_gateway import LLMResponse
+from vibe.core.llm_types import LLMResponse
 
 
 class AnthropicAdapter(BaseLLMAdapter):
@@ -23,12 +24,15 @@ class AnthropicAdapter(BaseLLMAdapter):
         max_tokens: Optional[int] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: str = "auto",
+        api_key: Optional[str] = None,
     ) -> Tuple[str, Dict[str, str], Dict[str, Any]]:
-        url = f"{base_url.rstrip("/")}/v1/messages"
+        url = f"{base_url.rstrip('/')}/v1/messages"
         headers = {
             "Content-Type": "application/json",
             "anthropic-version": "2023-06-01",
         }
+        if api_key:
+            headers["x-api-key"] = api_key
 
         system_content, remaining_messages = self.extract_system_messages(messages)
 
@@ -42,7 +46,7 @@ class AnthropicAdapter(BaseLLMAdapter):
             payload["system"] = system_content
         if tools:
             payload["tools"] = self._convert_tools(tools)
-            payload["tool_choice"] = {"type": tool_choice} if tool_choice != "auto" else {"type": "auto"}
+            payload["tool_choice"] = self._map_tool_choice(tool_choice)
 
         return url, headers, payload
 
@@ -56,12 +60,15 @@ class AnthropicAdapter(BaseLLMAdapter):
             if block_type == "text":
                 text_parts.append(block.get("text", ""))
             elif block_type == "tool_use":
+                tool_input = block.get("input", {})
+                # Serialize dict input to JSON string to match OpenAI format
+                arguments = json.dumps(tool_input) if isinstance(tool_input, dict) else str(tool_input)
                 tool_calls.append({
                     "id": block.get("id"),
                     "type": "function",
                     "function": {
                         "name": block.get("name"),
-                        "arguments": block.get("input", {}),
+                        "arguments": arguments,
                     },
                 })
 
@@ -77,14 +84,16 @@ class AnthropicAdapter(BaseLLMAdapter):
             tool_calls=tool_calls if tool_calls else None,
         )
 
-    def health_check_endpoints(self, base_url: str, model_id: str) -> List[str]:
+    def health_check_endpoints(self, base_url: str, model_id: str) -> List[Tuple[str, str]]:
         return [
-            f"{base_url.rstrip("/")}/v1/models",
-            f"{base_url.rstrip("/")}/v1/messages",
+            ("GET", f"{base_url.rstrip('/')}/v1/models"),
+            ("POST", f"{base_url.rstrip('/')}/v1/messages"),
         ]
 
-    def parse_health_response(self, endpoint: str, response_json: Dict[str, Any]) -> bool:
-        if "/v1/models" in endpoint:
+    def parse_health_response(
+        self, endpoint_method: str, endpoint_url: str, response_json: Dict[str, Any]
+    ) -> bool:
+        if "/v1/models" in endpoint_url:
             models = response_json.get("data", [])
             return len(models) > 0
         return True
@@ -124,3 +133,25 @@ class AnthropicAdapter(BaseLLMAdapter):
             else:
                 converted.append(tool)
         return converted
+
+    def _map_tool_choice(self, tool_choice: str) -> Dict[str, Any]:
+        """Map OpenAI-style tool_choice to Anthropic format.
+
+        OpenAI: "auto" | "none" | "required" | {"type": "function", "function": {"name": "..."}}
+        Anthropic: {"type": "auto"} | {"type": "any"} | {"type": "tool", "name": "..."}
+        """
+        if tool_choice == "none":
+            return {"type": "none"}
+        if tool_choice == "required":
+            return {"type": "any"}
+        if tool_choice == "auto":
+            return {"type": "auto"}
+        # If it's a dict, assume it's already Anthropic-format or OpenAI function-specific
+        if isinstance(tool_choice, dict):
+            if tool_choice.get("type") == "function":
+                func_name = tool_choice.get("function", {}).get("name")
+                if func_name:
+                    return {"type": "tool", "name": func_name}
+            return tool_choice
+        # Fallback
+        return {"type": "auto"}

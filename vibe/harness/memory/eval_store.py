@@ -19,6 +19,8 @@ class EvalCase:
     expected: dict[str, Any]
     optimization_set: bool = True
     holdout_set: bool = False
+    version: str = "1.0"
+    timeout_seconds: float = 60.0
 
 
 @dataclass
@@ -29,6 +31,7 @@ class EvalResult:
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     total_tokens: int = 0
     latency_seconds: float = 0.0
+    diff_score: float | None = None  # 0.0-1.0 for open-ended evals
 
 
 class EvalStore:
@@ -102,6 +105,8 @@ class EvalStore:
                     expected=data.get("expected", {}),
                     optimization_set=data.get("optimization_set", True),
                     holdout_set=data.get("holdout_set", False),
+                    version=data.get("version", "1.0"),
+                    timeout_seconds=data.get("timeout_seconds", 60.0),
                 )
             )
         return cases

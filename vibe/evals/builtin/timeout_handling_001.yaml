@@ -1,0 +1,12 @@
+id: timeout-handling-001
+tags: [error_recovery, stability]
+subsystem: model_gateway
+difficulty: medium
+category: stability
+input:
+  prompt: "Trigger a request that exceeds the timeout and verify a timeout error is raised."
+  preconditions: []
+expected:
+  response_contains: "timeout"
+optimization_set: true
+holdout_set: false

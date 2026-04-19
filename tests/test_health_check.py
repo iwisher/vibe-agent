@@ -12,7 +12,7 @@ from vibe.core.config import VibeConfig
 class TestCheckAvailable:
     async def test_available_model_returns_true(self):
         checker = ModelHealthChecker(api_key="sk-test")
-        with patch.object(checker, "_get_headers", return_value={"Authorization": "Bearer sk-test"}):
+        with patch.object(checker, "_legacy_headers", return_value={"Authorization": "Bearer sk-test"}):
             with patch("httpx.AsyncClient.get") as mock_get:
                 mock_response = MagicMock()
                 mock_response.status_code = 200

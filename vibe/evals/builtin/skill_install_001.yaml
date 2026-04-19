@@ -13,8 +13,8 @@ input:
 expected:
   tool_called: skill_manage
   stdout_contains: "test-e2e-skill"
-  file_exists: ~/.hermes/skills/test-e2e-skill/SKILL.md
-  file_contains: ~/.hermes/skills/test-e2e-skill/SKILL.md
+  file_exists: ~/.vibe/skills/test-e2e-skill/SKILL.md
+  file_contains: ~/.vibe/skills/test-e2e-skill/SKILL.md
   contains_text: "test skill created by the e2e eval suite"
 optimization_set: true
 holdout_set: false

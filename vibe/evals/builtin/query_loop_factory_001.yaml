@@ -1,0 +1,12 @@
+id: query-loop-factory-001
+tags: [factory, config]
+subsystem: query_loop
+difficulty: easy
+category: configuration
+input:
+  prompt: "Create a QueryLoop via QueryLoopFactory and verify max_iterations matches config."
+  preconditions: []
+expected:
+  response_contains: "config"
+optimization_set: true
+holdout_set: false

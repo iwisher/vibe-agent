@@ -25,7 +25,24 @@ class PlanResult:
 
 
 class ContextPlanner:
-    """Lightweight keyword-based planner that selects relevant context before the LLM call."""
+    """Lightweight keyword-based planner that selects relevant context before the LLM call.
+
+    **Current implementation (v1):** Uses simple keyword/substring scoring to match
+    queries against tool names, descriptions, skill metadata, and MCP metadata. This is
+    fast and deterministic but can miss semantic relationships (e.g., "get weather"
+    won't match a tool named "fetch_forecast" unless the description contains "weather").
+
+    **Safety fallback:** If no tools match the query, *all* tools are returned so the
+    LLM is never starved of options.
+
+    **Future work (v2):** Replace keyword scoring with an LLM-based planner that
+    embeds queries and tool descriptions into a vector space for semantic similarity,
+    or uses a small dedicated model for tool-selection classification.
+
+    The planner is intentionally side-effect-free (aside from optional trace_store
+    reads for memory augmentation) so it can be replaced or upgraded without changing
+    the QueryLoop orchestration.
+    """
 
     def __init__(self, trace_store: Any | None = None):
         self.trace_store = trace_store

@@ -29,6 +29,7 @@ class QueryLoopFactory:
         with_error_recovery: bool = False,
         with_hooks: bool = False,
         config: Any | None = None,
+        adapter_type: str | None = None,
     ):
         self.base_url = base_url
         self.model = model
@@ -36,6 +37,7 @@ class QueryLoopFactory:
         self.working_dir = working_dir
         self.fallback_chain = fallback_chain or []
         self.timeout = timeout
+        self.adapter_type = adapter_type
         # Read defaults from config to avoid divergence with QueryLoopConfig
         if config is not None:
             ql_cfg = getattr(config, "query_loop", None)
@@ -59,6 +61,9 @@ class QueryLoopFactory:
         }
         if self.timeout is not None:
             kwargs["timeout"] = self.timeout
+        if self.adapter_type is not None:
+            from vibe.adapters.registry import get_adapter
+            kwargs["adapter"] = get_adapter(self.adapter_type)()
         return LLMClient(**kwargs)
 
     def create_tool_system(self) -> ToolSystem:
@@ -127,11 +132,18 @@ class QueryLoopFactory:
         """Create a factory from a ModelProfile (used by multi-model runner)."""
         max_iterations = 15
         max_context_tokens = 16000
+        adapter_type = None
         if config is not None:
             ql_cfg = getattr(config, "query_loop", None)
             if ql_cfg is not None:
                 max_iterations = getattr(ql_cfg, "max_iterations", max_iterations)
                 max_context_tokens = getattr(ql_cfg, "max_context_tokens", max_context_tokens)
+            # Resolve adapter type from provider registry if available
+            provider_reg = getattr(config, "providers", None)
+            if provider_reg is not None:
+                provider = provider_reg.get(profile.provider)
+                if provider is not None:
+                    adapter_type = provider.adapter_type
         return cls(
             base_url=profile.base_url,
             model=profile.model_id,
@@ -144,4 +156,5 @@ class QueryLoopFactory:
             with_error_recovery=True,
             with_hooks=True,
             config=config,
+            adapter_type=adapter_type,
         )

@@ -1,0 +1,12 @@
+id: error-recovery-classify-001
+tags: [error_recovery, classification]
+subsystem: error_recovery
+difficulty: medium
+category: classification
+input:
+  prompt: "Trigger an httpx.TimeoutException and verify the hint mentions 'timed out'."
+  preconditions: []
+expected:
+  response_contains: "timed out"
+optimization_set: true
+holdout_set: false

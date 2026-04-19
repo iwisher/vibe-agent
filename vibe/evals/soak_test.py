@@ -43,6 +43,7 @@ class SoakSnapshot:
     total_tokens: int
     tool_call_count: int
     turn_count: int
+    rss_mb: float = 0.0
     error: str | None = None
 
 
@@ -64,6 +65,9 @@ class SoakReport:
     p99_latency: float
     avg_tokens_per_case: float
     tokens_per_second: float
+    rss_start_mb: float
+    rss_end_mb: float
+    rss_delta_mb: float
     error_count: int
     unique_errors: dict[str, int]
     degradation_detected: bool
@@ -260,6 +264,9 @@ class SoakTestRunner:
                 p99_latency=0.0,
                 avg_tokens_per_case=0.0,
                 tokens_per_second=0.0,
+                rss_start_mb=0.0,
+                rss_end_mb=0.0,
+                rss_delta_mb=0.0,
                 error_count=0,
                 unique_errors={},
                 degradation_detected=False,
@@ -290,6 +297,10 @@ class SoakTestRunner:
             key = s.error or "unknown"
             error_counts[key] = error_counts.get(key, 0) + 1
 
+        rss_values = [s.rss_mb for s in snapshots]
+        rss_start = rss_values[0] if rss_values else 0.0
+        rss_end = rss_values[-1] if rss_values else 0.0
+
         report = SoakReport(
             model=self.model,
             base_url=self.base_url,
@@ -305,6 +316,9 @@ class SoakTestRunner:
             p99_latency=latencies[int(n * 0.99)] if n > 0 else 0,
             avg_tokens_per_case=statistics.mean(s.total_tokens for s in snapshots) if snapshots else 0.0,
             tokens_per_second=(sum(s.total_tokens for s in snapshots) / elapsed) if elapsed > 0 and snapshots else 0.0,
+            rss_start_mb=rss_start,
+            rss_end_mb=rss_end,
+            rss_delta_mb=rss_end - rss_start,
             error_count=len(errors),
             unique_errors=error_counts,
             degradation_detected=degradation,
@@ -333,17 +347,31 @@ class SoakTestRunner:
             "p99_latency": report.p99_latency,
             "avg_tokens_per_case": report.avg_tokens_per_case,
             "tokens_per_second": report.tokens_per_second,
+            "rss_start_mb": report.rss_start_mb,
+            "rss_end_mb": report.rss_end_mb,
+            "rss_delta_mb": report.rss_delta_mb,
             "error_count": report.error_count,
             "unique_errors": report.unique_errors,
             "degradation_detected": report.degradation_detected,
+            "time_series": [
+                {
+                    "iteration": s.loop_iteration,
+                    "timestamp": s.timestamp,
+                    "latency": s.latency_seconds,
+                    "tokens": s.total_tokens,
+                    "rss_mb": s.rss_mb,
+                    "passed": s.passed,
+                }
+                for s in report.snapshots
+            ],
         }
 
-        with open(report_path, "w") as f:
+        with open(report_path, "w", encoding="utf-8") as f:
             json.dump(report_dict, f, indent=2)
 
         # Also save human-readable summary
         summary_path = self.output_dir / f"soak_summary_{self.model.replace('/', '_')}_{timestamp}.md"
-        with open(summary_path, "w") as f:
+        with open(summary_path, "w", encoding="utf-8") as f:
             f.write(self._format_summary(report))
 
         print(f"\n[soak] Report saved: {report_path}")
@@ -365,6 +393,11 @@ class SoakTestRunner:
             f"- **P50**: {report.p50_latency:.2f}s",
             f"- **P95**: {report.p95_latency:.2f}s",
             f"- **P99**: {report.p99_latency:.2f}s",
+            "",
+            "## Memory",
+            f"- **RSS Start**: {report.rss_start_mb:.1f} MB",
+            f"- **RSS End**: {report.rss_end_mb:.1f} MB",
+            f"- **RSS Delta**: {report.rss_delta_mb:+.1f} MB",
             "",
             "## Errors",
             f"- **Total Errors**: {report.error_count}",

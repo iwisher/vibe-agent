@@ -7,7 +7,7 @@ OpenAI-compatible endpoint.
 from typing import Any, Dict, List, Optional, Tuple
 
 from vibe.adapters.base import BaseLLMAdapter
-from vibe.core.model_gateway import LLMResponse
+from vibe.core.llm_types import LLMResponse
 
 
 class OpenAIAdapter(BaseLLMAdapter):
@@ -22,9 +22,12 @@ class OpenAIAdapter(BaseLLMAdapter):
         max_tokens: Optional[int] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: str = "auto",
+        api_key: Optional[str] = None,
     ) -> Tuple[str, Dict[str, str], Dict[str, Any]]:
-        url = f"{base_url.rstrip("/")}/v1/chat/completions"
+        url = f"{base_url.rstrip('/')}/v1/chat/completions"
         headers = {"Content-Type": "application/json"}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
 
         payload: Dict[str, Any] = {
             "model": model,
@@ -40,29 +43,31 @@ class OpenAIAdapter(BaseLLMAdapter):
         return url, headers, payload
 
     def parse_response(self, response_json: Dict[str, Any]) -> LLMResponse:
-        choice = response_json.get("choices", [{}])[0]
+        choices = response_json.get("choices") or [{}]
+        choice = choices[0]
         message = choice.get("message", {})
 
         return LLMResponse(
-            content=message.get("content", ""),
-            usage=response_json.get("usage", {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}),
+            content=message.get("content") or "",
+            usage=response_json.get(
+                "usage", {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            ),
             finish_reason=choice.get("finish_reason"),
             tool_calls=message.get("tool_calls"),
         )
 
-    def health_check_endpoints(self, base_url: str, model_id: str) -> List[str]:
+    def health_check_endpoints(self, base_url: str, model_id: str) -> List[Tuple[str, str]]:
         return [
-            f"{base_url.rstrip("/")}/v1/models",
-            f"{base_url.rstrip("/")}/v1/chat/completions",
+            ("GET", f"{base_url.rstrip('/')}/v1/models"),
+            ("POST", f"{base_url.rstrip('/')}/v1/chat/completions"),
         ]
 
-    def parse_health_response(self, endpoint: str, response_json: Dict[str, Any]) -> bool:
-        if "/v1/models" in endpoint:
+    def parse_health_response(
+        self, endpoint_method: str, endpoint_url: str, response_json: Dict[str, Any]
+    ) -> bool:
+        if "/v1/models" in endpoint_url:
             models = response_json.get("data", [])
-            # If we have a specific model_id, check it's in the list
-            # Otherwise, any successful response is fine
             return len(models) > 0
-        # For chat completions, any successful parse means available
         return True
 
     def extract_system_messages(

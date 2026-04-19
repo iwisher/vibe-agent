@@ -180,6 +180,109 @@ def run_evals(
         raise typer.Exit(code=1)
 
 
+@eval_app.command("update-baseline")
+def update_baseline():
+    """Update docs/baseline_scorecard.json from the latest eval run in EvalStore."""
+    import json
+    from collections import defaultdict
+
+    store = EvalStore()
+    summary = store.summary()
+    results = store.get_results()
+
+    by_subsystem = defaultdict(lambda: {"total": 0, "passed": 0})
+    by_difficulty = defaultdict(lambda: {"total": 0, "passed": 0})
+
+    cases = store.load_builtin_evals()
+    case_map = {c.id: c for c in cases}
+
+    for r in results:
+        case = case_map.get(r["eval_id"])
+        if not case:
+            continue
+        # Extract subsystem and difficulty from tags
+        subsystem = "unknown"
+        difficulty = "unknown"
+        for tag in case.tags:
+            if tag.startswith("subsystem="):
+                subsystem = tag.split("=", 1)[1]
+            elif tag.startswith("difficulty="):
+                difficulty = tag.split("=", 1)[1]
+        by_subsystem[subsystem]["total"] += 1
+        by_difficulty[difficulty]["total"] += 1
+        if r["passed"]:
+            by_subsystem[subsystem]["passed"] += 1
+            by_difficulty[difficulty]["passed"] += 1
+
+    baseline = {
+        "date": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+        "overall_score": summary["score"],
+        "total_cases": summary["total_runs"],
+        "passed": summary["passed"],
+        "failed": summary["failed"],
+        "by_subsystem": {k: v for k, v in by_subsystem.items()},
+        "by_difficulty": {k: v for k, v in by_difficulty.items()},
+    }
+
+    # Resolve baseline path relative to project root (where .git lives)
+    project_root = Path(__file__).resolve().parents[2]
+    baseline_path = project_root / "docs" / "baseline_scorecard.json"
+    baseline_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(baseline_path, "w", encoding="utf-8") as f:
+        json.dump(baseline, f, indent=2)
+
+    console.print(f"[green]Baseline updated:[/green] {baseline_path}")
+    console.print(f"Score: {summary['passed']}/{summary['total_runs']} ({summary['score']:.0%})")
+
+
+@eval_app.command("soak")
+def run_soak(
+    duration: int = typer.Option(60, "--duration", "-d", help="Duration in minutes"),
+    cpm: float = typer.Option(6.0, "--cpm", help="Cases per minute target"),
+    model: str = typer.Option(DEFAULT_CONFIG.llm.default_model, "--model", "-m"),
+    server: str = typer.Option(DEFAULT_CONFIG.llm.base_url, "--server", "-s"),
+    api_key: str | None = typer.Option(None, "--api-key", "-k"),
+    working_dir: str = typer.Option(".", "--working-dir", "-w"),
+):
+    """Run a long-running soak test against built-in eval cases."""
+    working_dir = str(Path(working_dir).expanduser().resolve())
+
+    from vibe.evals.soak_test import SoakTestRunner, print_report
+
+    registry = ModelRegistry()
+    fallback_chain = []
+    for name in DEFAULT_CONFIG.get_fallback_chain():
+        profile = registry.get(name)
+        model_id = profile.model_id if profile else name
+        fallback_chain.append(model_id)
+
+    def factory():
+        return QueryLoopFactory(
+            base_url=server,
+            model=model,
+            api_key=api_key,
+            working_dir=working_dir,
+            fallback_chain=fallback_chain,
+        ).create()
+
+    store = EvalStore()
+    cases = store.load_builtin_evals()
+    if not cases:
+        console.print("[yellow]No builtin eval cases found.[/yellow]")
+        raise typer.Exit(code=1)
+
+    runner = SoakTestRunner(
+        query_loop_factory=factory,
+        eval_store=store,
+        model=model,
+        base_url=server,
+        duration_minutes=float(duration),
+        cases_per_minute=cpm,
+    )
+    report = asyncio.run(runner.run(cases))
+    print_report(report)
+
+
 @memory_app.command("traces")
 def list_traces(
     limit: int = typer.Option(20, "--limit", "-n", help="Max sessions to show"),

@@ -20,11 +20,13 @@ class EvalRunner:
         eval_store: EvalStore | None = None,
         observability: Observability | None = None,
         max_concurrency: int = 3,
+        run_holdout: bool = False,
     ):
         self.query_loop = query_loop
         self.eval_store = eval_store
         self.obs = observability
         self._semaphore = asyncio.Semaphore(max_concurrency)
+        self.run_holdout = run_holdout
 
     async def run_case(self, case: EvalCase) -> EvalResult:
         start_time = time.time()
@@ -44,18 +46,31 @@ class EvalRunner:
             llm_span = self.obs.start_span("llm_call", parent=case_span)
 
         try:
-            async for result in self.query_loop.run(
-                initial_query=case.input.get("prompt", "")
-            ):
-                results.append(result)
-                # Record tool execution spans
-                if result.tool_results and self.obs:
-                    for tr in result.tool_results:
-                        with self.obs.span(
-                            "tool_execution",
-                            attributes={"tool": getattr(tr, "tool_name", "unknown")},
-                        ):
-                            pass
+            async with asyncio.timeout(case.timeout_seconds):
+                async for result in self.query_loop.run(
+                    initial_query=case.input.get("prompt", "")
+                ):
+                    results.append(result)
+                    # Record tool execution spans
+                    if result.tool_results and self.obs:
+                        for tr in result.tool_results:
+                            with self.obs.span(
+                                "tool_execution",
+                                attributes={"tool": getattr(tr, "tool_name", "unknown")},
+                            ):
+                                pass
+        except asyncio.TimeoutError:
+            if llm_span:
+                self.obs.finish_span(llm_span)
+            if case_span:
+                case_span.finish(status="error", error_message="Timeout")
+                self.obs.finish_span(case_span)
+            return EvalResult(
+                eval_id=case.id,
+                passed=False,
+                diff={"reason": f"Exceeded timeout of {case.timeout_seconds}s"},
+                total_tokens=0,
+            )
         finally:
             if llm_span:
                 self.obs.finish_span(llm_span)
@@ -305,11 +320,12 @@ class EvalRunner:
         return True, ""
 
     async def run_all(self, cases: list[EvalCase]) -> list[EvalResult]:
+        filtered = [c for c in cases if self.run_holdout or not c.holdout_set]
         async def _run(case: EvalCase) -> EvalResult:
             async with self._semaphore:
                 return await self.run_case(case)
 
         try:
-            return await asyncio.gather(*(_run(c) for c in cases))
+            return await asyncio.gather(*(_run(c) for c in filtered))
         finally:
             await self.query_loop.close()

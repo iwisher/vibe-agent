@@ -12,7 +12,7 @@ class SkillManageTool(Tool):
         super().__init__(
             name="skill_manage",
             description=(
-                "Create or update a Hermes skill. "
+                "Create or update a vibe skill. "
                 "Writes a SKILL.md file under ~/.vibe/skills/<skill_name>/."
             ),
         )

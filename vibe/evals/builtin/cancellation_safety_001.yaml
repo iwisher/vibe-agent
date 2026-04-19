@@ -1,0 +1,12 @@
+id: cancellation-safety-001
+tags: [query_loop, stability]
+subsystem: query_loop
+difficulty: medium
+category: stability
+input:
+  prompt: "Verify that QueryLoop._running is reset to False after a cancelled run."
+  preconditions: []
+expected:
+  response_contains: "cancelled"
+optimization_set: true
+holdout_set: false

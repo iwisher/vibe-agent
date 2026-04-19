@@ -1,0 +1,12 @@
+id: model-fallback-001
+tags: [model_gateway, resilience]
+subsystem: model_gateway
+difficulty: hard
+category: resilience
+input:
+  prompt: "Simulate a primary model failure and verify the fallback chain activates."
+  preconditions: []
+expected:
+  response_contains: "fallback"
+optimization_set: true
+holdout_set: false

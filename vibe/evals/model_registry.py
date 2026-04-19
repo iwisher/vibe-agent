@@ -101,16 +101,17 @@ class ModelRegistry:
         # Config-specified fallback chain (if provided)
         if config is not None:
             config_chain = config.get_fallback_chain()
-            for name in config_chain:
-                if name == primary:
-                    continue
-                p = self.get(name)
-                if p and p.name not in seen:
-                    chain.append(p)
-                    seen.add(p.name)
-            return chain if chain else [primary_profile] if primary_profile else []
+            if config_chain:
+                for name in config_chain:
+                    if name == primary:
+                        continue
+                    p = self.get(name)
+                    if p and p.name not in seen:
+                        chain.append(p)
+                        seen.add(p.name)
+                return chain if chain else [primary_profile] if primary_profile else []
 
-        # Same-provider fallbacks (legacy behavior when no config)
+        # Same-provider fallbacks (legacy behavior when no config or empty chain)
         if primary_profile:
             for p in self._profiles.values():
                 if p.provider == primary_profile.provider and p.name not in seen:
@@ -126,6 +127,61 @@ class ModelRegistry:
 
     def add_profile(self, profile: ModelProfile) -> None:
         self._profiles[profile.name] = profile
+
+    @classmethod
+    def from_config(cls, config) -> "ModelRegistry":
+        """Build a ModelRegistry from VibeConfig, linking models to providers.
+
+        Uses config.models (raw dict) and config.providers (ProviderRegistry)
+        to populate ModelProfiles with correct base_url, api_key, and adapter.
+        """
+        from vibe.core.config import VibeConfig
+
+        if not isinstance(config, VibeConfig):
+            raise TypeError(f"Expected VibeConfig, got {type(config).__name__}")
+
+        profiles: list[ModelProfile] = []
+        raw_models = config.models or {}
+
+        for name, model_cfg in raw_models.items():
+            if not isinstance(model_cfg, dict):
+                continue
+            provider_name = model_cfg.get("provider", "default")
+            provider_reg = getattr(config, "providers", None)
+            provider = provider_reg.get(provider_name) if provider_reg is not None else None
+
+            if provider is not None:
+                base_url = provider.base_url
+                api_key = provider.resolve_api_key()
+                api_key_env_var = provider.api_key_env_var or "LLM_API_KEY"
+                timeout = provider.timeout
+            else:
+                base_url = model_cfg.get("base_url", config.llm.base_url)
+                api_key = model_cfg.get("api_key")
+                api_key_env_var = model_cfg.get("api_key_env_var", "LLM_API_KEY")
+                timeout = model_cfg.get("timeout", config.llm.timeout)
+
+            profiles.append(
+                ModelProfile(
+                    name=name,
+                    provider=provider_name,
+                    base_url=base_url,
+                    model_id=model_cfg.get("model_id", name),
+                    api_key=api_key,
+                    api_key_env_var=api_key_env_var,
+                    timeout=float(timeout),
+                    cost_per_1k_prompt=model_cfg.get("cost_per_1k_prompt", 0.0),
+                    cost_per_1k_completion=model_cfg.get("cost_per_1k_completion", 0.0),
+                    tags=model_cfg.get("tags", []),
+                    is_default=model_cfg.get("is_default", False),
+                    is_ci_model=model_cfg.get("is_ci_model", False),
+                )
+            )
+
+        # If no models configured, fall back to built-in profiles
+        if not profiles:
+            return cls()
+        return cls(profiles)
 
     def to_dict(self) -> dict[str, dict]:
         return {

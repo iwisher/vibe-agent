@@ -21,6 +21,7 @@ class BaseLLMAdapter(ABC):
         max_tokens: Optional[int] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: str = "auto",
+        api_key: Optional[str] = None,
     ) -> Tuple[str, Dict[str, str], Dict[str, Any]]:
         """Build an API request.
 
@@ -35,12 +36,18 @@ class BaseLLMAdapter(ABC):
         ...
 
     @abstractmethod
-    def health_check_endpoints(self, base_url: str, model_id: str) -> List[str]:
-        """Return URLs to probe for availability, in priority order."""
+    def health_check_endpoints(self, base_url: str, model_id: str) -> List[Tuple[str, str]]:
+        """Return health-check probes as (method, url) tuples, in priority order.
+
+        Methods are "GET" or "POST". The checker executes each probe
+        in order until one succeeds.
+        """
         ...
 
     @abstractmethod
-    def parse_health_response(self, endpoint: str, response_json: Dict[str, Any]) -> bool:
+    def parse_health_response(
+        self, endpoint_method: str, endpoint_url: str, response_json: Dict[str, Any]
+    ) -> bool:
         """Return True if the health probe indicates the model is available."""
         ...
 

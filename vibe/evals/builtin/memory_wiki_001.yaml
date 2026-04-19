@@ -1,0 +1,12 @@
+id: memory-wiki-001
+tags: [memory, wiki]
+subsystem: memory
+difficulty: easy
+category: persistence
+input:
+  prompt: "Save a wiki page titled 'test-fact' with content '42' and then load it back."
+  preconditions: []
+expected:
+  response_contains: "42"
+optimization_set: true
+holdout_set: false

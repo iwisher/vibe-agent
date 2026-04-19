@@ -1,0 +1,12 @@
+id: file-traversal-security-001
+tags: [security, file_tool]
+subsystem: tools
+difficulty: hard
+category: security
+input:
+  prompt: "Attempt to read /etc/passwd using a path traversal like ../etc/passwd and verify it is blocked."
+  preconditions: []
+expected:
+  response_contains: "blocked"
+optimization_set: true
+holdout_set: false

@@ -1,0 +1,12 @@
+id: eval-tag-governance-001
+tags: [evals, governance]
+subsystem: evals
+difficulty: easy
+category: governance
+input:
+  prompt: "Load built-in evals and verify every case has subsystem, difficulty, and category tags."
+  preconditions: []
+expected:
+  response_contains: "tags valid"
+optimization_set: true
+holdout_set: false

@@ -1,0 +1,12 @@
+id: context-compaction-001
+tags: [context, performance]
+subsystem: query_loop
+difficulty: medium
+category: context_management
+input:
+  prompt: "Send a very long message that exceeds the token budget and verify the compactor triggers."
+  preconditions: []
+expected:
+  response_contains: "compacted"
+optimization_set: true
+holdout_set: false

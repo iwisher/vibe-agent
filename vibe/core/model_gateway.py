@@ -13,24 +13,10 @@ RequestHook = Callable[[Dict[str, Any], str], None]
 ResponseHook = Callable[[LLMResponse, str], None]
 
 
-class ErrorType(Enum):
-    """Types of errors that can occur during LLM communication."""
-    NONE = auto()
-    HTTP_ERROR = auto()
-    JSON_DECODE_ERROR = auto()
-    NETWORK_ERROR = auto()
-    CONNECTION_ERROR = auto()
-    TIMEOUT_ERROR = auto()
-    RATE_LIMIT_ERROR = auto()
-    AUTHENTICATION_ERROR = auto()
-    SERVER_ERROR = auto()
-    UNKNOWN_ERROR = auto()
-    MODEL_UNAVAILABLE = auto()
-
-
 @dataclass
 class CircuitBreakerState:
     """Per-model circuit breaker state."""
+
     consecutive_failures: int = 0
     last_failure_time: float = 0.0
     open: bool = False
@@ -38,7 +24,6 @@ class CircuitBreakerState:
 
 class CircuitBreaker:
     """Simple circuit breaker for LLM model endpoints.
-
     Opens after `threshold` consecutive failures, stays open for `cooldown_seconds`,
     then allows a single half-open probe. If the probe succeeds, the breaker closes.
     """
@@ -46,7 +31,7 @@ class CircuitBreaker:
     def __init__(self, threshold: int = 5, cooldown_seconds: float = 60.0):
         self.threshold = threshold
         self.cooldown_seconds = cooldown_seconds
-        self._states: dict[str, CircuitBreakerState] = {}
+        self._states: Dict[str, CircuitBreakerState] = {}
 
     def _state(self, model: str) -> CircuitBreakerState:
         if model not in self._states:
@@ -79,23 +64,6 @@ class CircuitBreaker:
             state.open = True
 
 
-@dataclass
-class LLMResponse:
-    """Standardized response from LLM."""
-    content: str
-    usage: dict[str, int] = field(default_factory=lambda: {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})
-    finish_reason: str | None = None
-    tool_calls: list[dict[str, Any] | None] = None
-    error: str | None = None
-    error_type: ErrorType = ErrorType.NONE
-    actionable_hint: str | None = None
-    model_used: str | None = None  # Actual model after fallback resolution
-
-    @property
-    def is_error(self) -> bool:
-        return self.error is not None
-
-
 class LLMClient:
     """Gateway for communicating with LLM models."""
 
@@ -103,39 +71,58 @@ class LLMClient:
         self,
         base_url: str = "http://localhost:11434",
         model: str = "default",
-        api_key: str | None = None,
+        api_key: Optional[str] = None,
         timeout: float = 300.0,
-        retry_policy: RetryPolicy | None = None,
-        fallback_chain: list[str] | None = None,
+        retry_policy: Optional[RetryPolicy] = None,
+        fallback_chain: Optional[List[str]] = None,
         auto_fallback: bool = False,
-        circuit_breaker: CircuitBreaker | None = None,
-        on_request: RequestHook | None = None,
-        on_response: ResponseHook | None = None,
+        circuit_breaker: Optional[CircuitBreaker] = None,
+        on_request: Optional[RequestHook] = None,
+        on_response: Optional[ResponseHook] = None,
+        adapter = None,
+        client: httpx.AsyncClient | None = None,
     ):
+        """Initialize the LLM client.
+
+        Args:
+            base_url: The base URL for the LLM API.
+            model: The model identifier.
+            api_key: Optional API key for authentication.
+            timeout: Request timeout in seconds. Only applies when *client* is not provided.
+            retry_policy: Optional retry policy for failed requests.
+            fallback_chain: List of fallback model names.
+            auto_fallback: Whether to auto-fallback on server errors.
+            circuit_breaker: Optional circuit breaker instance.
+            on_request: Optional callback for outgoing requests.
+            on_response: Optional callback for incoming responses.
+            adapter: Optional request/response adapter.
+            client: Optional shared httpx.AsyncClient. If provided, the *timeout* parameter
+                is ignored and the caller is responsible for closing the client.
+        """
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.api_key = api_key or os.getenv("LLM_API_KEY")
         self.timeout = timeout
         self.recovery = ErrorRecovery(retry_policy)
-        self.client = httpx.AsyncClient(timeout=self.timeout)
+        self.client = client or httpx.AsyncClient(timeout=self.timeout)
+        self._owns_client = client is None
         self.fallback_chain = fallback_chain or []
         self.auto_fallback = auto_fallback
         self.circuit_breaker = circuit_breaker or CircuitBreaker()
         self.on_request = on_request
         self.on_response = on_response
-
-    def _get_headers(self) -> dict[str, str]:
-        headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-        return headers
+        # Adapter: default to OpenAI-compatible for backward compatibility
+        if adapter is None:
+            from vibe.adapters.openai import OpenAIAdapter
+            adapter = OpenAIAdapter()
+        self.adapter = adapter
 
     async def complete(
         self,
-        messages: list[dict[str, Any]],
+        messages: List[Dict[str, Any]],
         temperature: float = 0.7,
-        max_tokens: int | None = None,
-        tools: list[dict[str, Any] | None] = None,
+        max_tokens: Optional[int] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: str = "auto",
     ) -> LLMResponse:
         """Sends a completion request with built-in retry and optional model fallback."""
@@ -144,7 +131,7 @@ class LLMClient:
             m for m in self.fallback_chain if m != self.model
         ]
 
-        last_error: LLMResponse | None = None
+        last_error: Optional[LLMResponse] = None
 
         for attempt_model in models_to_try:
             # Circuit breaker: skip models that are continuously failing
@@ -196,46 +183,34 @@ class LLMClient:
     async def _try_complete(
         self,
         model: str,
-        messages: list[dict[str, Any]],
+        messages: List[Dict[str, Any]],
         temperature: float = 0.7,
-        max_tokens: int | None = None,
-        tools: list[dict[str, Any] | None] = None,
+        max_tokens: Optional[int] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: str = "auto",
     ) -> LLMResponse:
         """Single attempt at a completion request for a specific model."""
 
         async def _make_request():
-            payload = {
-                "model": model,
-                "messages": messages,
-                "temperature": temperature,
-            }
-            if max_tokens:
-                payload["max_tokens"] = max_tokens
-            if tools:
-                payload["tools"] = tools
-                payload["tool_choice"] = tool_choice
+            url, headers, payload = self.adapter.build_request(
+                base_url=self.base_url,
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                tools=tools,
+                tool_choice=tool_choice,
+                api_key=self.api_key,
+            )
 
             if self.on_request:
                 self.on_request(payload, model)
 
-            response = await self.client.post(
-                f"{self.base_url}/v1/chat/completions",
-                json=payload,
-                headers=self._get_headers(),
-            )
+            response = await self.client.post(url, json=payload, headers=headers)
             response.raise_for_status()
             data = response.json()
 
-            choice = data.get("choices", [{}])[0]
-            message = choice.get("message", {})
-
-            return LLMResponse(
-                content=message.get("content", ""),
-                usage=data.get("usage", {}),
-                finish_reason=choice.get("finish_reason"),
-                tool_calls=message.get("tool_calls"),
-            )
+            return self.adapter.parse_response(data)
 
         try:
             result = await self.recovery.execute_with_retry(_make_request)
@@ -294,10 +269,10 @@ class LLMClient:
 
     async def structured_output(
         self,
-        messages: list[dict[str, Any]],
-        output_schema: dict[str, Any],
+        messages: List[Dict[str, Any]],
+        output_schema: Dict[str, Any],
         temperature: float = 0.1,
-    ) -> dict[str, Any]:
+    ) -> Dict[str, Any]:
         """
         Forces the LLM to provide structured JSON output matching the schema.
         Prepends a system message for guidance.
@@ -307,10 +282,17 @@ class LLMClient:
             f"{json.dumps(output_schema, indent=2)}\n\n"
             "Do not include any conversational text or markdown formatting tags like ```json."
         )
-        
-        # Insert system instruction at the beginning
-        full_messages = [{"role": "system", "content": system_instruction}] + messages
-        
+
+        # Use adapter to properly handle system messages
+        system_content, remaining_messages = self.adapter.extract_system_messages(messages)
+        if system_content:
+            system_instruction = system_content + "\n\n" + system_instruction
+
+        full_messages = [{"role": "system", "content": system_instruction}] + remaining_messages
+
+        # Ensure we have a shallow copy in case the adapter mutates during complete()
+        full_messages = list(full_messages)
+
         response = await self.complete(
             messages=full_messages,
             temperature=temperature,
@@ -335,5 +317,6 @@ class LLMClient:
             raise RuntimeError(f"LLM output was not valid JSON: {content}") from e
 
     async def close(self):
-        """Closes the underlying HTTP client."""
-        await self.client.aclose()
+        """Closes the underlying HTTP client if we created it."""
+        if self._owns_client:
+            await self.client.aclose()

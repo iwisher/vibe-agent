@@ -1,0 +1,12 @@
+id: planner-keyword-001
+tags: [planner, routing]
+subsystem: planner
+difficulty: easy
+category: routing
+input:
+  prompt: "Send a message containing 'bash' and verify the planner assigns the bash tool."
+  preconditions: []
+expected:
+  response_contains: "bash"
+optimization_set: true
+holdout_set: false

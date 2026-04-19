@@ -1,0 +1,12 @@
+id: tool-system-register-001
+tags: [tools, registration]
+subsystem: tools
+difficulty: easy
+category: registration
+input:
+  prompt: "Register a custom tool and verify it appears in the tool system's registry."
+  preconditions: []
+expected:
+  response_contains: "registered"
+optimization_set: true
+holdout_set: false

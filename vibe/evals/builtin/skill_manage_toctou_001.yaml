@@ -1,0 +1,12 @@
+id: skill-manage-toctou-001
+tags: [security, skill_tool]
+subsystem: tools
+difficulty: hard
+category: security
+input:
+  prompt: "Attempt a symlink TOCTOU attack on skill directory creation and verify it is blocked."
+  preconditions: []
+expected:
+  response_contains: "blocked"
+optimization_set: true
+holdout_set: false

@@ -8,6 +8,7 @@ from typing import AsyncIterator, Callable, Any
 
 from vibe.core.model_gateway import LLMClient, LLMResponse
 from vibe.core.context_compactor import ContextCompactor
+from vibe.core.coordinators import CompactionCoordinator, FeedbackCoordinator, ToolExecutor
 from vibe.core.error_recovery import ErrorRecovery, RetryPolicy
 from vibe.harness.constraints import HookPipeline, HookOutcome
 from vibe.harness.feedback import FeedbackEngine
@@ -101,16 +102,20 @@ class QueryLoop:
         self.llm = llm_client
         self.tools = tool_system
         self.compactor = context_compactor or ContextCompactor(max_tokens=max_context_tokens)
+        self.compaction_coord = CompactionCoordinator(self.compactor)
         self.error_recovery = error_recovery or ErrorRecovery(RetryPolicy())
         self.hook_pipeline = hook_pipeline or HookPipeline()
-        self.feedback_engine = feedback_engine
-        self.feedback_threshold = feedback_threshold
-        self.max_feedback_retries = max_feedback_retries
+        self.feedback_coord = FeedbackCoordinator(
+            feedback_engine, feedback_threshold, max_feedback_retries
+        )
+        self.tool_executor = ToolExecutor(
+            tool_system, self.hook_pipeline, mcp_bridge=mcp_bridge
+        )
         self.max_iterations = max_iterations
+        self.max_context_tokens = max_context_tokens
         self.messages: list[Message] = []
         self._running = False
         self._state = QueryState.IDLE
-        self._tool_handlers: dict[str, Callable] = {}
         self._feedback_retries = 0
         self.instruction_set = instruction_set
         self.mcp_bridge = mcp_bridge
@@ -125,7 +130,7 @@ class QueryLoop:
         self._state = state
 
     def register_tool_handler(self, tool_name: str, handler: Callable) -> None:
-        self._tool_handlers[tool_name] = handler
+        self.tool_executor.register_handler(tool_name, handler)
 
     def set_model(self, model: str) -> str:
         old_model = self.llm.model
@@ -224,21 +229,22 @@ class QueryLoop:
 
     async def _maybe_compact(self, llm_msgs: list[dict]) -> QueryResult | None:
         """Compact context if needed. Returns a QueryResult if compaction occurred."""
-        if not self.compactor.should_compact(llm_msgs):
+        if not self.compaction_coord.should_compact(llm_msgs):
             return None
-        compacted = await self.compactor.compact_async(llm_msgs)
-        self.messages = [
-            Message(
-                role=m["role"],
-                content=m.get("content", ""),
-                tool_calls=m.get("tool_calls"),
-                tool_call_id=m.get("tool_call_id"),
-            )
-            for m in compacted.messages
-        ]
+        compacted_msgs, was_compacted = await self.compaction_coord.compact(llm_msgs)
+        if was_compacted:
+            self.messages = [
+                Message(
+                    role=m["role"],
+                    content=m.get("content", ""),
+                    tool_calls=m.get("tool_calls"),
+                    tool_call_id=m.get("tool_call_id"),
+                )
+                for m in compacted_msgs
+            ]
         return QueryResult(
             response="",
-            context_truncated=compacted.was_compacted,
+            context_truncated=was_compacted,
             state=QueryState.PROCESSING,
         )
 
@@ -247,20 +253,16 @@ class QueryLoop:
         internal_schemas = self.tools.get_tool_schemas()
         mcp_schemas = self.mcp_bridge.get_tool_schemas() if self.mcp_bridge else []
         all_schemas = internal_schemas + mcp_schemas
-        tools_for_llm = all_schemas
-        if self._plan_result and self._plan_result.selected_tool_names:
-            tools_for_llm = [
-                t for t in all_schemas if t.get("function", {}).get("name") in self._plan_result.selected_tool_names
-            ]
-        # Safety fallback: if planner filtered out everything, expose all tools
-        if not tools_for_llm:
-            tools_for_llm = all_schemas
-        return tools_for_llm
+        selected = self.tool_executor.select_tools(
+            all_schemas,
+            self._plan_result.selected_tool_names if self._plan_result else None,
+        )
+        return selected
 
     async def _process_tool_response(self, response: LLMResponse, metrics: Metrics) -> QueryResult:
         """Handle a response containing tool calls."""
         self._set_state(QueryState.TOOL_EXECUTION)
-        tool_results = await self._execute_tool_calls(response.tool_calls)
+        tool_results = await self.tool_executor.execute(response.tool_calls)
         self.messages.append(
             Message(
                 role="assistant",
@@ -295,8 +297,10 @@ class QueryLoop:
             Message(role="assistant", content=response.content or "", model_version=self.llm.model)
         )
         # Feedback loop: evaluate response before completing
-        should_continue = await self._apply_feedback(response, metrics)
-        if should_continue:
+        should_continue, hint = await self.feedback_coord.evaluate(response.content or "")
+        if should_continue and hint:
+            self.messages.append(Message(role="system", content=hint))
+            self._set_state(QueryState.PROCESSING)
             return True, QueryResult(
                 response=response.content or "",
                 metrics=metrics,
@@ -305,72 +309,9 @@ class QueryLoop:
         self._set_state(QueryState.COMPLETED)
         return False, QueryResult(response=response.content or "", metrics=metrics, state=self._state)
 
-    async def _apply_feedback(self, response: LLMResponse, metrics: Metrics) -> bool:
-        """Apply feedback engine evaluation. Returns True if loop should continue."""
-        if (
-            self.feedback_engine
-            and response.content
-            and self._feedback_retries < self.max_feedback_retries
-        ):
-            fb = await self.feedback_engine.self_verify(response.content)
-            if fb.score < self.feedback_threshold:
-                self._feedback_retries += 1
-                fix_hint = fb.suggested_fix or "Please improve your response."
-                issues_text = "\n".join(f"- {i}" for i in fb.issues) if fb.issues else ""
-                self.messages.append(
-                    Message(
-                        role="system",
-                        content=(
-                            f"Feedback score {fb.score:.2f} below threshold "
-                            f"({self.feedback_threshold}). Issues:\n{issues_text}\n"
-                            f"Suggested fix: {fix_hint}"
-                        ),
-                    )
-                )
-                self._set_state(QueryState.PROCESSING)
-                return True
-        return False
-
     async def _execute_tool_calls(self, tool_calls: list) -> list[ToolResult]:
-        import json
-
-        results = []
-        for call in tool_calls:
-            try:
-                if isinstance(call, dict):
-                    call_name = extract_tool_call_name(call)
-                    arguments = extract_tool_call_arguments(call)
-                else:
-                    call_name = getattr(call, "name", None)
-                    arguments = getattr(call, "arguments", {})
-
-                # Run pre-hooks (Constraints: PRE_VALIDATE, PRE_MODIFY, PRE_ALLOW)
-                pre_outcome = self.hook_pipeline.run_pre_hooks(call_name, arguments)
-                if not pre_outcome.allow:
-                    results.append(
-                        ToolResult(
-                            success=False,
-                            content=None,
-                            error=f"Hook veto: {pre_outcome.reason}",
-                        )
-                    )
-                    continue
-
-                exec_args = pre_outcome.modified_arguments or arguments
-
-                if call_name in self._tool_handlers:
-                    result = await self._tool_handlers[call_name](exec_args)
-                else:
-                    result = await self.tools.execute_tool(call_name, **exec_args)
-                    if not result.success and "not found" in (result.error or "").lower() and self.mcp_bridge:
-                        result = await self.mcp_bridge.execute_tool(call_name, **exec_args)
-
-                # Run post-hooks (Constraints: POST_EXECUTE, POST_FIX)
-                result = self.hook_pipeline.run_post_hooks(call_name, exec_args, result)
-                results.append(result)
-            except Exception as e:
-                results.append(ToolResult(success=False, content=None, error=str(e)))
-        return results
+        """Deprecated: delegates to ToolExecutor."""
+        return await self.tool_executor.execute(tool_calls)
 
     def _build_llm_messages(self) -> list[dict]:
         return [
@@ -410,6 +351,7 @@ class QueryLoop:
         self._feedback_retries = 0
         self._running = False
         self._plan_result = None
+        self.feedback_coord.reset()
 
     async def close(self) -> None:
         """Closes the underlying LLM client and releases resources."""

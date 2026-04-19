@@ -1,0 +1,12 @@
+id: trace-store-recent-001
+tags: [memory, traces]
+subsystem: memory
+difficulty: easy
+category: persistence
+input:
+  prompt: "Log a session and verify get_recent_sessions returns it."
+  preconditions: []
+expected:
+  response_contains: "session"
+optimization_set: true
+holdout_set: false

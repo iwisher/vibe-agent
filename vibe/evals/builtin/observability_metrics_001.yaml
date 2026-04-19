@@ -1,0 +1,12 @@
+id: observability-metrics-001
+tags: [observability, metrics]
+subsystem: evals
+difficulty: easy
+category: observability
+input:
+  prompt: "Run an eval and verify that metrics are collected with at least one counter."
+  preconditions: []
+expected:
+  response_contains: "metrics"
+optimization_set: true
+holdout_set: false

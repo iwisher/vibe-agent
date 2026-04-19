@@ -122,6 +122,15 @@ async def test_structured_output_with_markdown_fencing(client):
     assert output == {"x": 1}
 
 
-def test_headers_include_bearer(client):
-    headers = client._get_headers()
+def test_adapter_builds_request_with_auth(client):
+    """Auth header is injected by the adapter during build_request, not via _get_headers."""
+    from vibe.adapters.openai import OpenAIAdapter
+
+    adapter = OpenAIAdapter()
+    url, headers, payload = adapter.build_request(
+        base_url="http://localhost:11434",
+        model="llama3.2",
+        messages=[{"role": "user", "content": "hello"}],
+        api_key="sk-test",
+    )
     assert headers["Authorization"] == "Bearer sk-test"
