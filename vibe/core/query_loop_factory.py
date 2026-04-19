@@ -30,6 +30,7 @@ class QueryLoopFactory:
         with_hooks: bool = False,
         config: Any | None = None,
         adapter_type: str | None = None,
+        logger: Any | None = None,
         debug: bool = False,
     ):
         self.base_url = base_url
@@ -39,6 +40,7 @@ class QueryLoopFactory:
         self.fallback_chain = fallback_chain or []
         self.timeout = timeout
         self.adapter_type = adapter_type
+        self.logger = logger
         self.debug = debug
         # Read defaults from config to avoid divergence with QueryLoopConfig
         if config is not None:
@@ -72,8 +74,19 @@ class QueryLoopFactory:
             "fallback_chain": self.fallback_chain,
             "auto_fallback": bool(self.fallback_chain),
             "registry": registry,
+            "logger": self.logger,
             "debug": self.debug,
         }
+        if self.config is not None:
+            fb_cfg = getattr(self.config, "fallback", None)
+            if fb_cfg is not None:
+                kwargs["circuit_breaker_threshold"] = getattr(
+                    fb_cfg, "circuit_breaker_threshold", 5
+                )
+                kwargs["circuit_breaker_cooldown"] = getattr(
+                    fb_cfg, "circuit_breaker_cooldown", 60.0
+                )
+
         if self.timeout is not None:
             kwargs["timeout"] = self.timeout
         if self.adapter_type is not None:

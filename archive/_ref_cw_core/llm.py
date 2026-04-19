@@ -25,7 +25,7 @@ class LLMClient:
     ):
         self.base_url = base_url.rstrip("/")
         self.model = model
-        self.api_key = api_key or os.getenv("LLM_API_KEY", "sk-WAEUwVx1GmT3C2CREbBc2fD53fEf4dB6A373773d28CfAfA6")
+        self.api_key = api_key or os.getenv("LLM_API_KEY", "sk-PLACEHOLDER-KEY-DO-NOT-USE")
         self.client = httpx.AsyncClient(timeout=300.0)
     
     async def chat(

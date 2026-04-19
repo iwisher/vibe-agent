@@ -64,7 +64,12 @@ class BashTool(Tool):
     def __init__(self, sandbox: BashSandbox | None = None):
         super().__init__(
             name="bash",
-            description="Execute bash commands. Use for file operations, running scripts, and system tasks.",
+            description=(
+                "Execute bash commands. ONLY simple commands are supported. "
+                "Do NOT use pipes (|), redirects (>, >>), command chaining (&&, ;), "
+                "or variable expansion ($). If you need to perform multiple steps "
+                "or complex operations, use multiple tool calls."
+            ),
         )
         self.sandbox = sandbox or BashSandbox()
 

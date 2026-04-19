@@ -47,20 +47,26 @@ class TestQueryLoopFactoryAdapter:
         from vibe.adapters.anthropic import AnthropicAdapter
         assert isinstance(llm.adapter, AnthropicAdapter)
 
-    def test_from_profile_without_provider_registry_no_adapter(self):
-        config = VibeConfig.load(auto_create=False)
-        profile = ModelProfile(
-            name="default",
-            provider="default",
+    def test_create_llm_propagates_circuit_breaker_settings(self, tmp_path):
+        import yaml
+        config_data = {
+            "fallback": {
+                "circuit_breaker_threshold": 3,
+                "circuit_breaker_cooldown": 120.0,
+            }
+        }
+        config_path = tmp_path / "config.yaml"
+        config_path.write_text(yaml.dump(config_data), encoding="utf-8")
+        config = VibeConfig.load(path=config_path, auto_create=False)
+
+        factory = QueryLoopFactory(
             base_url="http://localhost:11434",
-            model_id="llama3.2",
+            model="llama3.2",
+            config=config,
         )
-        factory = QueryLoopFactory.from_profile(profile, config=config)
-        # Default provider "default" exists in config.providers (backward compat)
-        # but has openai adapter
         llm = factory.create_llm()
-        from vibe.adapters.openai import OpenAIAdapter
-        assert isinstance(llm.adapter, OpenAIAdapter)
+        assert llm.circuit_breaker.threshold == 3
+        assert llm.circuit_breaker.cooldown_seconds == 120.0
 
 
 class TestModelRegistryFromConfig:

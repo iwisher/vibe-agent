@@ -8,11 +8,21 @@ llm:
 
 # 2. Providers (Connection Endpoints)
 providers:
-  # Kimi Provider (supports multiple models below)
+  # Kimi Developer API
   kimi-api:
     base_url: "https://api.moonshot.cn"
-    adapter: "anthropic"  # Using Anthropic format for coding tasks
+    adapter: "anthropic"
     api_key_env_var: "KIMI_API_KEY"
+
+  # Kimi Coding Endpoint (requires specific headers)
+  kimi-coding:
+    base_url: "https://api.kimi.com/coding"
+    adapter: "openai"
+    api_key_env_var: "KIMI_API_KEY"
+    extra_headers:
+      "HTTP-Referer": "https://github.com/RooCoder/Roo-Code"
+      "X-Title": "Roo Code"
+      "User-Agent": "Kimi CLI"  # Required by some Kimi endpoints to verify "Coding Agent" status
 
   # OpenRouter simulating Roo Code (Cline)
   openrouter:
@@ -30,9 +40,7 @@ providers:
     api_key_env_var: "APPLESAY_API_KEY"
 
 # 3. Model Registry
-# Link models to providers and specify their native IDs
 models:
-  # Multiple models sharing the 'kimi-api' provider
   kimi-fast:
     provider: "kimi-api"
     model_id: "moonshot-v1-8k"
@@ -40,29 +48,41 @@ models:
   kimi-smart:
     provider: "kimi-api"
     model_id: "moonshot-v1-32k"
+
+  kimi-for-coding:
+    provider: "kimi-coding"
+    model_id: "kimi-latest"
   
-  # Professional tier via OpenRouter
   pro-model:
     provider: "openrouter"
     model_id: "anthropic/claude-3.5-sonnet"
   
-  # Emergency backup via Applesay
   legacy-backup:
     provider: "applesay-proxy"
     model_id: "qwen-max"
 
 # 4. Fallback Chain
-# Ordered priority list for cross-provider resilience
 fallback:
   enabled: true
   chain:
-    - "kimi-smart"    # Tier 1 (Kimi)
-    - "pro-model"      # Tier 2 (OpenRouter/Anthropic)
-    - "legacy-backup"  # Tier 3 (Applesay)
+    - "kimi-smart"
+    - "kimi-for-coding" # Try Kimi's specialized coding endpoint
+    - "pro-model"
+    - "legacy-backup"
   max_retries: 2
   health_check_timeout: 10.0
+  circuit_breaker_threshold: 1
+  circuit_breaker_cooldown: 600.0
 
 # 5. Operational Settings
 query_loop:
   max_iterations: 50
   max_context_tokens: 128000
+
+# 6. Logging
+# Logs are stored per-session with automatic cleanup
+logging:
+  enabled: true
+  log_dir: "~/.vibe/logs"
+  max_file_size_mb: 10
+  retention_days: 5

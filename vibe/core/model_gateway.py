@@ -83,6 +83,9 @@ class LLMClient:
         adapter: Any | None = None,
         registry: Any | None = None,
         client: httpx.AsyncClient | None = None,
+        circuit_breaker_threshold: int = 5,
+        circuit_breaker_cooldown: float = 60.0,
+        logger: Any | None = None,
         debug: bool = False,
     ):
         """Initialize the LLM client.
@@ -102,6 +105,9 @@ class LLMClient:
             registry: Optional ModelRegistry for multi-provider fallback.
             client: Optional shared httpx.AsyncClient. If provided, the *timeout* parameter
                 is ignored and the caller is responsible for closing the client.
+            circuit_breaker_threshold: Consecutive failures before opening breaker.
+            circuit_breaker_cooldown: Seconds to stay open before probing again.
+            logger: Optional SessionLogger for logging requests/responses.
             debug: If True, print request URL and redacted headers to stderr.
         """
         self.base_url = base_url.rstrip("/")
@@ -113,10 +119,13 @@ class LLMClient:
         self._owns_client = client is None
         self.fallback_chain = fallback_chain or []
         self.auto_fallback = auto_fallback
-        self.circuit_breaker = circuit_breaker or CircuitBreaker()
+        self.circuit_breaker = circuit_breaker or CircuitBreaker(
+            threshold=circuit_breaker_threshold, cooldown_seconds=circuit_breaker_cooldown
+        )
         self.on_request = on_request
         self.on_response = on_response
         self.registry = registry
+        self.logger = logger
         self.debug = debug
         # Adapter: default to OpenAI-compatible for backward compatibility
         if adapter is None:
@@ -201,6 +210,8 @@ class LLMClient:
                 ErrorType.HTTP_ERROR,
                 ErrorType.MODEL_UNAVAILABLE,
                 ErrorType.AUTHENTICATION_ERROR,  # 401/403 may indicate model-specific unavailability
+                ErrorType.NETWORK_ERROR,
+                ErrorType.TIMEOUT_ERROR,
             ):
                 # Fallback on all 4xx/5xx except rate limit (429)
                 if result.error_type != ErrorType.RATE_LIMIT_ERROR:
@@ -285,6 +296,9 @@ class LLMClient:
                     file=sys.stderr,
                 )
 
+            if self.logger:
+                self.logger.debug(f"LLM Request: model={model} url={url} messages={len(messages)}")
+
             if self.on_request:
                 self.on_request(payload, model)
 
@@ -292,7 +306,14 @@ class LLMClient:
             response.raise_for_status()
             data = response.json()
 
-            return eff_adapter.parse_response(data)
+            res = eff_adapter.parse_response(data)
+            if self.logger:
+                if res.is_error:
+                    self.logger.error(f"LLM Error Response: {res.error}")
+                else:
+                    self.logger.debug(f"LLM Success Response: {res.content[:200]}...")
+            
+            return res
 
         try:
             result = await self.recovery.execute_with_retry(_make_request)

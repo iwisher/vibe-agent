@@ -1,6 +1,7 @@
 """Main CLI entry point for Vibe Agent."""
 
 import asyncio
+import uuid
 from pathlib import Path
 
 import typer
@@ -11,6 +12,7 @@ from rich.table import Table
 from vibe.core.config import VibeConfig
 from vibe.core.query_loop import QueryLoop
 from vibe.core.query_loop_factory import QueryLoopFactory
+from vibe.core.logger import setup_session_logger
 from vibe.evals.model_registry import ModelRegistry
 from vibe.evals.runner import EvalRunner
 from vibe.harness.memory.eval_store import EvalStore
@@ -95,12 +97,14 @@ def main(
     """Run Vibe Agent in interactive or single-query mode."""
     working_dir = str(Path(working_dir).expanduser().resolve())
 
-    registry = ModelRegistry()
-    fallback_chain = []
-    for name in DEFAULT_CONFIG.get_fallback_chain():
-        profile = registry.get(name)
-        model_id = profile.model_id if profile else name
-        fallback_chain.append(model_id)
+    # Initialize Session Logger
+    session_id = str(uuid.uuid4())[:8]
+    logger = setup_session_logger(DEFAULT_CONFIG.logging, session_id)
+    if DEFAULT_CONFIG.logging.enabled:
+        logger.info(f"Starting session {session_id} in {working_dir}")
+
+    # Use semantic model names for the fallback chain so the registry can resolve them
+    fallback_chain = DEFAULT_CONFIG.get_fallback_chain()
 
     query_loop = QueryLoopFactory(
         base_url=server,
@@ -108,6 +112,8 @@ def main(
         api_key=api_key if api_key is not None else DEFAULT_CONFIG.resolve_api_key(),
         working_dir=working_dir,
         fallback_chain=fallback_chain,
+        config=DEFAULT_CONFIG,
+        logger=logger,
         debug=debug,
     ).create()
 
@@ -131,12 +137,14 @@ def run_evals(
     """Run built-in eval cases and display results."""
     working_dir = str(Path(working_dir).expanduser().resolve())
 
-    registry = ModelRegistry()
-    fallback_chain = []
-    for name in DEFAULT_CONFIG.get_fallback_chain():
-        profile = registry.get(name)
-        model_id = profile.model_id if profile else name
-        fallback_chain.append(model_id)
+    # Initialize Session Logger
+    session_id = str(uuid.uuid4())[:8]
+    logger = setup_session_logger(DEFAULT_CONFIG.logging, session_id)
+    if DEFAULT_CONFIG.logging.enabled:
+        logger.info(f"Starting session {session_id} in {working_dir}")
+
+    # Use semantic model names for the fallback chain so the registry can resolve them
+    fallback_chain = DEFAULT_CONFIG.get_fallback_chain()
 
     query_loop = QueryLoopFactory(
         base_url=server,
@@ -144,6 +152,8 @@ def run_evals(
         api_key=api_key if api_key is not None else DEFAULT_CONFIG.resolve_api_key(),
         working_dir=working_dir,
         fallback_chain=fallback_chain,
+        config=DEFAULT_CONFIG,
+        logger=logger,
         debug=debug,
     ).create()
 

@@ -31,12 +31,23 @@ class TestVibeConfigLoad:
     def test_load_existing_config(self, tmp_path):
         config_path = tmp_path / "config.yaml"
         config_path.write_text(
-            "llm:\n  default_model: model-a\n  timeout: 60.0\n",
+            "llm:\n  default_model: model-a\n  timeout: 60.0\n"
+            "fallback:\n  circuit_breaker_threshold: 2\n  circuit_breaker_cooldown: 300.0\n",
             encoding="utf-8",
         )
         cfg = VibeConfig.load(path=config_path, auto_create=False)
         assert cfg.llm.default_model == "model-a"
         assert cfg.llm.timeout == 60.0
+        assert cfg.fallback.circuit_breaker_threshold == 2
+        assert cfg.fallback.circuit_breaker_cooldown == 300.0
+
+    def test_env_override_circuit_breaker(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("VIBE_CB_THRESHOLD", "10")
+        monkeypatch.setenv("VIBE_CB_COOLDOWN", "1200")
+        config_path = tmp_path / "config.yaml"
+        cfg = VibeConfig.load(path=config_path, auto_create=True)
+        assert cfg.fallback.circuit_breaker_threshold == 10
+        assert cfg.fallback.circuit_breaker_cooldown == 1200.0
 
     def test_env_override_model(self, tmp_path, monkeypatch):
         monkeypatch.setenv("VIBE_MODEL", "model-b")

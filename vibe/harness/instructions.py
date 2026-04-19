@@ -24,6 +24,17 @@ class InstructionSet:
     def build_system_prompt(self, include_skills: list[str] | None = None) -> str:
         """Build the full system prompt from AGENTS.md and skills."""
         parts = []
+
+        # Add mandatory environment constraints
+        parts.append(
+            "# Environment Constraints\n"
+            "You are operating in a restricted environment for security and stability.\n"
+            "- **Tool Usage**: Use only one tool at a time unless you are certain they are independent.\n"
+            "- **Bash Constraints**: The `bash` tool only supports simple commands. "
+            "Pipes (|), redirects (>, >>), command chaining (&&, ;), and variable expansion ($) are strictly forbidden. "
+            "If you need to process or redirect output, do it across multiple turns or use specialized tools like `write_file`."
+        )
+
         if self.global_agents:
             parts.append(self.global_agents)
         if self.project_agents:

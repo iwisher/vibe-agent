@@ -79,6 +79,7 @@ class QueryLoop:
         context_planner: ContextPlanner | None = None,
         trace_store: Any | None = None,
         config: Any | None = None,
+        logger: Any | None = None,
     ):
         # Allow VibeConfig to override individual parameters
         if config is not None:
@@ -119,6 +120,7 @@ class QueryLoop:
         self._feedback_retries = 0
         self.instruction_set = instruction_set
         self.mcp_bridge = mcp_bridge
+        self.logger = logger
         self.context_planner = context_planner or ContextPlanner(trace_store=trace_store)
         self._plan_result: PlanResult | None = None
 
@@ -148,6 +150,8 @@ class QueryLoop:
             return
         self._running = True
         self._set_state(QueryState.PLANNING)
+        if self.logger:
+            self.logger.info(f"Starting QueryLoop run. Initial query: {initial_query}")
         try:
             if initial_query:
                 self.messages.append(Message(role="user", content=initial_query))
@@ -165,6 +169,8 @@ class QueryLoop:
                     ],
                 )
                 self._plan_result = self.context_planner.plan(plan_request)
+                if self.logger:
+                    self.logger.info(f"Planner selected tools: {self._plan_result.tools}")
                 if self._plan_result.system_prompt_append:
                     self.messages.insert(
                         0,
@@ -205,6 +211,10 @@ class QueryLoop:
                         break
 
                     if response.tool_calls:
+                        if self.logger:
+                            from vibe.tools._utils import extract_tool_call_name
+                            tool_names = [extract_tool_call_name(tc) for tc in response.tool_calls]
+                            self.logger.info(f"LLM requested tools: {tool_names}")
                         yield await self._process_tool_response(response, metrics)
                     else:
                         should_continue, result = await self._process_content_response(response, metrics)

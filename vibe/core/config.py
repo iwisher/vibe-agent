@@ -73,6 +73,8 @@ class FallbackConfig:
     chain: list[str] = field(default_factory=lambda: ["default"])
     health_check_timeout: float = 10.0
     max_retries: int = 3
+    circuit_breaker_threshold: int = 1
+    circuit_breaker_cooldown: float = 600.0
 
 
 @dataclass
@@ -142,6 +144,17 @@ class EvalConfig:
 
 
 @dataclass
+class LogConfig:
+    enabled: bool = True
+    log_dir: str = "~/.vibe/logs"
+    max_file_size_mb: int = 10
+    retention_days: int = 5
+
+    def __post_init__(self):
+        self.log_dir = os.path.expanduser(self.log_dir)
+
+
+@dataclass
 class VibeConfig:
     """Top-level configuration for vibe-agent."""
 
@@ -151,6 +164,7 @@ class VibeConfig:
     query_loop: QueryLoopConfig = field(default_factory=QueryLoopConfig)
     retry: RetryConfig = field(default_factory=RetryConfig)
     eval: EvalConfig = field(default_factory=EvalConfig)
+    logging: LogConfig = field(default_factory=LogConfig)
     providers: ProviderRegistry = field(default_factory=ProviderRegistry)
     # Raw model configs for eval infrastructure (see vibe/evals/model_registry.py)
     models: Dict[str, Any] = field(default_factory=dict)
@@ -217,6 +231,12 @@ class VibeConfig:
                 "VIBE_HEALTH_TIMEOUT", fb_raw.get("health_check_timeout", 10.0)
             ),
             max_retries=_parse_int("VIBE_FALLBACK_RETRIES", fb_raw.get("max_retries", 3)),
+            circuit_breaker_threshold=_parse_int(
+                "VIBE_CB_THRESHOLD", fb_raw.get("circuit_breaker_threshold", 1)
+            ),
+            circuit_breaker_cooldown=_parse_float(
+                "VIBE_CB_COOLDOWN", fb_raw.get("circuit_breaker_cooldown", 600.0)
+            ),
         )
 
         comp_raw = raw.get("compactor", {})
@@ -251,13 +271,28 @@ class VibeConfig:
 
         retry_raw = raw.get("retry", {})
         retry = RetryConfig(
-            max_retries=_parse_int("VIBE_RETRY_MAX_RETRIES", retry_raw.get("max_retries", 2)),
+            max_retries=_parse_int("VIBE_RETRY_MAX", retry_raw.get("max_retries", 2)),
             initial_delay=_parse_float(
-                "VIBE_RETRY_INITIAL_DELAY", retry_raw.get("initial_delay", 1.0)
+                "VIBE_RETRY_DELAY", retry_raw.get("initial_delay", 1.0)
+            ),
+        )
+
+        log_raw = raw.get("logging", {})
+        logging = LogConfig(
+            enabled=_parse_bool(
+                os.getenv("VIBE_LOGGING_ENABLED", str(log_raw.get("enabled", True)))
+            ),
+            log_dir=os.getenv("VIBE_LOG_DIR", log_raw.get("log_dir", "~/.vibe/logs")),
+            max_file_size_mb=_parse_int(
+                "VIBE_LOG_MAX_SIZE", log_raw.get("max_file_size_mb", 10)
+            ),
+            retention_days=_parse_int(
+                "VIBE_LOG_RETENTION", log_raw.get("retention_days", 5)
             ),
         )
 
         eval_raw = raw.get("eval", {})
+
         eval_cfg = EvalConfig(
             default_cases_dir=os.getenv(
                 "VIBE_EVAL_CASES_DIR", eval_raw.get("default_cases_dir", "vibe/evals/builtin")
@@ -288,6 +323,7 @@ class VibeConfig:
             query_loop=query_loop,
             retry=retry,
             eval=eval_cfg,
+            logging=logging,
             providers=providers,
             models=models,
         )
