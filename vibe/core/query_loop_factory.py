@@ -2,14 +2,14 @@
 
 from typing import Any
 
-from vibe.core.model_gateway import LLMClient
-from vibe.core.query_loop import QueryLoop
 from vibe.core.context_compactor import ContextCompactor
 from vibe.core.error_recovery import ErrorRecovery, RetryPolicy
+from vibe.core.model_gateway import LLMClient
+from vibe.core.query_loop import QueryLoop
 from vibe.harness.constraints import HookPipeline
-from vibe.tools.tool_system import ToolSystem
-from vibe.tools.bash import BashTool, BashSandbox
+from vibe.tools.bash import BashSandbox, BashTool
 from vibe.tools.file import ReadFileTool, WriteFileTool
+from vibe.tools.tool_system import ToolSystem
 
 
 class QueryLoopFactory:
@@ -30,6 +30,7 @@ class QueryLoopFactory:
         with_hooks: bool = False,
         config: Any | None = None,
         adapter_type: str | None = None,
+        debug: bool = False,
     ):
         self.base_url = base_url
         self.model = model
@@ -38,6 +39,7 @@ class QueryLoopFactory:
         self.fallback_chain = fallback_chain or []
         self.timeout = timeout
         self.adapter_type = adapter_type
+        self.debug = debug
         # Read defaults from config to avoid divergence with QueryLoopConfig
         if config is not None:
             ql_cfg = getattr(config, "query_loop", None)
@@ -52,17 +54,31 @@ class QueryLoopFactory:
         self.config = config
 
     def create_llm(self) -> LLMClient:
+        # Resolve registry if config is available
+        registry = None
+        if self.config is not None:
+            from vibe.evals.model_registry import ModelRegistry
+
+            try:
+                registry = ModelRegistry.from_config(self.config)
+            except Exception:
+                # Fallback for when config might not be a full VibeConfig (e.g. tests)
+                pass
+
         kwargs: dict[str, Any] = {
             "base_url": self.base_url,
             "model": self.model,
             "api_key": self.api_key,
             "fallback_chain": self.fallback_chain,
             "auto_fallback": bool(self.fallback_chain),
+            "registry": registry,
+            "debug": self.debug,
         }
         if self.timeout is not None:
             kwargs["timeout"] = self.timeout
         if self.adapter_type is not None:
             from vibe.adapters.registry import get_adapter
+
             kwargs["adapter"] = get_adapter(self.adapter_type)()
         return LLMClient(**kwargs)
 
@@ -96,7 +112,7 @@ class QueryLoopFactory:
                 config=self.config,
             )
             # Wire LLM summarization if the client supports it
-            if hasattr(llm, "acomplete"):
+            if hasattr(llm, "complete"):
                 async def _summarize(msgs: list[dict[str, Any]]) -> str:
                     summary_prompt = [
                         {
@@ -105,7 +121,8 @@ class QueryLoopFactory:
                         },
                         {"role": "user", "content": "\n".join(f"{m.get('role', 'user')}: {m.get('content', '')}" for m in msgs)},
                     ]
-                    return await llm.acomplete(summary_prompt)
+                    resp = await llm.complete(summary_prompt)
+                    return resp.content
                 compactor.summarize_fn = _summarize
             kwargs["context_compactor"] = compactor
         if self.with_error_recovery:
@@ -128,7 +145,9 @@ class QueryLoopFactory:
         return QueryLoop(**kwargs)
 
     @classmethod
-    def from_profile(cls, profile, working_dir: str = "/tmp", config: Any | None = None) -> "QueryLoopFactory":
+    def from_profile(
+        cls, profile, working_dir: str = "/tmp", config: Any | None = None, debug: bool = False
+    ) -> "QueryLoopFactory":
         """Create a factory from a ModelProfile (used by multi-model runner)."""
         max_iterations = 15
         max_context_tokens = 16000
@@ -157,4 +176,5 @@ class QueryLoopFactory:
             with_hooks=True,
             config=config,
             adapter_type=adapter_type,
+            debug=debug,
         )

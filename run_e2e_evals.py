@@ -24,21 +24,22 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from vibe.core.config import VibeConfig
-from vibe.core.model_gateway import LLMClient
-from vibe.core.query_loop import QueryLoop
 from vibe.core.context_compactor import ContextCompactor
 from vibe.core.error_recovery import ErrorRecovery, RetryPolicy
-from vibe.harness.constraints import HookPipeline, policy_hook, HookStage
-from vibe.harness.memory.eval_store import EvalStore, EvalCase
-from vibe.evals.runner import EvalRunner
-from vibe.evals.model_registry import ModelRegistry, ModelProfile
+from vibe.core.model_gateway import LLMClient
+from vibe.core.query_loop import QueryLoop
+from vibe.core.query_loop_factory import QueryLoopFactory
+from vibe.evals.model_registry import ModelProfile, ModelRegistry
 from vibe.evals.multi_model_runner import MultiModelRunner
-from vibe.evals.soak_test import SoakTestRunner, print_report
 from vibe.evals.observability import Observability
-from vibe.tools.tool_system import ToolSystem
-from vibe.tools.bash import BashTool, BashSandbox
+from vibe.evals.runner import EvalRunner
+from vibe.evals.soak_test import SoakTestRunner, print_report
+from vibe.harness.constraints import HookPipeline, HookStage, policy_hook
+from vibe.harness.memory.eval_store import EvalResult, EvalStore
+from vibe.tools.bash import BashSandbox, BashTool
 from vibe.tools.file import ReadFileTool, WriteFileTool
 from vibe.tools.skill_manage import SkillManageTool
+from vibe.tools.tool_system import ToolSystem
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Mock LLM for dry-run / CI
@@ -120,21 +121,21 @@ class MockLLM:
         pass
 
 
-def create_query_loop(base_url: str, model: str, api_key: str, vibe_config=None, dry_run: bool = False) -> QueryLoop:
+def create_query_loop(base_url: str, model: str, api_key: str, vibe_config=None, dry_run: bool = False, debug: bool = False) -> QueryLoop:
     """Wire up a QueryLoop with real or mock LLM and real tools."""
     if dry_run:
         llm = MockLLM()
     else:
         from vibe.evals.model_registry import ModelRegistry
         registry = ModelRegistry()
-        
+
         fallback_chain = []
         if vibe_config:
             for name in vibe_config.get_fallback_chain():
                 profile = registry.get(name)
                 model_id = profile.model_id if profile else name
                 fallback_chain.append(model_id)
-        
+
         llm = LLMClient(
             base_url=base_url,
             model=model,
@@ -143,6 +144,7 @@ def create_query_loop(base_url: str, model: str, api_key: str, vibe_config=None,
             retry_policy=RetryPolicy(max_retries=2, initial_delay=1.0),
             fallback_chain=fallback_chain,
             auto_fallback=True,
+            debug=debug,
         )
 
     tool_system = ToolSystem()
@@ -191,10 +193,10 @@ def load_config():
 # Standard eval mode
 # ════════════════════════════════════════════════════════════════════════════════
 
-async def run_standard_eval(config: dict, cases: list, obs: Observability, dry_run: bool = False):
+async def run_standard_eval(config: dict, cases: list, obs: Observability, dry_run: bool = False, debug: bool = False):
     query_loop = create_query_loop(
         config["base_url"], config["model"], config["api_key"],
-        vibe_config=config.get("vibe_config"), dry_run=dry_run
+        vibe_config=config.get("vibe_config"), dry_run=dry_run, debug=debug
     )
     eval_store = EvalStore()
     runner = EvalRunner(
@@ -258,7 +260,7 @@ async def run_standard_eval(config: dict, cases: list, obs: Observability, dry_r
 # Benchmark mode
 # ═══════════════════════════════════════════════════════════════════════════════
 
-async def run_benchmark(models: list, cases: list, parallel: bool, obs: Observability):
+async def run_benchmark(models: list, cases: list, parallel: bool, obs: Observability, debug: bool = False):
     registry = ModelRegistry()
 
     # Ensure API key is set for profiles that need one
@@ -269,7 +271,11 @@ async def run_benchmark(models: list, cases: list, parallel: bool, obs: Observab
             if p and not p.api_key:
                 p.api_key = api_key
 
-    runner = MultiModelRunner(registry=registry, observability=obs)
+    class DebugMultiModelRunner(MultiModelRunner):
+        def _create_query_loop(self, profile: ModelProfile) -> QueryLoop:
+            return QueryLoopFactory.from_profile(profile, debug=debug)
+
+    runner = DebugMultiModelRunner(registry=registry, observability=obs)
     scorecard = await runner.run_all(model_names=models, cases=cases, parallel=parallel)
     runner.save_scorecard(scorecard)
 
@@ -291,11 +297,12 @@ async def run_soak_test(
     duration_minutes: float,
     cases_per_minute: float,
     obs: Observability,
+    debug: bool = False,
 ):
     def query_loop_factory():
         return create_query_loop(
             config["base_url"], config["model"], config["api_key"],
-            vibe_config=config.get("vibe_config")
+            vibe_config=config.get("vibe_config"), debug=debug
         )
 
     eval_store = EvalStore()
@@ -381,6 +388,8 @@ Examples:
         help="Cases per minute (default: 6)",
     )
 
+    parser.add_argument("--debug", action="store_true", help="Print request URL and redacted headers to stderr")
+
     args = parser.parse_args()
 
     # Load config
@@ -423,13 +432,17 @@ Examples:
 
     # Dispatch
     if args.mode == "eval":
-        exit_code = asyncio.run(run_standard_eval(config, cases, obs, dry_run=getattr(args, "dry_run", False)))
+        exit_code = asyncio.run(run_standard_eval(
+            config, cases, obs,
+            dry_run=getattr(args, "dry_run", False),
+            debug=args.debug
+        ))
     elif args.mode == "benchmark":
         models = [m.strip() for m in args.models.split(",")]
-        exit_code = asyncio.run(run_benchmark(models, cases, args.parallel, obs))
+        exit_code = asyncio.run(run_benchmark(models, cases, args.parallel, obs, debug=args.debug))
     elif args.mode == "soak":
         exit_code = asyncio.run(
-            run_soak_test(config, cases, args.duration, args.cpm, obs)
+            run_soak_test(config, cases, args.duration, args.cpm, obs, debug=args.debug)
         )
     else:
         parser.print_help()

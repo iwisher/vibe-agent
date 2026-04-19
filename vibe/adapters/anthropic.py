@@ -60,8 +60,8 @@ class AnthropicAdapter(BaseLLMAdapter):
             if block_type == "text":
                 text_parts.append(block.get("text", ""))
             elif block_type == "tool_use":
+                # ... existing logic ...
                 tool_input = block.get("input", {})
-                # Serialize dict input to JSON string to match OpenAI format
                 arguments = json.dumps(tool_input) if isinstance(tool_input, dict) else str(tool_input)
                 tool_calls.append({
                     "id": block.get("id"),
@@ -73,7 +73,7 @@ class AnthropicAdapter(BaseLLMAdapter):
                 })
 
         usage = response_json.get("usage", {})
-        return LLMResponse(
+        resp = LLMResponse(
             content="\n".join(text_parts),
             usage={
                 "prompt_tokens": usage.get("input_tokens", 0),
@@ -83,6 +83,7 @@ class AnthropicAdapter(BaseLLMAdapter):
             finish_reason=response_json.get("stop_reason"),
             tool_calls=tool_calls if tool_calls else None,
         )
+        return resp
 
     def health_check_endpoints(self, base_url: str, model_id: str) -> List[Tuple[str, str]]:
         return [

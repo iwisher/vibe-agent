@@ -4,6 +4,28 @@ All notable changes to Vibe Agent will be documented in this file.
 
 ---
 
+## [0.2.0-alpha] — 2026-04-19
+
+### Added
+- **Multi-Provider Support**: Introduced `ProviderRegistry` and `ModelRegistry` for managing multiple LLM endpoints (OpenRouter, Anthropic, Ollama, etc.).
+- **Provider Adapters**: Implemented `OpenAIAdapter` and `AnthropicAdapter` to support diverse API formats.
+- **Cross-Provider Fallback**: `LLMClient` now dynamically resolves connection details, enabling fallback chains to span different providers and adapters.
+- **Circuit Breaker**: Integrated resilience into `LLMClient` to automatically skip unstable model endpoints during cooldown periods.
+- **Custom Headers**: Added `extra_headers` support at the provider level, enabling "Roo Code" simulation for OpenRouter and support for beta API features.
+- **Comprehensive Documentation**: Added `docs/ARCHITECTURE.md`, `docs/CONFIGURATION.md`, `docs/ROADMAP.md`, `docs/EVALUATION.md`, and `docs/REVIEWS.md`.
+
+### Fixed
+- **Security**: Hardened `BashTool` by switching from `subprocess_shell` to `subprocess_exec` and implemented strict path jailing in `FileTool` and `SkillManageTool`.
+- **Stability**: Fixed resource leaks by ensuring `httpx.AsyncClient` is properly closed across all runners and coordinators.
+- **Query Loop Integrity**: Resolved ambiguous `COMPLETED` states by adding an explicit `INCOMPLETE` state for iteration exhaustion.
+
+### Changed
+- **Architecture**: Decomposed the monolithic `QueryLoop` into specialized coordinators: `ToolExecutor`, `FeedbackCoordinator`, and `CompactionCoordinator`.
+- **Refactoring**: Standardized configuration parsing in `VibeConfig` and unified typing styles across the core package.
+- **Project Cleanup**: Consolidated planning and review documents and rewrote `README.md` for better project accessibility.
+
+---
+
 ## [0.1.0-alpha] — 2026-04-15
 
 ### Added

@@ -1,13 +1,14 @@
 import json
 import os
+import sys
 import time
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Union
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional
 
 import httpx
+
 from vibe.core.error_recovery import ErrorRecovery, RetryPolicy
 from vibe.core.llm_types import ErrorType, LLMResponse
-
 
 RequestHook = Callable[[Dict[str, Any], str], None]
 ResponseHook = Callable[[LLMResponse, str], None]
@@ -79,8 +80,10 @@ class LLMClient:
         circuit_breaker: Optional[CircuitBreaker] = None,
         on_request: Optional[RequestHook] = None,
         on_response: Optional[ResponseHook] = None,
-        adapter = None,
+        adapter: Any | None = None,
+        registry: Any | None = None,
         client: httpx.AsyncClient | None = None,
+        debug: bool = False,
     ):
         """Initialize the LLM client.
 
@@ -96,8 +99,10 @@ class LLMClient:
             on_request: Optional callback for outgoing requests.
             on_response: Optional callback for incoming responses.
             adapter: Optional request/response adapter.
+            registry: Optional ModelRegistry for multi-provider fallback.
             client: Optional shared httpx.AsyncClient. If provided, the *timeout* parameter
                 is ignored and the caller is responsible for closing the client.
+            debug: If True, print request URL and redacted headers to stderr.
         """
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -111,6 +116,8 @@ class LLMClient:
         self.circuit_breaker = circuit_breaker or CircuitBreaker()
         self.on_request = on_request
         self.on_response = on_response
+        self.registry = registry
+        self.debug = debug
         # Adapter: default to OpenAI-compatible for backward compatibility
         if adapter is None:
             from vibe.adapters.openai import OpenAIAdapter
@@ -136,15 +143,42 @@ class LLMClient:
         for attempt_model in models_to_try:
             # Circuit breaker: skip models that are continuously failing
             if self.circuit_breaker.is_open(attempt_model):
+                if self.debug:
+                    print(
+                        f"[vibe-debug] SKIP model={attempt_model} reason=circuit_breaker_open",
+                        file=sys.stderr,
+                    )
                 continue
 
+            # Resolve connection details for this model attempt
+            base_url = self.base_url
+            api_key = self.api_key
+            adapter = self.adapter
+            extra_headers = {}
+            model_id = attempt_model
+
+            if self.registry:
+                profile = self.registry.get(attempt_model)
+                if profile:
+                    base_url = profile.base_url
+                    api_key = profile.resolve_api_key()
+                    model_id = profile.model_id
+                    extra_headers = profile.extra_headers
+                    from vibe.adapters.registry import get_adapter
+
+                    adapter = get_adapter(profile.adapter_type)()
+
             result = await self._try_complete(
-                attempt_model,
+                model_id,
                 messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
                 tools=tools,
                 tool_choice=tool_choice,
+                base_url=base_url,
+                api_key=api_key,
+                adapter=adapter,
+                extra_headers=extra_headers,
             )
             if not result.is_error:
                 self.circuit_breaker.record_success(attempt_model)
@@ -152,6 +186,14 @@ class LLMClient:
                 return result
 
             self.circuit_breaker.record_failure(attempt_model)
+
+            if self.debug:
+                print(
+                    f"[vibe-debug] FAIL model={attempt_model} "
+                    f"error_type={result.error_type.name} "
+                    f"error={result.error[:200]}",
+                    file=sys.stderr,
+                )
 
             # If this is a model-unavailability error and fallback is enabled, continue
             if self.auto_fallback and result.error_type in (
@@ -163,6 +205,12 @@ class LLMClient:
                 # Fallback on all 4xx/5xx except rate limit (429)
                 if result.error_type != ErrorType.RATE_LIMIT_ERROR:
                     last_error = result
+                    if self.debug:
+                        print(
+                            f"[vibe-debug] FALLBACK from={attempt_model} "
+                            f"to=next_model reason={result.error_type.name}",
+                            file=sys.stderr,
+                        )
                     continue
 
             # Rate limit or other non-recoverable errors — don't fallback
@@ -188,20 +236,54 @@ class LLMClient:
         max_tokens: Optional[int] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: str = "auto",
+        base_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+        adapter: Any | None = None,
+        extra_headers: Optional[Dict[str, str]] = None,
     ) -> LLMResponse:
         """Single attempt at a completion request for a specific model."""
 
+        # Use overrides or defaults
+        eff_base_url = base_url or self.base_url
+        eff_api_key = api_key or self.api_key
+        eff_adapter = adapter or self.adapter
+        eff_extra_headers = extra_headers or {}
+
         async def _make_request():
-            url, headers, payload = self.adapter.build_request(
-                base_url=self.base_url,
+            url, headers, payload = eff_adapter.build_request(
+                base_url=eff_base_url,
                 model=model,
                 messages=messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
                 tools=tools,
                 tool_choice=tool_choice,
-                api_key=self.api_key,
+                api_key=eff_api_key,
             )
+
+            # Merge extra headers from provider profile
+            if eff_extra_headers:
+                headers.update(eff_extra_headers)
+
+            if self.debug:
+                safe_headers = {}
+                for k, v in headers.items():
+                    k_lower = k.lower()
+                    if any(p in k_lower for p in ["auth", "key", "token", "secret"]):
+                        val = str(v)
+                        if len(val) <= 15:
+                            safe_headers[k] = "***"
+                        else:
+                            safe_headers[k] = val[:12] + "..." + val[-4:]
+                    else:
+                        safe_headers[k] = v
+                print(f"[vibe-debug] POST {url}", file=sys.stderr)
+                print(f"[vibe-debug] headers={safe_headers}", file=sys.stderr)
+                print(
+                    f"[vibe-debug] model={payload.get('model')} "
+                    f"messages={len(payload.get('messages', []))}",
+                    file=sys.stderr,
+                )
 
             if self.on_request:
                 self.on_request(payload, model)
@@ -210,7 +292,7 @@ class LLMClient:
             response.raise_for_status()
             data = response.json()
 
-            return self.adapter.parse_response(data)
+            return eff_adapter.parse_response(data)
 
         try:
             result = await self.recovery.execute_with_retry(_make_request)
@@ -227,9 +309,46 @@ class LLMClient:
             elif status >= 500:
                 error_type = ErrorType.SERVER_ERROR
 
+            # Try to extract detailed error from response body
+            detail = str(e)
+            try:
+                body = e.response.text
+                if body:
+                    # Many APIs return {"error": {"message": "...", "type": "..."}}
+                    parsed = json.loads(body)
+                    if isinstance(parsed, dict):
+                        err_obj = parsed.get("error", parsed)
+                        if isinstance(err_obj, dict):
+                            msg = err_obj.get("message", "")
+                            err_type = err_obj.get("type", "")
+                            if msg:
+                                detail = f"[{status}] {msg}"
+                                if err_type:
+                                    detail += f" (type: {err_type})"
+                        else:
+                            detail = f"[{status}] {err_obj}"
+                    else:
+                        detail = f"[{status}] {body[:500]}"
+                else:
+                    detail = f"[{status}] Empty response body"
+            except Exception:
+                body = e.response.text or ""
+                detail = f"[{status}] {body[:500]}"
+
+            if self.debug:
+                print(
+                    f"[vibe-debug] ERROR model={model} status={status} "
+                    f"error_type={error_type.name}",
+                    file=sys.stderr,
+                )
+                print(f"[vibe-debug] detail={detail}", file=sys.stderr)
+                hint = self.recovery.handle_error(e)
+                if hint:
+                    print(f"[vibe-debug] hint={hint}", file=sys.stderr)
+
             result = LLMResponse(
                 content="",
-                error=str(e),
+                error=detail,
                 error_type=error_type,
                 actionable_hint=self.recovery.handle_error(e),
             )
@@ -237,9 +356,16 @@ class LLMClient:
                 self.on_response(result, model)
             return result
         except httpx.TimeoutException as e:
+            detail = f"[TIMEOUT] {e}"
+            if self.debug:
+                print(
+                    f"[vibe-debug] ERROR model={model} error_type=TIMEOUT "
+                    f"detail={detail}",
+                    file=sys.stderr,
+                )
             result = LLMResponse(
                 content="",
-                error=str(e),
+                error=detail,
                 error_type=ErrorType.TIMEOUT_ERROR,
                 actionable_hint=self.recovery.handle_error(e),
             )
@@ -247,9 +373,16 @@ class LLMClient:
                 self.on_response(result, model)
             return result
         except (httpx.NetworkError, httpx.ConnectError) as e:
+            detail = f"[NETWORK] {e}"
+            if self.debug:
+                print(
+                    f"[vibe-debug] ERROR model={model} error_type=NETWORK "
+                    f"detail={detail}",
+                    file=sys.stderr,
+                )
             result = LLMResponse(
                 content="",
-                error=str(e),
+                error=detail,
                 error_type=ErrorType.NETWORK_ERROR,
                 actionable_hint=self.recovery.handle_error(e),
             )
@@ -257,9 +390,16 @@ class LLMClient:
                 self.on_response(result, model)
             return result
         except Exception as e:
+            detail = f"[{type(e).__name__}] {e}"
+            if self.debug:
+                print(
+                    f"[vibe-debug] ERROR model={model} error_type=UNKNOWN "
+                    f"detail={detail}",
+                    file=sys.stderr,
+                )
             result = LLMResponse(
                 content="",
-                error=str(e),
+                error=detail,
                 error_type=ErrorType.UNKNOWN_ERROR,
                 actionable_hint=self.recovery.handle_error(e),
             )

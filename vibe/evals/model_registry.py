@@ -5,7 +5,7 @@ multiple models through a single base_url with different model IDs.
 """
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -17,6 +17,7 @@ class ModelProfile:
     provider: str
     base_url: str
     model_id: str
+    adapter_type: str = "openai"
     api_key: str | None = None
     api_key_env_var: str = "LLM_API_KEY"
     timeout: float = 120.0
@@ -25,6 +26,7 @@ class ModelProfile:
     tags: list[str] = None
     is_default: bool = False
     is_ci_model: bool = False
+    extra_headers: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self):
         if self.tags is None:
@@ -155,11 +157,15 @@ class ModelRegistry:
                 api_key = provider.resolve_api_key()
                 api_key_env_var = provider.api_key_env_var or "LLM_API_KEY"
                 timeout = provider.timeout
+                adapter_type = provider.adapter_type
+                extra_headers = provider.extra_headers
             else:
                 base_url = model_cfg.get("base_url", config.llm.base_url)
                 api_key = model_cfg.get("api_key")
                 api_key_env_var = model_cfg.get("api_key_env_var", "LLM_API_KEY")
                 timeout = model_cfg.get("timeout", config.llm.timeout)
+                adapter_type = model_cfg.get("adapter", "openai")
+                extra_headers = model_cfg.get("extra_headers", {})
 
             profiles.append(
                 ModelProfile(
@@ -167,6 +173,7 @@ class ModelRegistry:
                     provider=provider_name,
                     base_url=base_url,
                     model_id=model_cfg.get("model_id", name),
+                    adapter_type=adapter_type,
                     api_key=api_key,
                     api_key_env_var=api_key_env_var,
                     timeout=float(timeout),
@@ -175,6 +182,7 @@ class ModelRegistry:
                     tags=model_cfg.get("tags", []),
                     is_default=model_cfg.get("is_default", False),
                     is_ci_model=model_cfg.get("is_ci_model", False),
+                    extra_headers=extra_headers,
                 )
             )
 
@@ -189,6 +197,7 @@ class ModelRegistry:
                 "provider": p.provider,
                 "base_url": p.base_url,
                 "model_id": p.model_id,
+                "adapter_type": p.adapter_type,
                 "api_key_env_var": p.api_key_env_var,
                 "timeout": p.timeout,
                 "cost_per_1k_prompt": p.cost_per_1k_prompt,

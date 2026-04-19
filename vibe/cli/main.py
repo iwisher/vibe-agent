@@ -1,7 +1,6 @@
 """Main CLI entry point for Vibe Agent."""
 
 import asyncio
-import sys
 from pathlib import Path
 
 import typer
@@ -91,6 +90,7 @@ def main(
     server: str = typer.Option(DEFAULT_CONFIG.llm.base_url, "--server", "-s"),
     api_key: str | None = typer.Option(None, "--api-key", "-k"),
     working_dir: str = typer.Option(".", "--working-dir", "-w"),
+    debug: bool = typer.Option(False, "--debug", "-d", help="Print request URL and redacted headers to stderr"),
 ):
     """Run Vibe Agent in interactive or single-query mode."""
     working_dir = str(Path(working_dir).expanduser().resolve())
@@ -105,9 +105,10 @@ def main(
     query_loop = QueryLoopFactory(
         base_url=server,
         model=model,
-        api_key=api_key,
+        api_key=api_key if api_key is not None else DEFAULT_CONFIG.resolve_api_key(),
         working_dir=working_dir,
         fallback_chain=fallback_chain,
+        debug=debug,
     ).create()
 
     if ctx.args:
@@ -125,6 +126,7 @@ def run_evals(
     api_key: str | None = typer.Option(None, "--api-key", "-k"),
     working_dir: str = typer.Option(".", "--working-dir", "-w"),
     limit: int | None = typer.Option(None, "--limit", "-n", help="Limit number of evals to run"),
+    debug: bool = typer.Option(False, "--debug", "-d", help="Print request URL and redacted headers to stderr"),
 ):
     """Run built-in eval cases and display results."""
     working_dir = str(Path(working_dir).expanduser().resolve())
@@ -139,9 +141,10 @@ def run_evals(
     query_loop = QueryLoopFactory(
         base_url=server,
         model=model,
-        api_key=api_key,
+        api_key=api_key if api_key is not None else DEFAULT_CONFIG.resolve_api_key(),
         working_dir=working_dir,
         fallback_chain=fallback_chain,
+        debug=debug,
     ).create()
 
     store = EvalStore()
@@ -243,6 +246,7 @@ def run_soak(
     server: str = typer.Option(DEFAULT_CONFIG.llm.base_url, "--server", "-s"),
     api_key: str | None = typer.Option(None, "--api-key", "-k"),
     working_dir: str = typer.Option(".", "--working-dir", "-w"),
+    debug: bool = typer.Option(False, "--debug", help="Print request URL and redacted headers to stderr"),
 ):
     """Run a long-running soak test against built-in eval cases."""
     working_dir = str(Path(working_dir).expanduser().resolve())
@@ -260,9 +264,10 @@ def run_soak(
         return QueryLoopFactory(
             base_url=server,
             model=model,
-            api_key=api_key,
+            api_key=api_key if api_key is not None else DEFAULT_CONFIG.resolve_api_key(),
             working_dir=working_dir,
             fallback_chain=fallback_chain,
+            debug=debug,
         ).create()
 
     store = EvalStore()

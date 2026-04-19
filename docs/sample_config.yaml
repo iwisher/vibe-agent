@@ -1,0 +1,68 @@
+# Vibe Agent Configuration - v0.2.0-alpha
+# Save this file to ~/.vibe/config.yaml
+
+# 1. Global Defaults
+llm:
+  default_model: "kimi-smart"  # Start with the best Kimi model
+  timeout: 120.0
+
+# 2. Providers (Connection Endpoints)
+providers:
+  # Kimi Provider (supports multiple models below)
+  kimi-api:
+    base_url: "https://api.moonshot.cn"
+    adapter: "anthropic"  # Using Anthropic format for coding tasks
+    api_key_env_var: "KIMI_API_KEY"
+
+  # OpenRouter simulating Roo Code (Cline)
+  openrouter:
+    base_url: "https://openrouter.ai/api/v1"
+    adapter: "openai"
+    api_key_env_var: "OPENROUTER_API_KEY"
+    extra_headers:
+      "HTTP-Referer": "https://github.com/RooCoder/Roo-Code"
+      "X-Title": "Roo Code"
+
+  # Applesay Provider
+  applesay-proxy:
+    base_url: "http://ai-api.applesay.cn"
+    adapter: "openai"
+    api_key_env_var: "APPLESAY_API_KEY"
+
+# 3. Model Registry
+# Link models to providers and specify their native IDs
+models:
+  # Multiple models sharing the 'kimi-api' provider
+  kimi-fast:
+    provider: "kimi-api"
+    model_id: "moonshot-v1-8k"
+  
+  kimi-smart:
+    provider: "kimi-api"
+    model_id: "moonshot-v1-32k"
+  
+  # Professional tier via OpenRouter
+  pro-model:
+    provider: "openrouter"
+    model_id: "anthropic/claude-3.5-sonnet"
+  
+  # Emergency backup via Applesay
+  legacy-backup:
+    provider: "applesay-proxy"
+    model_id: "qwen-max"
+
+# 4. Fallback Chain
+# Ordered priority list for cross-provider resilience
+fallback:
+  enabled: true
+  chain:
+    - "kimi-smart"    # Tier 1 (Kimi)
+    - "pro-model"      # Tier 2 (OpenRouter/Anthropic)
+    - "legacy-backup"  # Tier 3 (Applesay)
+  max_retries: 2
+  health_check_timeout: 10.0
+
+# 5. Operational Settings
+query_loop:
+  max_iterations: 50
+  max_context_tokens: 128000
