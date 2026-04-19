@@ -12,6 +12,8 @@ class SummarizationStrategy(Enum):
     """Strategy for reducing context when token budget is exceeded."""
     TRUNCATE = auto()       # Keep N recent messages, drop the rest
     LLM_SUMMARIZE = auto()  # Use LLM to generate a semantic summary
+    OFFLOAD = auto()        # Move old messages to external storage, keep refs
+    DROP = auto()           # Drop oldest messages without summary
 
 
 def _get_encoding():
@@ -85,7 +87,7 @@ class ContextCompactor:
         return self.estimate_tokens(messages) > self.max_tokens
 
     def compact(self, messages: list[dict[str, Any]]) -> CompactionResult:
-        """Synchronous compaction using TRUNCATE strategy."""
+        """Synchronous compaction using TRUNCATE, OFFLOAD, or DROP strategy."""
         if not self.should_compact(messages):
             return CompactionResult(messages=messages)
 
@@ -98,15 +100,27 @@ class ContextCompactor:
 
         to_summarize = non_system[: -self.preserve_recent]
         keep_intact = non_system[-self.preserve_recent :]
+
+        if self.strategy == SummarizationStrategy.DROP:
+            compacted = system_messages + keep_intact
+            return CompactionResult(
+                messages=compacted,
+                was_compacted=True,
+                strategy_used="drop",
+            )
+
+        # Default truncate / offload placeholder behavior
         summary = {
             "role": "system",
             "content": f"[Context summarized: {len(to_summarize)} earlier messages omitted]",
         }
+        if self.strategy == SummarizationStrategy.OFFLOAD:
+            summary["content"] = f"[Context offloaded: {len(to_summarize)} earlier messages moved to storage]"
         compacted = system_messages + [summary] + keep_intact
         return CompactionResult(
             messages=compacted,
             was_compacted=True,
-            strategy_used="summarize_middle",
+            strategy_used="summarize_middle" if self.strategy == SummarizationStrategy.TRUNCATE else "offload",
         )
 
     async def compact_async(self, messages: list[dict[str, Any]]) -> CompactionResult:

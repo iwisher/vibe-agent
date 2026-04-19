@@ -2,15 +2,15 @@ import json
 import os
 import time
 from dataclasses import dataclass, field
-from enum import Enum, auto
-from typing import Any, Callable, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import httpx
 from vibe.core.error_recovery import ErrorRecovery, RetryPolicy
+from vibe.core.llm_types import ErrorType, LLMResponse
 
 
-RequestHook = Callable[[dict[str, Any], str], None]
-ResponseHook = Callable[["LLMResponse", str], None]
+RequestHook = Callable[[Dict[str, Any], str], None]
+ResponseHook = Callable[[LLMResponse, str], None]
 
 
 class ErrorType(Enum):
