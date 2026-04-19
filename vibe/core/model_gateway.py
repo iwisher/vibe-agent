@@ -3,13 +3,13 @@ import os
 import time
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Union
 
 import httpx
 from vibe.core.error_recovery import ErrorRecovery, RetryPolicy
 
 
-RequestHook = Callable[[Dict[str, Any], str], None]
+RequestHook = Callable[[dict[str, Any], str], None]
 ResponseHook = Callable[["LLMResponse", str], None]
 
 
@@ -46,7 +46,7 @@ class CircuitBreaker:
     def __init__(self, threshold: int = 5, cooldown_seconds: float = 60.0):
         self.threshold = threshold
         self.cooldown_seconds = cooldown_seconds
-        self._states: Dict[str, CircuitBreakerState] = {}
+        self._states: dict[str, CircuitBreakerState] = {}
 
     def _state(self, model: str) -> CircuitBreakerState:
         if model not in self._states:
@@ -83,13 +83,13 @@ class CircuitBreaker:
 class LLMResponse:
     """Standardized response from LLM."""
     content: str
-    usage: Dict[str, int] = field(default_factory=lambda: {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})
-    finish_reason: Optional[str] = None
-    tool_calls: Optional[List[Dict[str, Any]]] = None
-    error: Optional[str] = None
+    usage: dict[str, int] = field(default_factory=lambda: {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})
+    finish_reason: str | None = None
+    tool_calls: list[dict[str, Any] | None] = None
+    error: str | None = None
     error_type: ErrorType = ErrorType.NONE
-    actionable_hint: Optional[str] = None
-    model_used: Optional[str] = None  # Actual model after fallback resolution
+    actionable_hint: str | None = None
+    model_used: str | None = None  # Actual model after fallback resolution
 
     @property
     def is_error(self) -> bool:
@@ -103,14 +103,14 @@ class LLMClient:
         self,
         base_url: str = "http://localhost:11434",
         model: str = "default",
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         timeout: float = 300.0,
-        retry_policy: Optional[RetryPolicy] = None,
-        fallback_chain: Optional[List[str]] = None,
+        retry_policy: RetryPolicy | None = None,
+        fallback_chain: list[str] | None = None,
         auto_fallback: bool = False,
-        circuit_breaker: Optional[CircuitBreaker] = None,
-        on_request: Optional[RequestHook] = None,
-        on_response: Optional[ResponseHook] = None,
+        circuit_breaker: CircuitBreaker | None = None,
+        on_request: RequestHook | None = None,
+        on_response: ResponseHook | None = None,
     ):
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -124,7 +124,7 @@ class LLMClient:
         self.on_request = on_request
         self.on_response = on_response
 
-    def _get_headers(self) -> Dict[str, str]:
+    def _get_headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -132,10 +132,10 @@ class LLMClient:
 
     async def complete(
         self,
-        messages: List[Dict[str, Any]],
+        messages: list[dict[str, Any]],
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
-        tools: Optional[List[Dict[str, Any]]] = None,
+        max_tokens: int | None = None,
+        tools: list[dict[str, Any] | None] = None,
         tool_choice: str = "auto",
     ) -> LLMResponse:
         """Sends a completion request with built-in retry and optional model fallback."""
@@ -144,7 +144,7 @@ class LLMClient:
             m for m in self.fallback_chain if m != self.model
         ]
 
-        last_error: Optional[LLMResponse] = None
+        last_error: LLMResponse | None = None
 
         for attempt_model in models_to_try:
             # Circuit breaker: skip models that are continuously failing
@@ -196,10 +196,10 @@ class LLMClient:
     async def _try_complete(
         self,
         model: str,
-        messages: List[Dict[str, Any]],
+        messages: list[dict[str, Any]],
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
-        tools: Optional[List[Dict[str, Any]]] = None,
+        max_tokens: int | None = None,
+        tools: list[dict[str, Any] | None] = None,
         tool_choice: str = "auto",
     ) -> LLMResponse:
         """Single attempt at a completion request for a specific model."""
@@ -294,10 +294,10 @@ class LLMClient:
 
     async def structured_output(
         self,
-        messages: List[Dict[str, Any]],
-        output_schema: Dict[str, Any],
+        messages: list[dict[str, Any]],
+        output_schema: dict[str, Any],
         temperature: float = 0.1,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Forces the LLM to provide structured JSON output matching the schema.
         Prepends a system message for guidance.

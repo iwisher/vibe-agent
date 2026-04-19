@@ -8,7 +8,7 @@ import signal
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from .tool_system import Tool, ToolResult
 
@@ -50,8 +50,8 @@ class BashSandbox:
 
     working_dir: str = "."
     timeout: int = 120
-    allowed_commands: Optional[List[str]] = field(default=None)
-    dangerous_patterns: List[str] = field(default_factory=lambda: list(_DEFAULT_DANGEROUS_PATTERNS))
+    allowed_commands: list[str] | None = field(default=None)
+    dangerous_patterns: list[str] = field(default_factory=lambda: list(_DEFAULT_DANGEROUS_PATTERNS))
 
     def __post_init__(self):
         self.working_dir = str(Path(self.working_dir).resolve())
@@ -61,14 +61,14 @@ class BashSandbox:
 class BashTool(Tool):
     """Execute bash commands in a sandboxed environment."""
 
-    def __init__(self, sandbox: Optional[BashSandbox] = None):
+    def __init__(self, sandbox: BashSandbox | None = None):
         super().__init__(
             name="bash",
             description="Execute bash commands. Use for file operations, running scripts, and system tasks.",
         )
         self.sandbox = sandbox or BashSandbox()
 
-    def get_schema(self) -> Dict[str, Any]:
+    def get_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -80,7 +80,7 @@ class BashTool(Tool):
             "required": ["command"],
         }
 
-    def _is_dangerous(self, command: str) -> Optional[str]:
+    def _is_dangerous(self, command: str) -> str | None:
         """Check if a command matches a dangerous pattern. Returns the matched pattern or None."""
         for regex in self.sandbox._dangerous_regexes:
             if regex.search(command):
@@ -103,7 +103,7 @@ class BashTool(Tool):
                 return True
         return False
 
-    def _has_unquoted_shell_chars(self, command: str) -> Optional[str]:
+    def _has_unquoted_shell_chars(self, command: str) -> str | None:
         """Return the first unquoted shell metacharacter found, or None if safe.
 
         Uses a simple state machine to track whether we're inside single quotes,

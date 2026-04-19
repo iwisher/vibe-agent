@@ -11,7 +11,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from vibe.core.query_loop import QueryLoop
 from vibe.core.query_loop_factory import QueryLoopFactory
@@ -33,8 +33,8 @@ class ModelRunResult:
     p95_latency: float
     total_tokens: int
     total_cases: int
-    case_results: List[EvalResult] = field(default_factory=list)
-    errors: List[str] = field(default_factory=list)
+    case_results: list[EvalResult] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -43,10 +43,10 @@ class Scorecard:
 
     timestamp: str
     eval_suite_version: str
-    models: List[ModelRunResult]
-    by_tag: Dict[str, Dict[str, Dict[str, Any]]] = field(default_factory=dict)
-    best_overall: Optional[str] = None
-    best_by_tag: Dict[str, str] = field(default_factory=dict)
+    models: list[ModelRunResult]
+    by_tag: dict[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
+    best_overall: str | None = None
+    best_by_tag: dict[str, str] = field(default_factory=dict)
 
 
 class MultiModelRunner:
@@ -54,9 +54,9 @@ class MultiModelRunner:
 
     def __init__(
         self,
-        registry: Optional[ModelRegistry] = None,
-        eval_store: Optional[EvalStore] = None,
-        observability: Optional[Observability] = None,
+        registry: ModelRegistry | None = None,
+        eval_store: EvalStore | None = None,
+        observability: Observability | None = None,
     ):
         self.registry = registry or ModelRegistry()
         self.eval_store = eval_store
@@ -69,7 +69,7 @@ class MultiModelRunner:
     async def run_model(
         self,
         profile: ModelProfile,
-        cases: List[EvalCase],
+        cases: list[EvalCase],
     ) -> ModelRunResult:
         """Run all eval cases against a single model."""
         print(f"\n{'─' * 70}")
@@ -79,9 +79,9 @@ class MultiModelRunner:
 
         self.obs.counter("model_runs", labels={"model": profile.name})
 
-        results: List[EvalResult] = []
-        latencies: List[float] = []
-        errors: List[str] = []
+        results: list[EvalResult] = []
+        latencies: list[float] = []
+        errors: list[str] = []
         total_tokens = 0
 
         for case in cases:
@@ -160,8 +160,8 @@ class MultiModelRunner:
 
     async def run_all(
         self,
-        model_names: List[str],
-        cases: List[EvalCase],
+        model_names: list[str],
+        cases: list[EvalCase],
         parallel: bool = False,
     ) -> Scorecard:
         """Run evals against multiple models."""
@@ -216,7 +216,7 @@ class MultiModelRunner:
                 best_overall = r.model
 
         # Aggregate by tag
-        by_tag: Dict[str, Dict[str, Dict[str, Any]]] = {}
+        by_tag: dict[str, dict[str, dict[str, Any]]] = {}
         for r in model_results:
             for case_result in r.case_results:
                 # Find case tags
@@ -288,7 +288,7 @@ class MultiModelRunner:
 
         print(f"{'═' * 70}")
 
-    def save_scorecard(self, scorecard: Scorecard, path: Optional[str] = None) -> str:
+    def save_scorecard(self, scorecard: Scorecard, path: str | None = None) -> str:
         """Save scorecard to JSON and Markdown."""
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         output_dir = Path.home() / ".vibe" / "scorecards"
@@ -364,7 +364,7 @@ class MultiModelRunner:
         return "\n".join(lines)
 
     @staticmethod
-    def _p95(values: List[float]) -> float:
+    def _p95(values: list[float]) -> float:
         if not values:
             return 0.0
         sorted_vals = sorted(values)

@@ -3,7 +3,7 @@
 Detects generic HTTP 4xx/5xx failures and network errors.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import httpx
 
@@ -14,11 +14,11 @@ from vibe.evals.model_registry import ModelRegistry, ModelProfile
 class ModelHealthChecker:
     """Checks if a model is available before committing to it."""
 
-    def __init__(self, api_key: Optional[str] = None, base_url: Optional[str] = None):
+    def __init__(self, api_key: str | None = None, base_url: str | None = None):
         self.api_key = api_key
         self.base_url = (base_url or "http://localhost:11434").rstrip("/")
 
-    def _get_headers(self) -> Dict[str, str]:
+    def _get_headers(self) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -91,7 +91,7 @@ class ModelHealthChecker:
     async def resolve_model(
         self,
         config: VibeConfig,
-        registry: Optional[ModelRegistry] = None,
+        registry: ModelRegistry | None = None,
     ) -> str:
         """Walk the fallback chain and return the first available model.
 
@@ -115,7 +115,7 @@ class ModelHealthChecker:
     async def resolve_with_retry(
         self,
         config: VibeConfig,
-        registry: Optional[ModelRegistry] = None,
+        registry: ModelRegistry | None = None,
     ) -> str:
         """Resolve with up to config.fallback.max_retries attempts."""
         for attempt in range(1, config.fallback.max_retries + 1):

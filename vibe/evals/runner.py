@@ -3,7 +3,7 @@
 import asyncio
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from vibe.core.query_loop import QueryLoop, QueryResult
 from vibe.harness.memory.eval_store import EvalCase, EvalResult, EvalStore
@@ -17,8 +17,8 @@ class EvalRunner:
     def __init__(
         self,
         query_loop: QueryLoop,
-        eval_store: Optional[EvalStore] = None,
-        observability: Optional[Observability] = None,
+        eval_store: EvalStore | None = None,
+        observability: Observability | None = None,
         max_concurrency: int = 3,
     ):
         self.query_loop = query_loop
@@ -36,7 +36,7 @@ class EvalRunner:
             )
 
         self.query_loop.clear_history()
-        results: List[QueryResult] = []
+        results: list[QueryResult] = []
 
         # Span for LLM interaction
         llm_span = None
@@ -72,7 +72,7 @@ class EvalRunner:
             )
 
         final = results[-1]
-        diff: Dict[str, Any] = {}
+        diff: dict[str, Any] = {}
         passed = True
         expected = case.expected or {}
 
@@ -197,13 +197,13 @@ class EvalRunner:
 
     # ─── Named assertion check methods (return (bool, str|dict)) ───
 
-    def _check_file_exists(self, expected: Dict[str, Any]) -> tuple[bool, str]:
+    def _check_file_exists(self, expected: dict[str, Any]) -> tuple[bool, str]:
         path = Path(expected["file_exists"]).expanduser()
         if not path.exists():
             return False, f"Missing {path}"
         return True, ""
 
-    def _check_file_contains(self, expected: Dict[str, Any]) -> tuple[bool, str]:
+    def _check_file_contains(self, expected: dict[str, Any]) -> tuple[bool, str]:
         path = Path(expected["file_contains"]).expanduser()
         try:
             content = path.read_text(encoding="utf-8")
@@ -213,7 +213,7 @@ class EvalRunner:
             return False, f"Expected '{expected['contains_text']}' not found in {path}"
         return True, ""
 
-    def _check_stdout_contains(self, expected: Dict[str, Any], results: List[QueryResult]) -> tuple[bool, str]:
+    def _check_stdout_contains(self, expected: dict[str, Any], results: list[QueryResult]) -> tuple[bool, str]:
         target = expected["stdout_contains"]
         for r in results:
             for tr in r.tool_results:
@@ -222,7 +222,7 @@ class EvalRunner:
                     return True, ""
         return False, f"Expected '{target}' not found in tool outputs"
 
-    def _check_tool_called(self, expected: Dict[str, Any]) -> tuple[bool, str]:
+    def _check_tool_called(self, expected: dict[str, Any]) -> tuple[bool, str]:
         target_tool = expected["tool_called"]
         for m in self.query_loop.messages:
             if m.role == "assistant" and m.tool_calls:
@@ -231,7 +231,7 @@ class EvalRunner:
                         return True, ""
         return False, f"Expected tool '{target_tool}' was not called"
 
-    def _check_tool_sequence(self, expected: Dict[str, Any]) -> tuple[bool, str]:
+    def _check_tool_sequence(self, expected: dict[str, Any]) -> tuple[bool, str]:
         expected_seq = expected["tool_sequence"]
         if isinstance(expected_seq, str):
             expected_seq = [expected_seq]
@@ -246,13 +246,13 @@ class EvalRunner:
             return False, f"Expected sequence {expected_seq}, got {actual_seq}"
         return True, ""
 
-    def _check_no_tool_called(self, results: List[QueryResult]) -> tuple[bool, str]:
+    def _check_no_tool_called(self, results: list[QueryResult]) -> tuple[bool, str]:
         any_tool = any(r.tool_results for r in results)
         if any_tool:
             return False, "Expected no tool calls, but tools were invoked"
         return True, ""
 
-    def _check_context_truncated(self, expected: Dict[str, Any], results: List[QueryResult]) -> tuple[bool, str]:
+    def _check_context_truncated(self, expected: dict[str, Any], results: list[QueryResult]) -> tuple[bool, str]:
         truncated = any(r.context_truncated for r in results)
         if expected["context_truncated"] and not truncated:
             return False, "Expected context truncation, but it did not occur"
@@ -260,7 +260,7 @@ class EvalRunner:
             return False, "Context was truncated unexpectedly"
         return True, ""
 
-    def _check_response_contains(self, expected: Dict[str, Any], results: List[QueryResult]) -> tuple[bool, Dict[str, str]]:
+    def _check_response_contains(self, expected: dict[str, Any], results: list[QueryResult]) -> tuple[bool, dict[str, str]]:
         targets = expected["response_contains"]
         if isinstance(targets, str):
             targets = [targets]
@@ -274,7 +274,7 @@ class EvalRunner:
             return False, failures
         return True, {}
 
-    def _check_response_contains_any(self, expected: Dict[str, Any], results: List[QueryResult]) -> tuple[bool, str]:
+    def _check_response_contains_any(self, expected: dict[str, Any], results: list[QueryResult]) -> tuple[bool, str]:
         targets = expected["response_contains_any"]
         if isinstance(targets, str):
             targets = [targets]
@@ -285,7 +285,7 @@ class EvalRunner:
             return False, f"Expected at least one of {targets} not found in responses"
         return True, ""
 
-    def _check_min_response_length(self, expected: Dict[str, Any], results: List[QueryResult]) -> tuple[bool, str]:
+    def _check_min_response_length(self, expected: dict[str, Any], results: list[QueryResult]) -> tuple[bool, str]:
         min_len = expected["min_response_length"]
         responses = [r.response or "" for r in results]
         total_len = sum(len(r) for r in responses)
@@ -293,7 +293,7 @@ class EvalRunner:
             return False, f"Total response length {total_len} < required {min_len}"
         return True, ""
 
-    def _check_metrics_threshold(self, expected: Dict[str, Any], latency: float, total_tokens: int) -> tuple[bool, str]:
+    def _check_metrics_threshold(self, expected: dict[str, Any], latency: float, total_tokens: int) -> tuple[bool, str]:
         thresholds = expected["metrics_threshold"]
         if isinstance(thresholds, dict):
             max_latency = thresholds.get("max_latency_seconds")
@@ -304,7 +304,7 @@ class EvalRunner:
                 return False, f"Total tokens {total_tokens} > threshold {max_tokens}"
         return True, ""
 
-    async def run_all(self, cases: List[EvalCase]) -> List[EvalResult]:
+    async def run_all(self, cases: list[EvalCase]) -> list[EvalResult]:
         async def _run(case: EvalCase) -> EvalResult:
             async with self._semaphore:
                 return await self.run_case(case)

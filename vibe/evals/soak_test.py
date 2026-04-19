@@ -14,7 +14,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from vibe.core.model_gateway import LLMClient
 from vibe.core.query_loop import QueryLoop
@@ -43,7 +43,7 @@ class SoakSnapshot:
     total_tokens: int
     tool_call_count: int
     turn_count: int
-    error: Optional[str] = None
+    error: str | None = None
 
 
 @dataclass
@@ -65,9 +65,9 @@ class SoakReport:
     avg_tokens_per_case: float
     tokens_per_second: float
     error_count: int
-    unique_errors: Dict[str, int]
+    unique_errors: dict[str, int]
     degradation_detected: bool
-    snapshots: List[SoakSnapshot] = field(default_factory=list)
+    snapshots: list[SoakSnapshot] = field(default_factory=list)
 
 
 class SoakTestRunner:
@@ -81,8 +81,8 @@ class SoakTestRunner:
         base_url: str,
         duration_minutes: float = 60.0,
         cases_per_minute: float = 6.0,
-        output_dir: Optional[str] = None,
-        observability: Optional[Observability] = None,
+        output_dir: str | None = None,
+        observability: Observability | None = None,
     ):
         self.query_loop_factory = query_loop_factory
         self.eval_store = eval_store
@@ -93,7 +93,7 @@ class SoakTestRunner:
         self.output_dir = Path(output_dir or str(Path.home() / ".vibe" / "soak"))
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self._stop = False
-        self._snapshots: List[SoakSnapshot] = []
+        self._snapshots: list[SoakSnapshot] = []
         self._current_loop = 0
         self._checkpoint_index = 0
         self.obs = observability
@@ -105,7 +105,7 @@ class SoakTestRunner:
 
         signal.signal(signal.SIGINT, handle_sigint)
 
-    async def run(self, cases: List[EvalCase]) -> SoakReport:
+    async def run(self, cases: list[EvalCase]) -> SoakReport:
         self._setup_signal_handlers()
         start_time = time.time()
         end_time = start_time + self.duration_seconds
@@ -285,7 +285,7 @@ class SoakTestRunner:
                 degradation = True
 
         # Collect unique errors
-        error_counts: Dict[str, int] = {}
+        error_counts: dict[str, int] = {}
         for s in errors:
             key = s.error or "unknown"
             error_counts[key] = error_counts.get(key, 0) + 1

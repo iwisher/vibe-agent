@@ -3,7 +3,6 @@
 import asyncio
 import sys
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -87,7 +86,7 @@ def main(
     ctx: typer.Context,
     model: str = typer.Option(DEFAULT_CONFIG.llm.default_model, "--model", "-m"),
     server: str = typer.Option(DEFAULT_CONFIG.llm.base_url, "--server", "-s"),
-    api_key: Optional[str] = typer.Option(None, "--api-key", "-k"),
+    api_key: str | None = typer.Option(None, "--api-key", "-k"),
     working_dir: str = typer.Option(".", "--working-dir", "-w"),
 ):
     """Run Vibe Agent in interactive or single-query mode."""
@@ -117,12 +116,12 @@ def main(
 
 @eval_app.command("run")
 def run_evals(
-    tag: Optional[str] = typer.Option(None, "--tag", "-t", help="Filter evals by tag"),
+    tag: str | None = typer.Option(None, "--tag", "-t", help="Filter evals by tag"),
     model: str = typer.Option(DEFAULT_CONFIG.llm.default_model, "--model", "-m"),
     server: str = typer.Option(DEFAULT_CONFIG.llm.base_url, "--server", "-s"),
-    api_key: Optional[str] = typer.Option(None, "--api-key", "-k"),
+    api_key: str | None = typer.Option(None, "--api-key", "-k"),
     working_dir: str = typer.Option(".", "--working-dir", "-w"),
-    limit: Optional[int] = typer.Option(None, "--limit", "-n", help="Limit number of evals to run"),
+    limit: int | None = typer.Option(None, "--limit", "-n", help="Limit number of evals to run"),
 ):
     """Run built-in eval cases and display results."""
     working_dir = str(Path(working_dir).expanduser().resolve())

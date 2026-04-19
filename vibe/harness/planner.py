@@ -1,7 +1,7 @@
 """Pre-LLM context planner for tool, skill, and MCP selection."""
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from vibe.harness.instructions import Skill
 
@@ -9,17 +9,17 @@ from vibe.harness.instructions import Skill
 @dataclass
 class PlanRequest:
     query: str
-    available_tools: List[Dict[str, Any]] = field(default_factory=list)
-    available_skills: List[Skill] = field(default_factory=list)
-    available_mcps: List[Dict[str, Any]] = field(default_factory=list)
+    available_tools: list[dict[str, Any]] = field(default_factory=list)
+    available_skills: list[Skill] = field(default_factory=list)
+    available_mcps: list[dict[str, Any]] = field(default_factory=list)
     history_summary: str = ""
 
 
 @dataclass
 class PlanResult:
-    selected_tool_names: List[str] = field(default_factory=list)
-    selected_skills: List[Skill] = field(default_factory=list)
-    selected_mcps: List[Dict[str, Any]] = field(default_factory=list)
+    selected_tool_names: list[str] = field(default_factory=list)
+    selected_skills: list[Skill] = field(default_factory=list)
+    selected_mcps: list[dict[str, Any]] = field(default_factory=list)
     system_prompt_append: str = ""
     reasoning: str = ""
 
@@ -27,7 +27,7 @@ class PlanResult:
 class ContextPlanner:
     """Lightweight keyword-based planner that selects relevant context before the LLM call."""
 
-    def __init__(self, trace_store: Optional[Any] = None):
+    def __init__(self, trace_store: Any | None = None):
         self.trace_store = trace_store
 
     def plan(self, request: PlanRequest) -> PlanResult:
@@ -90,7 +90,7 @@ class ContextPlanner:
             score += 2
         return score
 
-    def _select_tools(self, query: str, tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _select_tools(self, query: str, tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
         scored = []
         for tool in tools:
             score = 0
@@ -108,7 +108,7 @@ class ContextPlanner:
         matched = [t for s, t in scored if s > 0]
         return matched if matched else tools
 
-    def _match_skills(self, query: str, skills: List[Skill]) -> List[Skill]:
+    def _match_skills(self, query: str, skills: list[Skill]) -> list[Skill]:
         scored = []
         for skill in skills:
             score = 0
@@ -121,7 +121,7 @@ class ContextPlanner:
 
         return [s for sc, s in scored if sc > 0]
 
-    def _select_mcps(self, query: str, mcps: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _select_mcps(self, query: str, mcps: list[dict[str, Any]]) -> list[dict[str, Any]]:
         scored = []
         for mcp in mcps:
             score = 0

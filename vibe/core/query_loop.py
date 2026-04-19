@@ -4,7 +4,7 @@ import asyncio
 import time
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import AsyncIterator, Callable, Optional, Any
+from typing import AsyncIterator, Callable, Any
 
 from vibe.core.model_gateway import LLMClient, LLMResponse
 from vibe.core.context_compactor import ContextCompactor
@@ -43,18 +43,18 @@ class Metrics:
 class Message:
     role: str
     content: str
-    tool_calls: Optional[list] = None
-    tool_call_id: Optional[str] = None
-    model_version: Optional[str] = None
+    tool_calls: list | None = None
+    tool_call_id: str | None = None
+    model_version: str | None = None
 
 
 @dataclass
 class QueryResult:
     response: str = ""
     tool_results: list[ToolResult] = field(default_factory=list)
-    error: Optional[Exception] = None
+    error: Exception | None = None
     context_truncated: bool = False
-    metrics: Optional[Metrics] = None
+    metrics: Metrics | None = None
     state: QueryState = QueryState.IDLE
 
 
@@ -65,19 +65,19 @@ class QueryLoop:
         self,
         llm_client: LLMClient,
         tool_system: ToolSystem,
-        context_compactor: Optional[ContextCompactor] = None,
-        error_recovery: Optional[ErrorRecovery] = None,
-        hook_pipeline: Optional[HookPipeline] = None,
-        feedback_engine: Optional[FeedbackEngine] = None,
+        context_compactor: ContextCompactor | None = None,
+        error_recovery: ErrorRecovery | None = None,
+        hook_pipeline: HookPipeline | None = None,
+        feedback_engine: FeedbackEngine | None = None,
         feedback_threshold: float = 0.7,
         max_feedback_retries: int = 1,
         max_iterations: int = 50,
         max_context_tokens: int = 8000,
-        instruction_set: Optional[InstructionSet] = None,
-        mcp_bridge: Optional[MCPBridge] = None,
-        context_planner: Optional[ContextPlanner] = None,
-        trace_store: Optional[Any] = None,
-        config: Optional[Any] = None,
+        instruction_set: InstructionSet | None = None,
+        mcp_bridge: MCPBridge | None = None,
+        context_planner: ContextPlanner | None = None,
+        trace_store: Any | None = None,
+        config: Any | None = None,
     ):
         # Allow VibeConfig to override individual parameters
         if config is not None:
@@ -115,7 +115,7 @@ class QueryLoop:
         self.instruction_set = instruction_set
         self.mcp_bridge = mcp_bridge
         self.context_planner = context_planner or ContextPlanner(trace_store=trace_store)
-        self._plan_result: Optional[PlanResult] = None
+        self._plan_result: PlanResult | None = None
 
     @property
     def state(self) -> QueryState:
@@ -138,88 +138,91 @@ class QueryLoop:
     def get_model(self) -> str:
         return self.llm.model
 
-    async def run(self, initial_query: Optional[str] = None) -> AsyncIterator[QueryResult]:
+    async def run(self, initial_query: str | None = None) -> AsyncIterator[QueryResult]:
         if self._state == QueryState.STOPPED:
             return
         self._running = True
         self._set_state(QueryState.PLANNING)
-        if initial_query:
-            self.messages.append(Message(role="user", content=initial_query))
+        try:
+            if initial_query:
+                self.messages.append(Message(role="user", content=initial_query))
 
-        # --- Planning: tool, skill, and MCP selection ---
-        self._plan_result = None
-        if initial_query:
-            plan_request = PlanRequest(
-                query=initial_query,
-                available_tools=self.tools.get_tool_schemas() + (self.mcp_bridge.get_tool_schemas() if self.mcp_bridge else []),
-                available_skills=self.instruction_set.skills if self.instruction_set else [],
-                available_mcps=[
-                    {"name": cfg.name, "description": cfg.description}
-                    for cfg in (self.mcp_bridge.configs if self.mcp_bridge else [])
-                ],
-            )
-            self._plan_result = self.context_planner.plan(plan_request)
-            if self._plan_result.system_prompt_append:
-                self.messages.insert(
-                    0,
-                    Message(role="system", content=self._plan_result.system_prompt_append),
+            # --- Planning: tool, skill, and MCP selection ---
+            self._plan_result = None
+            if initial_query:
+                plan_request = PlanRequest(
+                    query=initial_query,
+                    available_tools=self.tools.get_tool_schemas() + (self.mcp_bridge.get_tool_schemas() if self.mcp_bridge else []),
+                    available_skills=self.instruction_set.skills if self.instruction_set else [],
+                    available_mcps=[
+                        {"name": cfg.name, "description": cfg.description}
+                        for cfg in (self.mcp_bridge.configs if self.mcp_bridge else [])
+                    ],
                 )
+                self._plan_result = self.context_planner.plan(plan_request)
+                if self._plan_result.system_prompt_append:
+                    self.messages.insert(
+                        0,
+                        Message(role="system", content=self._plan_result.system_prompt_append),
+                    )
 
-        iteration = 0
-        while self._running and iteration < self.max_iterations:
-            iteration += 1
-            self._set_state(QueryState.PROCESSING)
-            try:
-                llm_msgs = self._build_llm_messages()
-                compacted = await self._maybe_compact(llm_msgs)
-                if compacted:
-                    yield compacted
+            iteration = 0
+            while self._running and iteration < self.max_iterations:
+                iteration += 1
+                self._set_state(QueryState.PROCESSING)
+                try:
                     llm_msgs = self._build_llm_messages()
+                    compacted = await self._maybe_compact(llm_msgs)
+                    if compacted:
+                        yield compacted
+                        llm_msgs = self._build_llm_messages()
 
-                tools_for_llm = self._select_tools_for_llm()
-                start_time = time.time()
-                response = await self.error_recovery.execute_with_retry(
-                    lambda: self.llm.complete(llm_msgs, tools=tools_for_llm)
-                )
-                elapsed = time.time() - start_time
-                metrics = self._calc_metrics(response, elapsed)
-
-                if response.is_error:
-                    self._set_state(QueryState.ERROR)
-                    yield QueryResult(
-                        response="", error=Exception(response.error), metrics=metrics, state=self._state
+                    tools_for_llm = self._select_tools_for_llm()
+                    start_time = time.time()
+                    response = await self.error_recovery.execute_with_retry(
+                        lambda: self.llm.complete(llm_msgs, tools=tools_for_llm)
                     )
-                    break
+                    elapsed = time.time() - start_time
+                    metrics = self._calc_metrics(response, elapsed)
 
-                if not response.content and not response.tool_calls:
-                    self._set_state(QueryState.ERROR)
-                    yield QueryResult(
-                        response="", error=Exception("Empty response"), metrics=metrics, state=self._state
-                    )
-                    break
-
-                if response.tool_calls:
-                    yield await self._process_tool_response(response, metrics)
-                else:
-                    should_continue, result = await self._process_content_response(response, metrics)
-                    if result:
-                        yield result
-                    if not should_continue:
+                    if response.is_error:
+                        self._set_state(QueryState.ERROR)
+                        yield QueryResult(
+                            response="", error=Exception(response.error), metrics=metrics, state=self._state
+                        )
                         break
 
-            except Exception as e:
-                self._set_state(QueryState.ERROR)
-                yield QueryResult(response="", error=e, state=self._state)
-                break
+                    if not response.content and not response.tool_calls:
+                        self._set_state(QueryState.ERROR)
+                        yield QueryResult(
+                            response="", error=Exception("Empty response"), metrics=metrics, state=self._state
+                        )
+                        break
 
-        if self._state not in (QueryState.COMPLETED, QueryState.ERROR, QueryState.STOPPED):
-            # Distinguish between natural completion and max_iterations exhaustion
-            if iteration >= self.max_iterations:
-                self._set_state(QueryState.INCOMPLETE)
-            else:
-                self._set_state(QueryState.COMPLETED)
+                    if response.tool_calls:
+                        yield await self._process_tool_response(response, metrics)
+                    else:
+                        should_continue, result = await self._process_content_response(response, metrics)
+                        if result:
+                            yield result
+                        if not should_continue:
+                            break
 
-    async def _maybe_compact(self, llm_msgs: list[dict]) -> Optional[QueryResult]:
+                except Exception as e:
+                    self._set_state(QueryState.ERROR)
+                    yield QueryResult(response="", error=e, state=self._state)
+                    break
+
+            if self._state not in (QueryState.COMPLETED, QueryState.ERROR, QueryState.STOPPED):
+                # Distinguish between natural completion and max_iterations exhaustion
+                if iteration >= self.max_iterations:
+                    self._set_state(QueryState.INCOMPLETE)
+                else:
+                    self._set_state(QueryState.COMPLETED)
+        finally:
+            self._running = False
+
+    async def _maybe_compact(self, llm_msgs: list[dict]) -> QueryResult | None:
         """Compact context if needed. Returns a QueryResult if compaction occurred."""
         if not self.compactor.should_compact(llm_msgs):
             return None
@@ -286,7 +289,7 @@ class QueryLoop:
             state=self._state,
         )
 
-    async def _process_content_response(self, response: LLMResponse, metrics: Metrics) -> tuple[bool, Optional[QueryResult]]:
+    async def _process_content_response(self, response: LLMResponse, metrics: Metrics) -> tuple[bool, QueryResult | None]:
         """Handle a response with no tool calls. Returns (should_continue, result_to_yield)."""
         self.messages.append(
             Message(role="assistant", content=response.content or "", model_version=self.llm.model)

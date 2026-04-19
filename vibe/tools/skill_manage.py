@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 from vibe.tools.tool_system import Tool, ToolResult
 
@@ -18,7 +18,7 @@ class SkillManageTool(Tool):
         )
         self.skills_dir = Path(skills_dir).expanduser().resolve()
 
-    def get_schema(self) -> Dict[str, Any]:
+    def get_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {

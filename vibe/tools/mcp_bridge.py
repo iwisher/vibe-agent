@@ -2,7 +2,7 @@
 
 import json
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 try:
     import httpx
@@ -16,10 +16,10 @@ from vibe.tools.tool_system import ToolResult
 class MCPServerConfig:
     name: str
     description: str
-    url: Optional[str] = None
-    command: Optional[str] = None
-    args: List[str] = field(default_factory=list)
-    tools: List[Dict[str, Any]] = field(default_factory=list)
+    url: str | None = None
+    command: str | None = None
+    args: list[str] = field(default_factory=list)
+    tools: list[dict[str, Any]] = field(default_factory=list)
 
 
 class MCPBridge:
@@ -29,9 +29,9 @@ class MCPBridge:
     For command-based (stdio) servers, spawns subprocesses.
     """
 
-    def __init__(self, configs: Optional[List[Dict[str, Any]]] = None):
-        self.configs: List[MCPServerConfig] = []
-        self._http_clients: Dict[str, Any] = {}  # url -> httpx.AsyncClient
+    def __init__(self, configs: list[dict[str, Any] | None] = None):
+        self.configs: list[MCPServerConfig] = []
+        self._http_clients: dict[str, Any] = {}  # url -> httpx.AsyncClient
         for cfg in configs or []:
             self.configs.append(
                 MCPServerConfig(
@@ -60,7 +60,7 @@ class MCPBridge:
             await client.aclose()
         self._http_clients.clear()
 
-    def get_tool_schemas(self) -> List[Dict[str, Any]]:
+    def get_tool_schemas(self) -> list[dict[str, Any]]:
         schemas = []
         for cfg in self.configs:
             for tool in cfg.tools:
@@ -81,14 +81,14 @@ class MCPBridge:
                     return await self._invoke(cfg, tool, kwargs)
         return ToolResult(success=False, content=None, error=f"MCP tool '{name}' not found")
 
-    async def _invoke(self, cfg: MCPServerConfig, tool: Dict[str, Any], arguments: Dict[str, Any]) -> ToolResult:
+    async def _invoke(self, cfg: MCPServerConfig, tool: dict[str, Any], arguments: dict[str, Any]) -> ToolResult:
         if cfg.url:
             return await self._invoke_http(cfg.url, tool, arguments)
         if cfg.command:
             return await self._invoke_stdio(cfg, tool, arguments)
         return ToolResult(success=False, content=None, error=f"MCP server '{cfg.name}' has no transport configured")
 
-    async def _invoke_http(self, url: str, tool: Dict[str, Any], arguments: Dict[str, Any]) -> ToolResult:
+    async def _invoke_http(self, url: str, tool: dict[str, Any], arguments: dict[str, Any]) -> ToolResult:
         if httpx is None:
             return ToolResult(success=False, content=None, error="httpx is not installed")
         try:
@@ -104,7 +104,7 @@ class MCPBridge:
         except Exception as e:
             return ToolResult(success=False, content=None, error=str(e))
 
-    async def _invoke_stdio(self, cfg: MCPServerConfig, tool: Dict[str, Any], arguments: Dict[str, Any]) -> ToolResult:
+    async def _invoke_stdio(self, cfg: MCPServerConfig, tool: dict[str, Any], arguments: dict[str, Any]) -> ToolResult:
         import asyncio
         try:
             proc = await asyncio.create_subprocess_exec(

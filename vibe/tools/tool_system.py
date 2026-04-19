@@ -2,7 +2,7 @@ import asyncio
 import json
 import abc
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Union
 
 class ToolError(Exception):
     """Base exception for tool execution errors."""
@@ -12,7 +12,7 @@ class ToolError(Exception):
 class ToolResult:
     success: bool
     content: Any
-    error: Optional[str] = None
+    error: str | None = None
 
 class Tool(abc.ABC):
     def __init__(self, name: str, description: str):
@@ -20,7 +20,7 @@ class Tool(abc.ABC):
         self.description = description
 
     @abc.abstractmethod
-    def get_schema(self) -> Dict[str, Any]:
+    def get_schema(self) -> dict[str, Any]:
         """Return OpenAI-style function schema."""
         pass
 
@@ -31,12 +31,12 @@ class Tool(abc.ABC):
 
 class ToolSystem:
     def __init__(self):
-        self._tools: Dict[str, Tool] = {}
+        self._tools: dict[str, Tool] = {}
 
     def register_tool(self, tool: Tool):
         self._tools[tool.name] = tool
 
-    def get_tool_schemas(self) -> List[Dict[str, Any]]:
+    def get_tool_schemas(self) -> list[dict[str, Any]]:
         schemas = []
         for tool in self._tools.values():
             schema = tool.get_schema()
@@ -50,7 +50,7 @@ class ToolSystem:
             })
         return schemas
 
-    def list_tools(self) -> List[str]:
+    def list_tools(self) -> list[str]:
         return list(self._tools.keys())
 
     async def execute_tool(self, tool_name: str, **kwargs) -> ToolResult:

@@ -1,6 +1,6 @@
 """Factory for creating wired QueryLoop instances."""
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from vibe.core.model_gateway import LLMClient
 from vibe.core.query_loop import QueryLoop
@@ -19,16 +19,16 @@ class QueryLoopFactory:
         self,
         base_url: str,
         model: str,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         working_dir: str = ".",
-        fallback_chain: Optional[List[str]] = None,
-        timeout: Optional[float] = None,
-        max_iterations: int = 10,
-        max_context_tokens: Optional[int] = None,
+        fallback_chain: list[str] | None = None,
+        timeout: float | None = None,
+        max_iterations: int | None = None,
+        max_context_tokens: int | None = None,
         with_compactor: bool = False,
         with_error_recovery: bool = False,
         with_hooks: bool = False,
-        config: Optional[Any] = None,
+        config: Any | None = None,
     ):
         self.base_url = base_url
         self.model = model
@@ -36,7 +36,13 @@ class QueryLoopFactory:
         self.working_dir = working_dir
         self.fallback_chain = fallback_chain or []
         self.timeout = timeout
-        self.max_iterations = max_iterations
+        # Read defaults from config to avoid divergence with QueryLoopConfig
+        if config is not None:
+            ql_cfg = getattr(config, "query_loop", None)
+            if ql_cfg is not None:
+                max_iterations = getattr(ql_cfg, "max_iterations", max_iterations)
+                max_context_tokens = getattr(ql_cfg, "max_context_tokens", max_context_tokens)
+        self.max_iterations = max_iterations or 50
         self.max_context_tokens = max_context_tokens
         self.with_compactor = with_compactor
         self.with_error_recovery = with_error_recovery
@@ -44,7 +50,7 @@ class QueryLoopFactory:
         self.config = config
 
     def create_llm(self) -> LLMClient:
-        kwargs: Dict[str, Any] = {
+        kwargs: dict[str, Any] = {
             "base_url": self.base_url,
             "model": self.model,
             "api_key": self.api_key,
@@ -69,10 +75,10 @@ class QueryLoopFactory:
         tool_system.register_tool(WriteFileTool())
         return tool_system
 
-    def create(self, max_iterations: Optional[int] = None) -> QueryLoop:
+    def create(self, max_iterations: int | None = None) -> QueryLoop:
         llm = self.create_llm()
         tools = self.create_tool_system()
-        kwargs: Dict[str, Any] = {
+        kwargs: dict[str, Any] = {
             "llm_client": llm,
             "tool_system": tools,
             "max_iterations": max_iterations if max_iterations is not None else self.max_iterations,
@@ -104,7 +110,7 @@ class QueryLoopFactory:
         return QueryLoop(**kwargs)
 
     @classmethod
-    def from_profile(cls, profile, working_dir: str = "/tmp", config: Optional[Any] = None) -> "QueryLoopFactory":
+    def from_profile(cls, profile, working_dir: str = "/tmp", config: Any | None = None) -> "QueryLoopFactory":
         """Create a factory from a ModelProfile (used by multi-model runner)."""
         max_iterations = 15
         max_context_tokens = 16000

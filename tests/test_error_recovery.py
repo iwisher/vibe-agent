@@ -63,6 +63,10 @@ async def test_execute_with_retry_non_retryable():
 
 def test_handle_error_hints():
     recovery = ErrorRecovery(RetryPolicy())
-    assert "timed out" in recovery.handle_error(Exception("timeout"))
+    import httpx
+    assert "timed out" in recovery.handle_error(httpx.TimeoutException("timeout"))
+    assert "Connection error" in recovery.handle_error(httpx.ConnectError("nope"))
+    assert "Rate limit" in recovery.handle_error(httpx.HTTPStatusError("rate limit", request=None, response=None))
+    # Fallback substring matching for unknown exception types
     assert "Rate limit" in recovery.handle_error(Exception("rate limit 429"))
     assert "Authentication" in recovery.handle_error(Exception("auth failed 401"))

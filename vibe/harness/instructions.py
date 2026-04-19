@@ -2,7 +2,6 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
 
 import yaml
 
@@ -13,16 +12,16 @@ class Skill:
     description: str
     content: str
     auto_load: bool = False
-    tags: List[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
 
 
 @dataclass
 class InstructionSet:
     global_agents: str = ""
     project_agents: str = ""
-    skills: List[Skill] = field(default_factory=list)
+    skills: list[Skill] = field(default_factory=list)
 
-    def build_system_prompt(self, include_skills: Optional[List[str]] = None) -> str:
+    def build_system_prompt(self, include_skills: list[str] | None = None) -> str:
         """Build the full system prompt from AGENTS.md and skills."""
         parts = []
         if self.global_agents:
@@ -48,9 +47,9 @@ class InstructionLoader:
 
     def __init__(
         self,
-        global_agents_path: Optional[str] = None,
-        project_agents_path: Optional[str] = None,
-        skills_dir: Optional[str] = None,
+        global_agents_path: str | None = None,
+        project_agents_path: str | None = None,
+        skills_dir: str | None = None,
     ):
         self.global_agents_path = Path(
             global_agents_path or Path.home() / ".vibe" / "AGENTS.md"
@@ -71,7 +70,7 @@ class InstructionLoader:
             return path.read_text(encoding="utf-8").strip()
         return ""
 
-    def _load_skills(self) -> List[Skill]:
+    def _load_skills(self) -> list[Skill]:
         skills = []
         if not self.skills_dir.exists():
             return skills

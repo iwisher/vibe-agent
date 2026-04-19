@@ -6,7 +6,7 @@ multiple models through a single base_url with different model IDs.
 
 import os
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 
 @dataclass
@@ -17,12 +17,12 @@ class ModelProfile:
     provider: str
     base_url: str
     model_id: str
-    api_key: Optional[str] = None
+    api_key: str | None = None
     api_key_env_var: str = "LLM_API_KEY"
     timeout: float = 120.0
     cost_per_1k_prompt: float = 0.0
     cost_per_1k_completion: float = 0.0
-    tags: List[str] = None
+    tags: list[str] = None
     is_default: bool = False
     is_ci_model: bool = False
 
@@ -32,7 +32,7 @@ class ModelProfile:
         if self.api_key is None:
             self.api_key = os.getenv(self.api_key_env_var)
 
-    def resolve_api_key(self) -> Optional[str]:
+    def resolve_api_key(self) -> str | None:
         if self.api_key:
             return self.api_key
         return os.getenv(self.api_key_env_var)
@@ -44,7 +44,7 @@ class ModelRegistry:
     # Default base URL (Ollama local endpoint)
     DEFAULT_BASE_URL = os.getenv("VIBE_BASE_URL", "http://localhost:11434")
 
-    BUILTIN_PROFILES: List[ModelProfile] = [
+    BUILTIN_PROFILES: list[ModelProfile] = [
         ModelProfile(
             name="default",
             provider="ollama",
@@ -59,18 +59,18 @@ class ModelRegistry:
         ),
     ]
 
-    def __init__(self, profiles: Optional[List[ModelProfile]] = None):
+    def __init__(self, profiles: list[ModelProfile] | None = None):
         import copy
-        self._profiles: Dict[str, ModelProfile] = {}
+        self._profiles: dict[str, ModelProfile] = {}
         source = profiles if profiles is not None else self.BUILTIN_PROFILES
         for p in source:
             # Deep copy to prevent mutations on shared class-level state
             self._profiles[p.name] = copy.deepcopy(p)
 
-    def get(self, name: str) -> Optional[ModelProfile]:
+    def get(self, name: str) -> ModelProfile | None:
         return self._profiles.get(name)
 
-    def list_models(self, tag: Optional[str] = None) -> List[str]:
+    def list_models(self, tag: str | None = None) -> list[str]:
         if tag is None:
             return list(self._profiles.keys())
         return [name for name, p in self._profiles.items() if tag in p.tags]
@@ -87,9 +87,9 @@ class ModelRegistry:
                 return p
         return self.get_default()
 
-    def get_fallback_chain(self, primary: str, config: Optional[Any] = None) -> List[ModelProfile]:
+    def get_fallback_chain(self, primary: str, config: Any | None = None) -> list[ModelProfile]:
         """Return fallback chain: primary → config chain → compatible alternatives → default."""
-        chain: List[ModelProfile] = []
+        chain: list[ModelProfile] = []
         seen: set = set()
 
         # Primary
@@ -127,7 +127,7 @@ class ModelRegistry:
     def add_profile(self, profile: ModelProfile) -> None:
         self._profiles[profile.name] = profile
 
-    def to_dict(self) -> Dict[str, dict]:
+    def to_dict(self) -> dict[str, dict]:
         return {
             name: {
                 "provider": p.provider,

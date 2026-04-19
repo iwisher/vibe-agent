@@ -6,7 +6,7 @@ Decoupled from Hermes config. Loads from ~/.vibe/config.yaml with env overrides.
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 from yaml import YAMLError
@@ -61,14 +61,14 @@ class LLMConfig:
     default_model: str = "default"
     base_url: str = "http://localhost:11434"
     api_key_env_var: str = "LLM_API_KEY"
-    api_key: Optional[str] = None
+    api_key: str | None = None
     timeout: float = 120.0
 
 
 @dataclass
 class FallbackConfig:
     enabled: bool = True
-    chain: List[str] = field(default_factory=lambda: ["default"])
+    chain: list[str] = field(default_factory=lambda: ["default"])
     health_check_timeout: float = 10.0
     max_retries: int = 3
 
@@ -151,7 +151,7 @@ class VibeConfig:
     eval: EvalConfig = field(default_factory=EvalConfig)
 
     # Track the actual model resolved after health-check fallback
-    resolved_model: Optional[str] = None
+    resolved_model: str | None = None
 
     def set_resolved_model(self, model: str) -> None:
         """Record the actual model used after fallback resolution."""
@@ -160,7 +160,7 @@ class VibeConfig:
     @classmethod
     def load(
         cls,
-        path: Optional[Path] = None,
+        path: Path | None = None,
         auto_create: bool = True,
     ) -> "VibeConfig":
         """Load config from file, apply env overrides, return VibeConfig."""
@@ -170,7 +170,7 @@ class VibeConfig:
             config_path.parent.mkdir(parents=True, exist_ok=True)
             config_path.write_text(DEFAULT_CONFIG_CONTENT, encoding="utf-8")
 
-        raw: Dict[str, Any] = {}
+        raw: dict[str, Any] = {}
         if config_path.exists():
             with open(config_path, encoding="utf-8") as f:
                 try:
@@ -277,13 +277,13 @@ class VibeConfig:
             eval=eval_cfg,
         )
 
-    def resolve_api_key(self) -> Optional[str]:
+    def resolve_api_key(self) -> str | None:
         """Resolve API key: config file > env var > LLM_API_KEY fallback."""
         if self.llm.api_key:
             return self.llm.api_key
         return os.getenv(self.llm.api_key_env_var) or os.getenv("LLM_API_KEY")
 
-    def get_fallback_chain(self) -> List[str]:
+    def get_fallback_chain(self) -> list[str]:
         """Return the ordered fallback chain from config."""
         if not self.fallback.enabled:
             return [self.llm.default_model]
@@ -327,7 +327,7 @@ def _parse_int(env_name: str, fallback: int) -> int:
         ) from exc
 
 
-def _parse_list(env_value: Optional[str], fallback: Optional[List[str]]) -> List[str]:
+def _parse_list(env_value: str | None, fallback: list[str] | None) -> list[str]:
     if env_value:
         return [x.strip() for x in env_value.split(",") if x.strip()]
     if fallback is not None:

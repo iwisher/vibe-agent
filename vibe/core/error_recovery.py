@@ -2,7 +2,7 @@ import asyncio
 import random
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Coroutine, Optional, Type, TypeVar, Union
+from typing import Any, Callable, Coroutine, Type, TypeVar, Union
 
 import httpx
 
@@ -31,13 +31,13 @@ class RetryPolicy:
 class ErrorRecovery:
     """Handles error recovery and retries with exponential backoff."""
 
-    def __init__(self, policy: Optional[RetryPolicy] = None):
+    def __init__(self, policy: RetryPolicy | None = None):
         self.policy = policy or RetryPolicy()
 
     async def execute_with_retry(
         self,
         coroutine_factory: Callable[[], Coroutine[Any, Any, T]],
-        is_retryable: Optional[Callable[[Exception], bool]] = None,
+        is_retryable: Callable[[Exception], bool] | None = None,
     ) -> T:
         """
         Executes a coroutine with retry logic.
@@ -81,15 +81,26 @@ class ErrorRecovery:
         """Returns an actionable hint based on the error."""
         error_name = type(error).__name__
         error_msg = str(error)
-        
-        # This can be expanded based on specific error types encountered
-        if "timeout" in error_msg.lower():
+
+        # Check specific exception types first for accuracy
+        if isinstance(error, httpx.TimeoutException):
             return "The request timed out. Try increasing the timeout or reducing the request size."
-        if "rate limit" in error_msg.lower() or "429" in error_msg:
-            return "Rate limit exceeded. Consider slowing down requests or checking your quota."
-        if "connection" in error_msg.lower():
+        if isinstance(error, httpx.ConnectError):
             return "Connection error. Check your network and the server status."
-        if "auth" in error_msg.lower() or "401" in error_msg or "403" in error_msg:
+        if isinstance(error, httpx.HTTPStatusError):
+            status = error.response.status_code if error.response else 0
+            if status == 429:
+                return "Rate limit exceeded. Consider slowing down requests or checking your quota."
+            if status in (401, 403):
+                return "Authentication failed. Check your API key or credentials."
+            if status >= 500:
+                return "Server error. The LLM provider may be experiencing issues."
+
+        # Fallback to substring matching only for unknown exception types
+        lowered = error_msg.lower()
+        if "rate limit" in lowered or "429" in error_msg:
+            return "Rate limit exceeded. Consider slowing down requests or checking your quota."
+        if "auth" in lowered or "401" in error_msg or "403" in error_msg:
             return "Authentication failed. Check your API key or credentials."
-        
+
         return f"An unexpected error occurred: {error_name}. Please check the logs for details."

@@ -3,7 +3,7 @@
 import logging
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Any, Callable, Coroutine, Dict, List, Optional
+from typing import Any, Callable, Coroutine
 
 logger = logging.getLogger(__name__)
 
@@ -24,10 +24,10 @@ def _get_encoding():
 
 @dataclass
 class CompactionResult:
-    messages: List[Dict[str, Any]]
+    messages: list[dict[str, Any]]
     was_compacted: bool = False
-    strategy_used: Optional[str] = None
-    summary_text: Optional[str] = None
+    strategy_used: str | None = None
+    summary_text: str | None = None
 
 
 class ContextCompactor:
@@ -36,10 +36,10 @@ class ContextCompactor:
         max_tokens: int = 8000,
         chars_per_token: float = 4.0,
         strategy: SummarizationStrategy = SummarizationStrategy.TRUNCATE,
-        summarize_fn: Optional[Callable[[List[Dict[str, Any]]], Coroutine[Any, Any, str]]] = None,
+        summarize_fn: Callable[[list[dict[str, Any]]], Coroutine[Any, Any, str]] | None = None,
         preserve_recent: int = 4,
         max_chars_per_msg: int = 4000,
-        config: Optional[Any] = None,
+        config: Any | None = None,
     ):
         if config is not None:
             # Support passing a CompactorConfig or VibeConfig directly
@@ -56,7 +56,7 @@ class ContextCompactor:
         self.max_chars_per_msg = max_chars_per_msg
         self._encoding = _get_encoding()
 
-    def estimate_tokens(self, messages: List[Dict[str, Any]]) -> int:
+    def estimate_tokens(self, messages: list[dict[str, Any]]) -> int:
         if self._encoding is not None:
             total = 0
             for msg in messages:
@@ -81,10 +81,10 @@ class ContextCompactor:
                 total_chars += len(str(tool_calls))
         return int(total_chars / self.chars_per_token)
 
-    def should_compact(self, messages: List[Dict[str, Any]]) -> bool:
+    def should_compact(self, messages: list[dict[str, Any]]) -> bool:
         return self.estimate_tokens(messages) > self.max_tokens
 
-    def compact(self, messages: List[Dict[str, Any]]) -> CompactionResult:
+    def compact(self, messages: list[dict[str, Any]]) -> CompactionResult:
         """Synchronous compaction using TRUNCATE strategy."""
         if not self.should_compact(messages):
             return CompactionResult(messages=messages)
@@ -109,7 +109,7 @@ class ContextCompactor:
             strategy_used="summarize_middle",
         )
 
-    async def compact_async(self, messages: List[Dict[str, Any]]) -> CompactionResult:
+    async def compact_async(self, messages: list[dict[str, Any]]) -> CompactionResult:
         """Asynchronous compaction; uses LLM summarization when configured."""
         if not self.should_compact(messages):
             return CompactionResult(messages=messages)
@@ -152,7 +152,7 @@ class ContextCompactor:
             strategy_used="summarize_middle",
         )
 
-    def _truncate(self, message: Dict[str, Any], max_chars: Optional[int] = None) -> Dict[str, Any]:
+    def _truncate(self, message: dict[str, Any], max_chars: int | None = None) -> dict[str, Any]:
         limit = max_chars if max_chars is not None else self.max_chars_per_msg
         content = message.get("content", "")
         if isinstance(content, str) and len(content) > limit:

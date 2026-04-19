@@ -3,7 +3,7 @@
 import re
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable
 
 from vibe.tools.tool_system import ToolResult
 
@@ -19,17 +19,17 @@ class HookStage(Enum):
 @dataclass
 class HookContext:
     tool_name: str
-    arguments: Dict[str, Any]
-    result: Optional[ToolResult] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    arguments: dict[str, Any]
+    result: ToolResult | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
 class HookOutcome:
     allow: bool
     reason: str
-    modified_arguments: Dict[str, Any] = field(default_factory=dict)
-    modified_result: Optional[ToolResult] = None
+    modified_arguments: dict[str, Any] = field(default_factory=dict)
+    modified_result: ToolResult | None = None
 
 
 ConstraintHook = Callable[[HookContext], HookOutcome]
@@ -39,14 +39,14 @@ class HookPipeline:
     """Ordered pipeline of constraint hooks."""
 
     def __init__(self):
-        self._stages: Dict[HookStage, List[ConstraintHook]] = {
+        self._stages: dict[HookStage, list[ConstraintHook]] = {
             stage: [] for stage in HookStage
         }
 
     def add_hook(self, stage: HookStage, hook: ConstraintHook) -> None:
         self._stages[stage].append(hook)
 
-    def run_pre_hooks(self, tool_name: str, arguments: Dict[str, Any]) -> HookOutcome:
+    def run_pre_hooks(self, tool_name: str, arguments: dict[str, Any]) -> HookOutcome:
         """Run PRE_VALIDATE, PRE_MODIFY, PRE_ALLOW hooks in order."""
         context = HookContext(tool_name=tool_name, arguments=arguments)
         current_args = dict(arguments)
@@ -63,7 +63,7 @@ class HookPipeline:
         return HookOutcome(allow=True, reason="ok", modified_arguments=current_args)
 
     def run_post_hooks(
-        self, tool_name: str, arguments: Dict[str, Any], result: ToolResult
+        self, tool_name: str, arguments: dict[str, Any], result: ToolResult
     ) -> ToolResult:
         """Run POST_EXECUTE and POST_FIX hooks in order."""
         context = HookContext(tool_name=tool_name, arguments=arguments, result=result)
@@ -88,7 +88,7 @@ class HookPipeline:
 # Built-in hooks
 
 def permission_gate_hook(
-    destructive_tools: Optional[List[str]] = None,
+    destructive_tools: list[str] | None = None,
 ) -> ConstraintHook:
     """Blocks destructive tools unless explicitly allowed in metadata."""
     blocked = set(destructive_tools or ["write_file", "bash"])
@@ -105,7 +105,7 @@ def permission_gate_hook(
 
 
 def policy_hook(
-    blocked_commands: Optional[List[str]] = None,
+    blocked_commands: list[str] | None = None,
 ) -> ConstraintHook:
     """Blocks specific bash commands or tool arguments."""
     blocked = set(blocked_commands or ["curl | bash", "rm -rf /", "sudo", "su -"])

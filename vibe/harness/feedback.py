@@ -1,7 +1,7 @@
 """Feedback engine for eval-driven harness improvement."""
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from vibe.core.model_gateway import LLMClient
 
@@ -9,8 +9,8 @@ from vibe.core.model_gateway import LLMClient
 @dataclass
 class FeedbackResult:
     score: float = 0.0
-    issues: List[str] = field(default_factory=list)
-    suggested_fix: Optional[str] = None
+    issues: list[str] = field(default_factory=list)
+    suggested_fix: str | None = None
 
 
 class FeedbackEngine:
@@ -38,7 +38,7 @@ class FeedbackEngine:
     async def independent_evaluate(
         self,
         output: str,
-        rubric: Dict[str, Any],
+        rubric: dict[str, Any],
     ) -> FeedbackResult:
         """Evaluate output against a structured rubric using an independent prompt."""
         prompt = (

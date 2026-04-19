@@ -3,7 +3,7 @@
 import asyncio
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable
 
 from vibe.core.model_gateway import LLMClient
 from vibe.core.query_loop import QueryLoop
@@ -15,7 +15,7 @@ from vibe.tools.tool_system import ToolSystem
 class DelegateTask:
     id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
     description: str = ""
-    context: Dict[str, Any] = field(default_factory=dict)
+    context: dict[str, Any] = field(default_factory=dict)
     max_iterations: int = 20
     timeout_seconds: float = 300.0
 
@@ -25,8 +25,8 @@ class DelegateResult:
     task_id: str
     success: bool
     output: str
-    error: Optional[str] = None
-    metrics: Optional[Dict[str, Any]] = None
+    error: str | None = None
+    metrics: dict[str, Any] | None = None
 
 
 class SyncDelegate:
@@ -34,9 +34,9 @@ class SyncDelegate:
 
     def __init__(
         self,
-        llm_client_factory: Optional[Callable[[], LLMClient]] = None,
-        tool_system_factory: Optional[Callable[[], ToolSystem]] = None,
-        query_loop_factory: Optional[QueryLoopFactory] = None,
+        llm_client_factory: Callable[[], LLMClient] | None = None,
+        tool_system_factory: Callable[[], ToolSystem] | None = None,
+        query_loop_factory: QueryLoopFactory | None = None,
         max_workers: int = 3,
     ):
         if query_loop_factory is not None:
@@ -52,8 +52,8 @@ class SyncDelegate:
 
     async def run(
         self,
-        tasks: List[DelegateTask],
-    ) -> List[DelegateResult]:
+        tasks: list[DelegateTask],
+    ) -> list[DelegateResult]:
         semaphore = asyncio.Semaphore(self.max_workers)
 
         async def _run_one(task: DelegateTask) -> DelegateResult:

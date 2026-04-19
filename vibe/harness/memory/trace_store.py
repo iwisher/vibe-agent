@@ -6,7 +6,7 @@ import pickle
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 try:
     from sentence_transformers import SentenceTransformer
@@ -19,7 +19,7 @@ except ImportError:
 class TraceStore:
     """Stores execution traces in SQLite."""
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: str | None = None):
         self.db_path = db_path or str(Path.home() / ".vibe" / "memory" / "traces.db")
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
         self._model = None
@@ -65,7 +65,7 @@ class TraceStore:
                 """
             )
 
-    def _get_embedding(self, text: str) -> Optional[Any]:
+    def _get_embedding(self, text: str) -> Any | None:
         """Get embedding for text using sentence-transformers all-MiniLM-L6-v2 with fallback."""
         if SentenceTransformer is None or np is None:
             return None
@@ -82,11 +82,11 @@ class TraceStore:
     def log_session(
         self,
         session_id: str,
-        messages: List[Dict[str, Any]],
-        tool_results: List[Dict[str, Any]],
+        messages: list[dict[str, Any]],
+        tool_results: list[dict[str, Any]],
         success: bool,
         model: str,
-        error: Optional[str] = None,
+        error: str | None = None,
     ) -> None:
         with sqlite3.connect(self.db_path) as conn:
             now = datetime.now(timezone.utc).isoformat()
@@ -133,7 +133,7 @@ class TraceStore:
                     ),
                 )
 
-    def get_similar_sessions_vector(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+    def get_similar_sessions_vector(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
         """Retrieve sessions using vector similarity."""
         query_emb = self._get_embedding(query)
         if query_emb is None or np is None:
@@ -176,7 +176,7 @@ class TraceStore:
             # Use a threshold of 0.3 for similarity relevance
             return [r for r in results if r["score"] > 0.3][:limit]
 
-    def get_similar_sessions(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+    def get_similar_sessions(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
         """Retrieve similar sessions, preferring vector search."""
         vector_results = self.get_similar_sessions_vector(query, limit)
         if vector_results:
@@ -218,11 +218,11 @@ class TraceStore:
         sorted_sessions = sorted(scored.values(), key=lambda x: x["score"], reverse=True)
         return [{k: v for k, v in s.items() if k != "score"} for s in sorted_sessions[:limit]]
 
-    def get_sessions(self, limit: int = 100, success: Optional[bool] = None) -> List[Dict[str, Any]]:
+    def get_sessions(self, limit: int = 100, success: bool | None = None) -> list[dict[str, Any]]:
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             sql = "SELECT * FROM sessions"
-            params: List[Any] = []
+            params: list[Any] = []
             if success is not None:
                 sql += " WHERE success = ?"
                 params.append(int(success))

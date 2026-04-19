@@ -1,9 +1,9 @@
 """Internal utilities for tool call handling."""
 
-from typing import Any, Dict, Optional
+from typing import Any
 
 
-def extract_tool_call_name(call: Any) -> Optional[str]:
+def extract_tool_call_name(call: Any) -> str | None:
     """Extract the tool name from a tool call, handling both dict and object formats.
 
     Supports OpenAI-style dict format:
@@ -15,7 +15,7 @@ def extract_tool_call_name(call: Any) -> Optional[str]:
     return getattr(call, "name", None)
 
 
-def extract_tool_call_arguments(call: Any) -> Dict[str, Any]:
+def extract_tool_call_arguments(call: Any) -> dict[str, Any]:
     """Extract the arguments from a tool call, handling both dict and object formats.
 
     Returns a dict. If the arguments are a JSON string, they are parsed.
@@ -33,7 +33,7 @@ def extract_tool_call_arguments(call: Any) -> Dict[str, Any]:
     return args if isinstance(args, dict) else {}
 
 
-def extract_tool_call_id(call: Any) -> Optional[str]:
+def extract_tool_call_id(call: Any) -> str | None:
     """Extract the tool call ID from a tool call."""
     if isinstance(call, dict):
         return call.get("id")

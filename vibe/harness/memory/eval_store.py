@@ -5,7 +5,7 @@ import sqlite3
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import yaml
 
@@ -13,9 +13,9 @@ import yaml
 @dataclass
 class EvalCase:
     id: str
-    tags: List[str]
-    input: Dict[str, Any]
-    expected: Dict[str, Any]
+    tags: list[str]
+    input: dict[str, Any]
+    expected: dict[str, Any]
     optimization_set: bool = True
     holdout_set: bool = False
 
@@ -24,7 +24,7 @@ class EvalCase:
 class EvalResult:
     eval_id: str
     passed: bool
-    diff: Dict[str, Any] = field(default_factory=dict)
+    diff: dict[str, Any] = field(default_factory=dict)
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     total_tokens: int = 0
     latency_seconds: float = 0.0
@@ -33,7 +33,7 @@ class EvalResult:
 class EvalStore:
     """Loads evals from YAML and records results."""
 
-    def __init__(self, db_path: Optional[str] = None, evals_dir: Optional[str] = None):
+    def __init__(self, db_path: str | None = None, evals_dir: str | None = None):
         self.db_path = db_path or str(Path.home() / ".vibe" / "memory" / "evals.db")
         self.evals_dir = evals_dir or str(Path(__file__).parent.parent.parent / "evals" / "builtin")
         Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
@@ -69,7 +69,7 @@ class EvalStore:
             if "latency_seconds" not in cols:
                 conn.execute("ALTER TABLE eval_results ADD COLUMN latency_seconds REAL")
 
-    def load_builtin_evals(self) -> List[EvalCase]:
+    def load_builtin_evals(self) -> list[EvalCase]:
         cases = []
         path = Path(self.evals_dir)
         if not path.exists():
@@ -127,7 +127,7 @@ class EvalStore:
                 ),
             )
 
-    def get_results(self, eval_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_results(self, eval_id: str | None = None) -> list[dict[str, Any]]:
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             if eval_id:
@@ -139,7 +139,7 @@ class EvalStore:
                 rows = conn.execute("SELECT * FROM eval_results ORDER BY timestamp DESC").fetchall()
             return [dict(row) for row in rows]
 
-    def summary(self) -> Dict[str, Any]:
+    def summary(self) -> dict[str, Any]:
         with sqlite3.connect(self.db_path) as conn:
             total = conn.execute("SELECT COUNT(*) FROM eval_results").fetchone()[0]
             passed = conn.execute("SELECT COUNT(*) FROM eval_results WHERE passed = 1").fetchone()[0]

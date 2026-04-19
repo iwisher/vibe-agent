@@ -2,7 +2,7 @@ import os
 """File operation tools."""
 
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 from .tool_system import Tool, ToolResult
 
@@ -31,7 +31,7 @@ def _redirect_path(path: str) -> str:
     return path
 
 
-def _resolve_and_jail(path: str, root_dir: Optional[str]) -> Path:
+def _resolve_and_jail(path: str, root_dir: str | None) -> Path:
     """Resolve path and enforce jail if root_dir is set.
 
     Uses Path.resolve() which follows symlinks and normalizes .. components.
@@ -59,14 +59,14 @@ def _resolve_and_jail(path: str, root_dir: Optional[str]) -> Path:
 class ReadFileTool(Tool):
     """Read contents of a file."""
 
-    def __init__(self, root_dir: Optional[str] = None):
+    def __init__(self, root_dir: str | None = None):
         super().__init__(
             name="read_file",
             description="Read the contents of a file at a given path.",
         )
         self.root_dir = root_dir
 
-    def get_schema(self) -> Dict[str, Any]:
+    def get_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {
@@ -108,14 +108,14 @@ class ReadFileTool(Tool):
 class WriteFileTool(Tool):
     """Write contents to a file."""
 
-    def __init__(self, root_dir: Optional[str] = None):
+    def __init__(self, root_dir: str | None = None):
         super().__init__(
             name="write_file",
             description="Write content to a file. Creates parent directories if needed.",
         )
         self.root_dir = root_dir
 
-    def get_schema(self) -> Dict[str, Any]:
+    def get_schema(self) -> dict[str, Any]:
         return {
             "type": "object",
             "properties": {

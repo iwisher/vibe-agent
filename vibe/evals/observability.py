@@ -4,6 +4,8 @@ Provides OpenTelemetry-style spans and counters for debugging eval runs,
 diagnosing bottlenecks, and exporting to external monitoring systems.
 """
 
+from __future__ import annotations
+
 import json
 import time
 import uuid
@@ -14,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 class MetricType(Enum):
@@ -28,7 +30,7 @@ class Metric:
     name: str
     type: MetricType
     value: float
-    labels: Dict[str, str] = field(default_factory=dict)
+    labels: dict[str, str] = field(default_factory=dict)
     timestamp: float = field(default_factory=time.time)
 
 
@@ -39,19 +41,19 @@ class Span:
     name: str
     trace_id: str
     span_id: str
-    parent_id: Optional[str] = None
+    parent_id: str | None = None
     start_time: float = field(default_factory=time.time)
-    end_time: Optional[float] = None
-    attributes: Dict[str, Any] = field(default_factory=dict)
-    events: List[Dict[str, Any]] = field(default_factory=list)
+    end_time: float | None = None
+    attributes: dict[str, Any] = field(default_factory=dict)
+    events: list[dict[str, Any]] = field(default_factory=list)
     status: str = "ok"  # ok, error
-    error_message: Optional[str] = None
+    error_message: str | None = None
 
     def duration_ms(self) -> float:
         end = self.end_time or time.time()
         return (end - self.start_time) * 1000
 
-    def add_event(self, name: str, attributes: Optional[Dict[str, Any]] = None):
+    def add_event(self, name: str, attributes: dict[str, Any] | None = None):
         self.events.append(
             {
                 "name": name,
@@ -60,7 +62,7 @@ class Span:
             }
         )
 
-    def finish(self, status: str = "ok", error_message: Optional[str] = None):
+    def finish(self, status: str = "ok", error_message: str | None = None):
         self.end_time = time.time()
         self.status = status
         if error_message:
@@ -74,19 +76,19 @@ class Observability:
     Use get_default() for the global default instance.
     """
 
-    _default_instance: Optional["Observability"] = None
+    _default_instance: "Observability" | None = None
 
-    def __init__(self, output_dir: Optional[str] = None):
+    def __init__(self, output_dir: str | None = None):
         self.output_dir = Path(output_dir or str(Path.home() / ".vibe" / "observability"))
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        self._metrics: List[Metric] = []
-        self._spans: List[Span] = []
-        self._counters: Dict[str, float] = defaultdict(float)
-        self._histograms: Dict[str, List[float]] = defaultdict(list)
-        self._gauges: Dict[str, float] = {}
+        self._metrics: list[Metric] = []
+        self._spans: list[Span] = []
+        self._counters: dict[str, float] = defaultdict(float)
+        self._histograms: dict[str, list[float]] = defaultdict(list)
+        self._gauges: dict[str, float] = {}
 
-        self._current_span: ContextVar[Optional[Span]] = ContextVar("current_span", default=None)
+        self._current_span: ContextVar[Span | None] = ContextVar("current_span", default=None)
 
     @classmethod
     def get_default(cls) -> "Observability":
@@ -105,22 +107,22 @@ class Observability:
 
     # ─── Metrics API ───
 
-    def counter(self, name: str, value: float = 1.0, labels: Optional[Dict[str, str]] = None):
+    def counter(self, name: str, value: float = 1.0, labels: dict[str, str] | None = None):
         key = self._metric_key(name, labels)
         self._counters[key] += value
         self._metrics.append(Metric(name, MetricType.COUNTER, self._counters[key], labels or {}))
 
-    def gauge(self, name: str, value: float, labels: Optional[Dict[str, str]] = None):
+    def gauge(self, name: str, value: float, labels: dict[str, str] | None = None):
         key = self._metric_key(name, labels)
         self._gauges[key] = value
         self._metrics.append(Metric(name, MetricType.GAUGE, value, labels or {}))
 
-    def histogram(self, name: str, value: float, labels: Optional[Dict[str, str]] = None):
+    def histogram(self, name: str, value: float, labels: dict[str, str] | None = None):
         key = self._metric_key(name, labels)
         self._histograms[key].append(value)
         self._metrics.append(Metric(name, MetricType.HISTOGRAM, value, labels or {}))
 
-    def _metric_key(self, name: str, labels: Optional[Dict[str, str]]) -> str:
+    def _metric_key(self, name: str, labels: dict[str, str] | None) -> str:
         if not labels:
             return name
         label_str = ",".join(f"{k}={v}" for k, v in sorted(labels.items()))
@@ -131,8 +133,8 @@ class Observability:
     def start_span(
         self,
         name: str,
-        parent: Optional[Span] = None,
-        attributes: Optional[Dict[str, Any]] = None,
+        parent: Span | None = None,
+        attributes: dict[str, Any] | None = None,
     ) -> Span:
         parent_id = parent.span_id if parent else None
         trace_id = parent.trace_id if parent else None
@@ -157,7 +159,7 @@ class Observability:
         span._token = self._current_span.set(span)
         return span
 
-    def finish_span(self, span: Span, status: str = "ok", error_message: Optional[str] = None):
+    def finish_span(self, span: Span, status: str = "ok", error_message: str | None = None):
         span.finish(status=status, error_message=error_message)
         try:
             self._current_span.reset(span._token)
@@ -171,7 +173,7 @@ class Observability:
             self._current_span.set(None)
 
     @contextmanager
-    def span(self, name: str, attributes: Optional[Dict[str, Any]] = None):
+    def span(self, name: str, attributes: dict[str, Any] | None = None):
         """Context manager for creating a span."""
         span = self.start_span(name, attributes=attributes)
         try:
@@ -185,7 +187,7 @@ class Observability:
 
     # ─── Export ───
 
-    def export_metrics(self, path: Optional[str] = None) -> str:
+    def export_metrics(self, path: str | None = None) -> str:
         """Export metrics as JSON. Returns file path."""
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         path = path or str(self.output_dir / f"metrics_{timestamp}.json")
@@ -214,7 +216,7 @@ class Observability:
 
         return path
 
-    def export_trace(self, path: Optional[str] = None) -> str:
+    def export_trace(self, path: str | None = None) -> str:
         """Export trace spans as JSON. Returns file path."""
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         path = path or str(self.output_dir / f"trace_{timestamp}.json")
@@ -243,7 +245,7 @@ class Observability:
 
         return path
 
-    def export_all(self, prefix: Optional[str] = None) -> Dict[str, str]:
+    def export_all(self, prefix: str | None = None) -> dict[str, str]:
         """Export both metrics and traces."""
         prefix = prefix or datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         return {
@@ -251,7 +253,7 @@ class Observability:
             "trace": self.export_trace(str(self.output_dir / f"trace_{prefix}.json")),
         }
 
-    def summary(self) -> Dict[str, Any]:
+    def summary(self) -> dict[str, Any]:
         """Return a quick summary of collected data."""
         return {
             "metrics_count": len(self._metrics),
@@ -262,7 +264,7 @@ class Observability:
         }
 
     @staticmethod
-    def _percentile(values: List[float], p: float) -> float:
+    def _percentile(values: list[float], p: float) -> float:
         if not values:
             return 0.0
         sorted_vals = sorted(values)
