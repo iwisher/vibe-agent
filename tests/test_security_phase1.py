@@ -120,7 +120,28 @@ async def test_skill_003_absolute_name_blocked(tmp_path):
 async def test_skill_004_valid_skill_allowed(tmp_path):
     """Normal skill creation inside the jail should succeed."""
     tool = SkillManageTool(skills_dir=str(tmp_path / "skills"))
-    result = await tool.execute(action="create", name="my-skill", content="# Hello")
+    content = """+++
+vibe_skill_version = "2.0.0"
+id = "my-skill"
+name = "My Skill"
+description = "A test skill"
+category = "test"
+tags = ["test"]
+
+[trigger]
+patterns = ["test"]
+required_tools = ["bash"]
+
+[[steps]]
+id = "step1"
+description = "Hello"
+tool = "bash"
+command = "echo hello"
++++
+
+# My Skill
+"""
+    result = await tool.execute(action="create", name="my-skill", content=content)
     assert result.success
     assert (tmp_path / "skills" / "my-skill" / "SKILL.md").exists()
 

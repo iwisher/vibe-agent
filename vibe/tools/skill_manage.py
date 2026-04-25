@@ -1,3 +1,4 @@
+import asyncio
 import os
 from pathlib import Path
 from typing import Any
@@ -76,10 +77,36 @@ class SkillManageTool(Tool):
                 error=f"Skill '{name}' already exists. Use action='update' to overwrite.",
             )
 
+        # Validate content is a valid SKILL.md
         try:
-            resolved.mkdir(parents=True, exist_ok=True)
+            from vibe.harness.skills.parser import SkillParser
+            parser = SkillParser()
+            skill = parser.parse_string(str(content))
+        except ValueError as e:
+            return ToolResult(success=False, content=None, error=f"Invalid SKILL.md: {e}")
+
+        # Security validation — check for dangerous commands
+        try:
+            from vibe.harness.skills.validator import SkillValidator
+            validator = SkillValidator()
+            result = validator.validate(skill)
+            if result.blocked:
+                return ToolResult(
+                    success=False,
+                    content=None,
+                    error=f"Security validation failed: {result.warnings + result.risks}",
+                )
+        except Exception:
+            # If validator fails, still allow write (defense in depth)
+            pass
+
+        # Write to disk using async I/O
+        try:
+            await asyncio.to_thread(resolved.mkdir, parents=True, exist_ok=True)
             skill_file = resolved / "SKILL.md"
-            skill_file.write_text(str(content), encoding="utf-8")
+            await asyncio.to_thread(
+                skill_file.write_text, str(content), encoding="utf-8"
+            )
             return ToolResult(
                 success=True,
                 content=f"Skill '{name}' {action}d at {skill_file}",

@@ -1,6 +1,7 @@
 """Main CLI entry point for Vibe Agent."""
 
 import asyncio
+import readline
 import uuid
 from pathlib import Path
 
@@ -17,29 +18,60 @@ from vibe.evals.model_registry import ModelRegistry
 from vibe.evals.runner import EvalRunner
 from vibe.harness.memory.eval_store import EvalStore
 from vibe.harness.memory.trace_store import TraceStore
+from vibe.cli.skill_commands import app as skill_app
 
 app = typer.Typer(help="Vibe Agent — an open agent harness platform")
 eval_app = typer.Typer(help="Run and manage evals")
 app.add_typer(eval_app, name="eval")
 memory_app = typer.Typer(help="Inspect stored traces and eval results")
 app.add_typer(memory_app, name="memory")
+app.add_typer(skill_app, name="skill")
 console = Console()
 
 DEFAULT_CONFIG = VibeConfig.load()
 
+# Persistent history file for interactive mode
+_HISTORY_FILE = Path.home() / ".vibe" / "history"
+
+
+def _setup_readline_history() -> None:
+    """Enable readline with persistent history file."""
+    try:
+        _HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        if _HISTORY_FILE.exists():
+            readline.read_history_file(str(_HISTORY_FILE))
+        readline.set_history_length(1000)
+    except Exception:
+        # readline may not be available on all platforms
+        pass
+
+
+def _save_readline_history() -> None:
+    """Save readline history to disk."""
+    try:
+        readline.write_history_file(str(_HISTORY_FILE))
+    except Exception:
+        pass
+
 
 async def interactive_mode(query_loop: QueryLoop) -> None:
+    _setup_readline_history()
     console.print("[bold green]Vibe Agent[/bold green] ready. Type /exit to quit, /clear to reset.")
     while True:
         try:
-            user_input = console.input("[bold cyan]>[/bold cyan] ").strip()
+            # Use built-in input() with readline for arrow-key history support
+            # Rich console.input() doesn't process terminal escape sequences
+            console.print("[bold cyan]>[/bold cyan] ", end="")
+            user_input = input().strip()
         except (EOFError, KeyboardInterrupt):
+            _save_readline_history()
             console.print("\nGoodbye!")
             break
 
         if not user_input:
             continue
         if user_input.lower() in ("/exit", "exit", "quit"):
+            _save_readline_history()
             console.print("Goodbye!")
             break
         if user_input.lower() == "/clear":
@@ -64,6 +96,8 @@ async def interactive_mode(query_loop: QueryLoop) -> None:
 
             if result.metrics:
                 m = result.metrics
+                # Ensure metrics start on a new line (response may have end="")
+                console.print()
                 console.print(
                     f"[dim]{m.total_tokens} tokens | {m.elapsed_seconds:.1f}s | {m.tokens_per_second:.1f} tok/s[/dim]"
                 )
@@ -82,6 +116,14 @@ async def single_query_mode(query_loop: QueryLoop, query: str) -> None:
             title = "Tool Result" if tr.success else "Tool Error"
             panel_content = tr.content if tr.content else (tr.error or "")
             console.print(Panel(panel_content, title=title, border_style=style))
+
+        if result.metrics:
+            m = result.metrics
+            # Ensure metrics start on a new line (response may have end="")
+            console.print()
+            console.print(
+                f"[dim]{m.total_tokens} tokens | {m.elapsed_seconds:.1f}s | {m.tokens_per_second:.1f} tok/s[/dim]"
+            )
     console.print()
 
 
