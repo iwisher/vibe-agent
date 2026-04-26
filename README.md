@@ -9,6 +9,7 @@ Vibe Agent is an open, visual-first interactive CLI agent harness. It is designe
 -   **Context Management**: Automated compaction and summarization to handle long-running conversations within token limits.
 -   **Eval-Driven Development**: A built-in suite of 30+ evaluation cases to ensure every update maintains performance and stability.
 -   **Phase 2 Skill System**: Native vibe skill format with TOML frontmatter, markdown body, validation, security scanning, and atomic installation.
+-   **Secret Redaction**: Automatic stripping of API keys (OpenAI, AWS, GitHub, etc.) and passwords from trace stores and logs.
 -   **Interactive CLI**: Readline support with persistent history, token metrics display, and rich skill management commands.
 
 ## 🏗️ Architectural Design
@@ -145,7 +146,7 @@ Describe what this skill does and when to use it.
 -   [Roadmap & Plans](docs/ROADMAP.md)
 -   [Evaluation Suite](docs/EVALUATION.md)
 -   [Code Reviews Archive](docs/REVIEWS.md)
--   [Changelog](CHANGELOG.md)
+-   [Changelog](docs/CHANGELOG.md)
 
 ---
 

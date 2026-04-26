@@ -40,18 +40,20 @@ This document tracks the progress of Vibe Agent, from its core foundation to fut
 - [x] Step execution with variable substitution and verification.
 
 ### Phase 2d: Memory & CLI
-- [x] SQLite trace store with optional vector embeddings.
+- [x] Unified embedding layer using fastText (50-dim, 5MB).
+- [x] Optimized TraceStore persistence with `numpy` float32 serialization.
+- [x] Secret Redaction with 9+ security patterns (OpenAI, AWS, GitHub, etc.).
+- [x] Hybrid Semantic Planner with keyword fast-path and embedding fallback.
+- [x] SQLite trace store with automated session logging and UUID tracking.
 - [x] SQLite eval store with schema migrations.
 - [x] Wiki memory (minimal markdown-based read/write).
-- [x] Interactive CLI with readline history and rich output.
+- [x] Interactive CLI with readline history and real-time token metrics.
 - [x] Skill management CLI (`vibe skill create/validate/install/list/run/uninstall`).
 
 ---
 
 ## 🏗️ In Progress (Phase 2 Hardening)
 
-- [ ] **Hybrid Semantic Planner**: Replace keyword matching with tiered planner (embedding + LLM router).
-- [ ] **Scalable TraceStore**: Random-projection signatures + raw float32 blobs (fix O(N) memory scan).
 - [ ] **Factory-per-case EvalRunner**: Fresh QueryLoop per case to prevent state bleed.
 - [ ] **Structured FeedbackEngine**: `FeedbackStatus` enum to distinguish failure modes from neutral scores.
 - [ ] **Safe SkillExecutor**: Env-var passing primary, `string.Template` fallback.
@@ -82,4 +84,4 @@ This document tracks the progress of Vibe Agent, from its core foundation to fut
 
 ---
 
-*Last updated: 2026-04-25*
+*Last updated: 2026-04-26*

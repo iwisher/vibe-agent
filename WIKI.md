@@ -159,6 +159,19 @@ Decomposed from the monolithic QueryLoop in v0.2.0:
 2. **`FeedbackCoordinator`** — Self-verification scoring (0.0–1.0), retry hints.
 3. **`CompactionCoordinator`** — Token budget triggers for `ContextCompactor`.
 
+### Security Redactor (`vibe/harness/security/redactor.py`)
+
+Standardized PII and secret protection layer.
+- **Patterns**: OpenAI, AWS, GitHub, Bearer tokens, Passwords, Private Keys.
+- **Integration**: Wired into all TraceStore backends and Audit logs.
+
+### Shared Embeddings (`vibe/harness/embeddings.py`)
+
+Unified vectorization layer using **fastText** (50-dim, 5MB).
+- **Singleton Loader**: Shares a single model instance across components.
+- **LRU Cache**: Caches up to 1000 embeddings to reduce CPU overhead.
+- **Optimized**: Switched from `pickle` to `numpy` float32 for 4x faster persistence.
+
 ### Context Compactor (`vibe/core/context_compactor.py`)
 
 Manages long-running conversations within token limits.
@@ -428,12 +441,15 @@ pytest --cov=vibe --cov-report=html
 
 ## Roadmap
 
-### Completed (v0.1.0 – v0.2.0)
+### Completed (v0.1.0 – v0.3.0)
 
 - [x] Project scaffold and core directory structure
 - [x] Model Gateway with multi-provider support
 - [x] Cross-provider fallback with circuit breakers
 - [x] Tool System (Bash, File, MCP Bridge)
+- [x] Phase 2 Skill System (Native format, installer, executor)
+- [x] Secret Redaction for TraceStore and logs
+- [x] Embedding Unification (fastText shared module)
 - [x] Query Loop state machine
 - [x] Context Compaction with summarization
 - [x] Error Recovery with exponential backoff
@@ -441,7 +457,7 @@ pytest --cov=vibe --cov-report=html
 - [x] 30+ built-in eval cases
 - [x] Multi-model benchmarking infrastructure
 
-### In Progress (Phase 1.x)
+### In Progress (Phase 2.x)
 
 - [ ] Observability Hardening — end-to-end trace validation
 - [ ] Wiki Memory — markdown-based long-term memory

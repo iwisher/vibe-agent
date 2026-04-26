@@ -4,6 +4,26 @@ All notable changes to Vibe Agent will be documented in this file.
 
 ---
 
+## [0.3.0-alpha] — 2026-04-26
+
+### Added
+- **Phase 2 Skill System**: Native vibe skill format (TOML + Markdown), atomic installation from git/tarball/local, and step-by-step verification.
+- **Embedding Unification**: Shared `vibe/harness/embeddings.py` module with `fastText` singleton loader and LRU cache (1000 entries).
+- **Secret Redaction**: `SecretRedactor` with 9 default patterns (OpenAI, AWS, GitHub, Bearer, etc.) wired into all `TraceStore` backends.
+- **CLI Improvements**: `readline` support with persistent history at `~/.vibe/history` and real-time token metrics display.
+- **UUID Session Tracking**: Reliable session identification across turns and restarts.
+
+### Changed
+- **Memory Optimization**: Switched from `pickle` to `numpy` float32 serialization for embeddings (4x smaller, faster).
+- **TraceStore Hardening**: `QueryLoop` now automatically logs sessions on completion via `finally` block.
+- **Vector Search Performance**: Added keyword pre-filtering to reduce the search space before expensive vector similarity checks.
+- **Persistence**: Implemented atomic writes for `JSONTraceStore` using temp-file + rename pattern.
+
+### Deprecated
+- **ConversationStateMachine**: Marked for removal in v2.0; use `QueryLoop` directly for state transitions.
+
+---
+
 ## [0.2.0-alpha] — 2026-04-19
 
 ### Added

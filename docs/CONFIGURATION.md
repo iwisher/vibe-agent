@@ -216,4 +216,39 @@ security:
 
 ---
 
-*Last updated: 2026-04-25*
+## 11. Planner
+
+Controls how the agent selects tools and skills for a query.
+
+```yaml
+planner:
+  enabled: true
+  use_embeddings: true
+  embedding_model_path: "/path/to/cc.en.50.bin"
+  llm_routing: false
+  cache_ttl: 3600                      # Seconds to cache plan results
+  max_llm_tools: 10                    # Max tools to pass to LLM
+```
+
+**Environment overrides:** `VIBE_PLANNER_ENABLED`, `VIBE_PLANNER_USE_EMBEDDINGS`, `VIBE_PLANNER_EMBEDDING_MODEL_PATH`, `VIBE_PLANNER_LLM_ROUTING`
+
+---
+
+## 12. Memory & Trace Store
+
+Configuration for episodic session memory.
+
+```yaml
+trace_store:
+  enabled: true
+  storage_type: "sqlite"               # "sqlite", "json", or "memory"
+  db_path: "~/.vibe/memory/traces.db"
+  max_entries: 10000
+  retention_days: 30
+```
+
+**Environment overrides:** `VIBE_TRACE_STORE_ENABLED`, `VIBE_TRACE_STORE_TYPE`, `VIBE_TRACE_STORE_PATH`, `VIBE_TRACE_STORE_MAX_ENTRIES`, `VIBE_TRACE_STORE_RETENTION`
+
+---
+
+*Last updated: 2026-04-26*

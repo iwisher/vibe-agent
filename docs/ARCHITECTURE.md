@@ -84,7 +84,11 @@ graph TD
 
 ### 3.3 Key Behaviors
 
-- **Planning:** `ContextPlanner` uses keyword/substring scoring against tool names, descriptions, skill metadata, and MCP configs. If no match, falls back to returning **all tools** (current limitation — hybrid semantic planner planned).
+- **Planning:** `ContextPlanner` uses a tiered approach:
+    1. **Keyword match** on tool/skill/MCP names.
+    2. **fastText similarity** using the shared embeddings module.
+    3. **LLM Router** (if configured).
+    4. **Safety fallback** (return all tools).
 - **Compaction:** Triggered before every LLM call if estimated tokens exceed threshold. Four strategies: `TRUNCATE` (default), `LLM_SUMMARIZE`, `OFFLOAD`, `DROP`.
 - **Feedback:** `FeedbackCoordinator` evaluates content responses via `FeedbackEngine`. Score below threshold (default 0.7) → inject retry hint and continue loop. Currently silently returns `score=0.5` on any exception (planned fix).
 - **Iteration limit:** `max_iterations` (default 50) with `INCOMPLETE` state on exhaustion.
@@ -149,9 +153,18 @@ Native skill format with TOML frontmatter (`+++` delimited):
 *   **Current limitation:** Naive string `.replace()` for variable substitution (planned fix).
 
 ### 5.5 Memory (`vibe/harness/memory/`)
-*   **TraceStore:** SQLite with `sessions`, `messages`, `tool_calls`, `session_embeddings`. Optional vector search via `sentence-transformers` with keyword fallback.
-*   **EvalStore:** SQLite with `evals` and `eval_results`. Schema migration support.
-*   **Wiki:** Simple markdown read/write in `~/.vibe/wiki/`. Compilation from traces planned.
+*   **TraceStore:** Scalable backend (SQLite, JSON, or Memory) for session persistence.
+    - **Persistence:** `QueryLoop` automatically logs sessions on completion via `finally` block.
+    - **Optimization:** Switched from `pickle` to `numpy` float32 for 4x smaller and faster embedding storage.
+    - **Atomicity:** `JSONTraceStore` uses temp-file + rename pattern for corruption protection.
+*   **Embeddings Unification** (`vibe/harness/embeddings.py`):
+    - **Standard:** Unified on **fastText** (cc.en.50.bin, 50-dim, 5MB).
+    - **Performance:** Singleton loader with 1000-entry LRU cache.
+    - **Search:** Vector similarity with keyword pre-filtering to minimize search space.
+*   **Secret Redactor** (`vibe/harness/security/redactor.py`):
+    - Standardized layer for stripping credentials (OpenAI, AWS, GitHub, etc.) before they hit any persistence layer (TraceStore, EvalStore, Audit Logs).
+*   **EvalStore:** SQLite storage for `evals` and `eval_results`.
+*   **Wiki:** (Archived) Markdown-based long-term memory.
 
 ---
 
@@ -177,4 +190,4 @@ Native skill format with TOML frontmatter (`+++` delimited):
 
 ---
 
-*Last Updated: 2026-04-25 (v0.2.0-alpha)*
+*Last Updated: 2026-04-26 (v0.3.0-alpha)*
