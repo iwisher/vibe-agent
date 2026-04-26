@@ -133,7 +133,7 @@ async def test_stop_loop(mock_llm, tool_system):
 @pytest.mark.asyncio
 async def test_planner_filters_tools(mock_llm, tool_system):
     """Planner should pass only relevant tools to LLM.complete."""
-    from vibe.harness.planner import ContextPlanner
+    from vibe.harness.planner import HybridPlanner as ContextPlanner
 
     planner = ContextPlanner()
     mock_llm.complete.return_value = LLMResponse(content="ok")
@@ -155,7 +155,7 @@ async def test_planner_filters_tools(mock_llm, tool_system):
 @pytest.mark.asyncio
 async def test_planner_injects_skills(mock_llm, tool_system):
     from vibe.harness.instructions import InstructionSet, Skill
-    from vibe.harness.planner import ContextPlanner
+    from vibe.harness.planner import HybridPlanner as ContextPlanner
 
     skills = [
         Skill(name="rust_guru", description="Rust expert", content="You are a Rust expert.", tags=["rust"]),
@@ -178,7 +178,7 @@ async def test_planner_injects_skills(mock_llm, tool_system):
 
 @pytest.mark.asyncio
 async def test_planner_fallback_to_all_tools(mock_llm, tool_system):
-    from vibe.harness.planner import ContextPlanner
+    from vibe.harness.planner import HybridPlanner as ContextPlanner
 
     planner = ContextPlanner()
     mock_llm.complete.return_value = LLMResponse(content="ok")
@@ -196,7 +196,7 @@ async def test_planner_fallback_to_all_tools(mock_llm, tool_system):
 
 @pytest.mark.asyncio
 async def test_planner_selects_mcps(mock_llm, tool_system):
-    from vibe.harness.planner import ContextPlanner
+    from vibe.harness.planner import HybridPlanner as ContextPlanner
     from vibe.tools.mcp_bridge import MCPBridge
 
     mcps = [

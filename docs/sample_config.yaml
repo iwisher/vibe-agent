@@ -3,86 +3,111 @@
 
 # 1. Global Defaults
 llm:
-  default_model: "kimi-smart"  # Start with the best Kimi model
+  default_model: "default"
+  base_url: "http://localhost:11434"   # Ollama default
+  api_key_env_var: "LLM_API_KEY"
   timeout: 120.0
 
 # 2. Providers (Connection Endpoints)
+# If no providers are configured, the system synthesizes a default from llm settings.
 providers:
-  # Kimi Developer API
-  kimi-api:
-    base_url: "https://api.moonshot.cn"
-    adapter: "anthropic"
-    api_key_env_var: "KIMI_API_KEY"
-
-  # Kimi Coding Endpoint (requires specific headers)
-  kimi-coding:
-    base_url: "https://api.kimi.com/coding"
-    adapter: "openai"
-    api_key_env_var: "KIMI_API_KEY"
-    extra_headers:
-      "HTTP-Referer": "https://github.com/RooCoder/Roo-Code"
-      "X-Title": "Roo Code"
-      "User-Agent": "Kimi CLI"  # Required by some Kimi endpoints to verify "Coding Agent" status
-
-  # OpenRouter simulating Roo Code (Cline)
   openrouter:
     base_url: "https://openrouter.ai/api/v1"
     adapter: "openai"
     api_key_env_var: "OPENROUTER_API_KEY"
     extra_headers:
-      "HTTP-Referer": "https://github.com/RooCoder/Roo-Code"
-      "X-Title": "Roo Code"
-
-  # Applesay Provider
-  applesay-proxy:
-    base_url: "http://ai-api.applesay.cn"
-    adapter: "openai"
-    api_key_env_var: "APPLESAY_API_KEY"
+      "HTTP-Referer": "https://github.com/vibe-agent"
+      "X-Title": "Vibe Agent"
+  
+  anthropic:
+    base_url: "https://api.anthropic.com"
+    adapter: "anthropic"
+    api_key_env_var: "ANTHROPIC_API_KEY"
 
 # 3. Model Registry
+# Maps friendly names to provider + model_id combinations.
 models:
-  kimi-fast:
-    provider: "kimi-api"
-    model_id: "moonshot-v1-8k"
-  
-  kimi-smart:
-    provider: "kimi-api"
-    model_id: "moonshot-v1-32k"
-
-  kimi-for-coding:
-    provider: "kimi-coding"
-    model_id: "kimi-latest"
-  
-  pro-model:
+  primary-brain:
     provider: "openrouter"
-    model_id: "anthropic/claude-3.5-sonnet"
+    model_id: "google/gemini-2.0-flash-001"
   
-  legacy-backup:
-    provider: "applesay-proxy"
-    model_id: "qwen-max"
+  reliable-fallback:
+    provider: "anthropic"
+    model_id: "claude-3-5-sonnet-latest"
 
 # 4. Fallback Chain
 fallback:
   enabled: true
   chain:
-    - "kimi-smart"
-    - "kimi-for-coding" # Try Kimi's specialized coding endpoint
-    - "pro-model"
-    - "legacy-backup"
-  max_retries: 2
+    - "primary-brain"
+    - "reliable-fallback"
+  max_retries: 3
   health_check_timeout: 10.0
-  circuit_breaker_threshold: 1
-  circuit_breaker_cooldown: 600.0
+  circuit_breaker_threshold: 5
+  circuit_breaker_cooldown: 60.0
 
-# 5. Operational Settings
+# 5. Context Compaction
+compactor:
+  max_tokens: 8000
+  chars_per_token: 4.0
+  preserve_recent: 4
+  max_chars_per_msg: 4000
+
+# 6. Query Loop
 query_loop:
+  feedback_threshold: 0.7
+  max_feedback_retries: 1
   max_iterations: 50
-  max_context_tokens: 128000
+  max_context_tokens: 8000
 
-# 6. Logging
-# Logs are stored per-session with automatic cleanup
+# 7. Retry
+retry:
+  max_retries: 2
+  initial_delay: 1.0
+
+# 8. Eval
+eval:
+  default_cases_dir: "vibe/evals/builtin"
+  scorecard_dir: "~/.vibe/scorecards"
+  soak_default_duration_minutes: 60.0
+  soak_default_cpm: 6.0
+
+# 9. Logging
 logging:
   enabled: true
   log_dir: "~/.vibe/logs"
   max_file_size_mb: 10
   retention_days: 5
+
+# 10. Security
+security:
+  approval_mode: "smart"               # manual | smart | auto
+  dangerous_patterns_enabled: true
+  secret_redaction: true
+  audit_logging: true
+  fail_closed: true
+
+  file_safety:
+    write_denylist_enabled: true
+    read_blocklist_enabled: true
+    # safe_root: "/path/to/allowed/workspace"
+
+  env_sanitization:
+    enabled: true
+    block_path_overrides: true
+    strip_shell_env: true
+    secret_prefixes:
+      - "*_API_KEY"
+      - "*_TOKEN"
+      - "*_SECRET"
+      - "AWS_*"
+      - "GITHUB_*"
+
+  sandbox:
+    backend: "local"                   # local | docker | ssh
+    auto_approve_in_sandbox: false
+
+  audit:
+    log_path: "~/.vibe/logs/security.log"
+    max_events: 10000
+    redact_in_logs: true

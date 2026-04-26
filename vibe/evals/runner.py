@@ -1,18 +1,31 @@
-"""Eval runner that executes eval cases against a QueryLoop and checks expectations."""
+"""Eval runner that executes eval cases against a QueryLoop and checks expectations.
+
+Factory-per-case pattern: Each eval case can specify its own QueryLoop factory,
+allowing different model configurations, toolsets, or harness settings per case.
+"""
 
 import asyncio
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, Optional
 
 from vibe.core.query_loop import QueryLoop, QueryResult
 from vibe.harness.memory.eval_store import EvalCase, EvalResult, EvalStore
 from vibe.evals.observability import Observability
 from vibe.tools._utils import extract_tool_call_name
 
+# Type alias for QueryLoop factory
+QueryLoopFactory = Callable[[EvalCase], QueryLoop]
+
 
 class EvalRunner:
-    """Runs EvalCases through a QueryLoop and validates expected outcomes."""
+    """Runs EvalCases through a QueryLoop and validates expected outcomes.
+
+    Factory-per-case pattern:
+    - Each EvalCase can specify a `query_loop_factory` to create a custom QueryLoop
+    - If no factory is specified, the default query_loop is used
+    - This allows different model configs, toolsets, or harness settings per case
+    """
 
     def __init__(
         self,
@@ -21,12 +34,34 @@ class EvalRunner:
         observability: Observability | None = None,
         max_concurrency: int = 3,
         run_holdout: bool = False,
+        default_factory: Optional[QueryLoopFactory] = None,
     ):
         self.query_loop = query_loop
         self.eval_store = eval_store
         self.obs = observability
         self._semaphore = asyncio.Semaphore(max_concurrency)
         self.run_holdout = run_holdout
+        self.default_factory = default_factory
+
+    def _get_query_loop(self, case: EvalCase) -> QueryLoop:
+        """Get the appropriate QueryLoop for this case.
+
+        Priority:
+        1. Case-specific factory from case.metadata
+        2. Runner's default_factory
+        3. Runner's default query_loop
+        """
+        # Check if case has a factory in metadata
+        factory = case.metadata.get("query_loop_factory") if hasattr(case, "metadata") else None
+        if factory is not None and callable(factory):
+            return factory(case)
+
+        # Check runner's default factory
+        if self.default_factory is not None:
+            return self.default_factory(case)
+
+        # Fall back to default query_loop
+        return self.query_loop
 
     async def run_case(self, case: EvalCase) -> EvalResult:
         start_time = time.time()
@@ -37,7 +72,9 @@ class EvalRunner:
                 attributes={"case_id": case.id, "tags": case.tags},
             )
 
-        self.query_loop.clear_history()
+        # Get the appropriate query loop for this case
+        query_loop = self._get_query_loop(case)
+        query_loop.clear_history()
         results: list[QueryResult] = []
 
         # Span for LLM interaction
@@ -47,7 +84,7 @@ class EvalRunner:
 
         try:
             async with asyncio.timeout(case.timeout_seconds):
-                async for result in self.query_loop.run(
+                async for result in query_loop.run(
                     initial_query=case.input.get("prompt", "")
                 ):
                     results.append(result)
@@ -136,14 +173,14 @@ class EvalRunner:
 
         # tool_called
         if "tool_called" in expected:
-            ok, msg = _assertion_span("tool_called", lambda: self._check_tool_called(expected))
+            ok, msg = _assertion_span("tool_called", lambda: self._check_tool_called(expected, query_loop))
             if not ok:
                 passed = False
                 diff["tool_called"] = msg
 
         # tool_sequence
         if "tool_sequence" in expected:
-            ok, msg = _assertion_span("tool_sequence", lambda: self._check_tool_sequence(expected))
+            ok, msg = _assertion_span("tool_sequence", lambda: self._check_tool_sequence(expected, query_loop))
             if not ok:
                 passed = False
                 diff["tool_sequence"] = msg
@@ -237,21 +274,21 @@ class EvalRunner:
                     return True, ""
         return False, f"Expected '{target}' not found in tool outputs"
 
-    def _check_tool_called(self, expected: dict[str, Any]) -> tuple[bool, str]:
+    def _check_tool_called(self, expected: dict[str, Any], query_loop: QueryLoop) -> tuple[bool, str]:
         target_tool = expected["tool_called"]
-        for m in self.query_loop.messages:
+        for m in query_loop.messages:
             if m.role == "assistant" and m.tool_calls:
                 for tc in (m.tool_calls or []):
                     if extract_tool_call_name(tc) == target_tool:
                         return True, ""
         return False, f"Expected tool '{target_tool}' was not called"
 
-    def _check_tool_sequence(self, expected: dict[str, Any]) -> tuple[bool, str]:
+    def _check_tool_sequence(self, expected: dict[str, Any], query_loop: QueryLoop) -> tuple[bool, str]:
         expected_seq = expected["tool_sequence"]
         if isinstance(expected_seq, str):
             expected_seq = [expected_seq]
         actual_seq = []
-        for m in self.query_loop.messages:
+        for m in query_loop.messages:
             if m.role == "assistant" and m.tool_calls:
                 for tc in (m.tool_calls or []):
                     tc_name = extract_tool_call_name(tc)

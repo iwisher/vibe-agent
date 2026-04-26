@@ -13,7 +13,7 @@ from vibe.core.error_recovery import ErrorRecovery, RetryPolicy
 from vibe.harness.constraints import HookPipeline, HookOutcome
 from vibe.harness.feedback import FeedbackEngine
 from vibe.harness.instructions import InstructionSet
-from vibe.harness.planner import ContextPlanner, PlanRequest, PlanResult
+from vibe.harness.planner import HybridPlanner as ContextPlanner, PlanRequest, PlanResult
 from vibe.tools.mcp_bridge import MCPBridge
 from vibe.tools.tool_system import ToolSystem, ToolResult
 from vibe.tools._utils import extract_tool_call_name, extract_tool_call_arguments
@@ -123,6 +123,8 @@ class QueryLoop:
         self.logger = logger
         self.context_planner = context_planner or ContextPlanner(trace_store=trace_store)
         self._plan_result: PlanResult | None = None
+        self._trace_store = trace_store
+        self._session_id: str | None = None
 
     @property
     def state(self) -> QueryState:
@@ -150,6 +152,8 @@ class QueryLoop:
             return
         self._running = True
         self._set_state(QueryState.PLANNING)
+        import uuid
+        self._session_id = str(uuid.uuid4())
         if self.logger:
             self.logger.info(f"Starting QueryLoop run. Initial query: {initial_query}")
         try:
@@ -236,6 +240,30 @@ class QueryLoop:
                     self._set_state(QueryState.COMPLETED)
         finally:
             self._running = False
+            # Log session to trace store if available
+            if self._trace_store and self._session_id:
+                try:
+                    tool_results = []
+                    for msg in self.messages:
+                        if msg.role == "tool":
+                            tool_results.append({
+                                "tool_call_id": msg.tool_call_id,
+                                "content": msg.content,
+                            })
+                    self._trace_store.log_session(
+                        session_id=self._session_id,
+                        messages=[
+                            {"role": m.role, "content": m.content}
+                            for m in self.messages
+                        ],
+                        tool_results=tool_results,
+                        success=self._state == QueryState.COMPLETED,
+                        model=self.llm.model if self.llm else "unknown",
+                        error=str(self._state.name) if self._state in (QueryState.ERROR, QueryState.INCOMPLETE) else None,
+                    )
+                except Exception:
+                    # Logging failures must not crash the session
+                    pass
 
     async def _maybe_compact(self, llm_msgs: list[dict]) -> QueryResult | None:
         """Compact context if needed. Returns a QueryResult if compaction occurred."""

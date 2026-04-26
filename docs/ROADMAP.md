@@ -2,53 +2,84 @@
 
 This document tracks the progress of Vibe Agent, from its core foundation to future platform enhancements.
 
-## 🏁 Completed Milestones
+---
 
-### Foundation & Core Harness
+## ✅ Completed Milestones
+
+### Phase 1: Foundation & Core Harness
 - [x] Project scaffold and core directory structure.
-- [x] **Model Gateway**: Unified async client for multi-provider support (OpenAI, Anthropic).
-- [x] **Multi-Provider Support**: Configure multiple providers (OpenRouter, Anthropic, Ollama) in `config.yaml`.
-- [x] **Cross-Provider Fallback**: Intelligent fallback across different providers and API formats.
-- [x] **Circuit Breaker**: Resilience against failing model endpoints.
+- [x] **Model Gateway**: Unified async client for multi-provider support (OpenAI, Anthropic adapters).
+- [x] **Multi-Provider Support**: Configure multiple providers (OpenRouter, Anthropic, Ollama, Kimi) in `config.yaml` with `ProviderRegistry`.
+- [x] **Cross-Provider Fallback**: Intelligent fallback across different providers and API formats with circuit breaker.
+- [x] **Circuit Breaker**: Per-model resilience (threshold: 5 failures, cooldown: 60s).
 - [x] **Tool System**: Integrated Bash and File management tools with security jailing.
-- [x] **Query Loop**: Robust state machine managing the agent's thought/action cycle.
-- [x] **Context Compaction**: Automated token budget management with summarization fallback.
+- [x] **Query Loop**: State machine (9 states) managing the agent's thought/action cycle.
+- [x] **Context Compaction**: Automated token budget management with 4 strategies (TRUNCATE, LLM_SUMMARIZE, OFFLOAD, DROP).
 - [x] **Error Recovery**: Exponential backoff with jitter for transient failures.
+- [x] **Coordinators**: Extracted `ToolExecutor`, `FeedbackCoordinator`, `CompactionCoordinator` from QueryLoop.
 
-### Security & Hardening
+### Phase 2a: Security & Hardening
 - [x] BashTool shell injection protection (using `exec` instead of `shell`).
 - [x] File tool path traversal protection (using realpath + jail checks).
 - [x] Secure handling of API keys (no hardcoded keys, env var support).
+- [x] **Security Config**: `approval_mode` (manual/smart/auto), file safety, env sanitization, sandbox backend, audit logging.
 
-### Evaluation & Quality
+### Phase 2b: Evaluation & Quality
 - [x] End-to-end eval runner (`run_e2e_evals.py`).
-- [x] 30+ built-in eval cases covering file ops, bash, and reasoning.
-- [x] Model benchmarking infrastructure for comparing different LLMs.
+- [x] 30+ built-in eval cases covering file ops, bash, reasoning, security.
+- [x] Model benchmarking infrastructure (`MultiModelRunner` with scorecards).
+- [x] Soak testing with degradation detection.
+- [x] Observability system (spans, metrics, traces, JSON export).
+
+### Phase 2c: Skill System v2
+- [x] Native skill format with TOML frontmatter (`+++`).
+- [x] Pydantic v2 models with validation.
+- [x] Security scanning (80+ patterns across filesystem, injection, phishing, credentials).
+- [x] Approval gate protocol (`CLIApprovalGate`, `AutoApproveGate`, `AutoRejectGate`).
+- [x] Atomic installation from git, tarball, or local path.
+- [x] Step execution with variable substitution and verification.
+
+### Phase 2d: Memory & CLI
+- [x] SQLite trace store with optional vector embeddings.
+- [x] SQLite eval store with schema migrations.
+- [x] Wiki memory (minimal markdown-based read/write).
+- [x] Interactive CLI with readline history and rich output.
+- [x] Skill management CLI (`vibe skill create/validate/install/list/run/uninstall`).
 
 ---
 
-## 🏗️ In Progress (Phase 1.x)
+## 🏗️ In Progress (Phase 2 Hardening)
 
-- [ ] **Observability Hardening**: End-to-end trace validation and metrics aggregation.
-- [ ] **Wiki Memory**: Minimal markdown-based long-term memory.
-- [ ] **QueryLoop Cancellation Safety**: Robust cleanup on task cancellation.
-- [ ] **Advanced Token Estimation**: Integration with `tiktoken` for accurate counts.
+- [ ] **Hybrid Semantic Planner**: Replace keyword matching with tiered planner (embedding + LLM router).
+- [ ] **Scalable TraceStore**: Random-projection signatures + raw float32 blobs (fix O(N) memory scan).
+- [ ] **Factory-per-case EvalRunner**: Fresh QueryLoop per case to prevent state bleed.
+- [ ] **Structured FeedbackEngine**: `FeedbackStatus` enum to distinguish failure modes from neutral scores.
+- [ ] **Safe SkillExecutor**: Env-var passing primary, `string.Template` fallback.
+- [ ] **Real LLM Summarization**: Wire `ContextCompactor` to loop's LLM client with efficiency metrics.
+- [ ] **Security Expansion**: 5-layer defense model + Pydantic config validation.
+- [ ] **Wiki Compiler**: Nightly trace compilation with `pending/` human review mechanism.
 
 ---
 
-## 🚀 Future Roadmap (Phase 2+)
+## 🚀 Future Roadmap (Phase 3+)
 
-### Async Engine & Platform
-- [ ] **Async Session Orchestration**: Support for long-lived, steerable async sessions.
-- [ ] **Topology Planner**: Intelligent logic for synchronous vs. asynchronous execution.
+### Advanced Orchestration
+- [ ] **Budget Governance**: `IterationBudget` + `BudgetConfig` for turn and token caps.
+- [ ] **Checkpointing**: Shadow git snapshots for filesystem rollback.
+- [ ] **Async Session Orchestration**: spawn/steer/kill primitives.
+- [ ] **TaskFlows**: Managed iterative workflows with block/resume/retry.
+- [ ] **Topology Planner**: Intelligent sync vs. async execution decisions.
+
+### Platform & API
 - [ ] **FastAPI Server**: REST and WebSocket API for external integrations.
 - [ ] **React Dashboard**: Visual interface for trace viewing and session monitoring.
 
 ### Intelligence & Optimization
-- [ ] **Auto-Harness Optimizer**: Autonomous hill-climbing to improve agent performance.
-- [ ] **MCP Bridge Expansion**: Enhanced support for Model Context Protocol servers.
-- [ ] **Cost-Aware Routing**: Automatically choose the cheapest capable model for a task.
+- [ ] **Auto-Harness Optimizer**: `vibe optimize` for autonomous hill-climbing.
+- [ ] **Trace Mining**: Auto-generate eval candidates from failure patterns.
+- [ ] **MCP Bridge Expansion**: Enhanced Model Context Protocol server support.
+- [ ] **Cost-Aware Routing**: Automatically choose cheapest capable model for a task.
 
 ---
 
-*Last updated: April 19, 2026*
+*Last updated: 2026-04-25*

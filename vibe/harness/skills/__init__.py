@@ -4,7 +4,7 @@ from .parser import SkillParser
 from .validator import SkillValidator, ValidationResult
 from .approval import ApprovalGate, CLIApprovalGate, AutoApproveGate, AutoRejectGate
 from .installer import SkillInstaller, InstallResult
-from .executor import SkillExecutor, StepResult
+from .executor import SkillExecutor, ExecutionResult
 
 __all__ = [
     "Skill",
@@ -21,5 +21,5 @@ __all__ = [
     "SkillInstaller",
     "InstallResult",
     "SkillExecutor",
-    "StepResult",
+    "ExecutionResult",
 ]

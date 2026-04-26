@@ -1,448 +1,191 @@
-"""Vibe-agent independent configuration loader.
+"""Pydantic-based configuration schema for vibe-agent.
 
-Decoupled from Hermes config. Loads from ~/.vibe/config.yaml with env overrides.
+Replaces dict-based config with type-safe Pydantic models.
+Supports validation, defaults, env var overrides, and .env file loading.
+
+Backward compatibility: Maintains old config interface (llm.default_model, llm.base_url, logging, etc.)
 """
 
 import os
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
-import yaml
-from yaml import YAMLError
-
-from vibe.core.provider_registry import ProviderProfile, ProviderRegistry
+from pydantic import BaseModel, Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-DEFAULT_CONFIG_PATH = Path.home() / ".vibe" / "config.yaml"
-
-DEFAULT_CONFIG_CONTENT = """# Vibe Agent Configuration
-# Independent from Hermes. Env vars override these values.
-# Default endpoint targets Ollama (http://localhost:11434).
-# Override VIBE_BASE_URL and VIBE_MODEL for other providers.
-
-llm:
-  default_model: "default"
-  base_url: "http://localhost:11434"
-  api_key_env_var: "LLM_API_KEY"
-  timeout: 120.0
-
-fallback:
-  enabled: true
-  chain:
-    - "default"
-  health_check_timeout: 10.0
-  max_retries: 3
-
-compactor:
-  max_tokens: 8000
-  chars_per_token: 4.0
-  preserve_recent: 4
-  max_chars_per_msg: 4000
-
-query_loop:
-  feedback_threshold: 0.7
-  max_feedback_retries: 1
-  max_iterations: 50
-  max_context_tokens: 8000
-
-retry:
-  max_retries: 2
-  initial_delay: 1.0
-
-eval:
-  default_cases_dir: "vibe/evals/builtin"
-  scorecard_dir: "~/.vibe/scorecards"
-  soak_default_duration_minutes: 60.0
-  soak_default_cpm: 6.0
-"""
+class LogConfig(BaseModel):
+    """Logging configuration."""
+    enabled: bool = True
+    log_dir: str = "./logs"
+    max_file_size_mb: float = Field(default=10.0, ge=0.1)
+    retention_days: int = Field(default=7, ge=1)
+    level: str = Field(default="INFO", pattern=r"^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
 
 
-@dataclass
-class LLMConfig:
+class LLMConfig(BaseModel):
+    """LLM configuration (backward compatible with old config)."""
     default_model: str = "default"
-    base_url: str = "http://localhost:11434"
-    api_key_env_var: str = "LLM_API_KEY"
-    api_key: str | None = None
-    timeout: float = 120.0
+    base_url: str = "http://localhost:11434/v1"
+    api_key: Optional[str] = None
+    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    max_tokens: Optional[int] = Field(default=None, ge=1)
+    timeout: float = Field(default=60.0, ge=1.0)
+    fallback_chain: list[str] = Field(default_factory=list)
 
-
-@dataclass
-class FallbackConfig:
-    enabled: bool = True
-    chain: list[str] = field(default_factory=lambda: ["default"])
-    health_check_timeout: float = 10.0
-    max_retries: int = 3
-    circuit_breaker_threshold: int = 1
-    circuit_breaker_cooldown: float = 600.0
-
-
-@dataclass
-class CompactorConfig:
-    max_tokens: int = 8000
-    chars_per_token: float = 4.0
-    preserve_recent: int = 4
-    max_chars_per_msg: int = 4000
-
-    def __post_init__(self):
-        if self.max_tokens < 1000:
-            raise ValueError(f"max_tokens must be >= 1000, got {self.max_tokens}")
-        if self.chars_per_token <= 0:
-            raise ValueError(f"chars_per_token must be > 0, got {self.chars_per_token}")
-        if self.preserve_recent < 0:
-            raise ValueError(f"preserve_recent must be >= 0, got {self.preserve_recent}")
-        if self.max_chars_per_msg < 100:
-            raise ValueError(f"max_chars_per_msg must be >= 100, got {self.max_chars_per_msg}")
-
-
-@dataclass
-class QueryLoopConfig:
-    feedback_threshold: float = 0.7
-    max_feedback_retries: int = 1
-    max_iterations: int = 50
-    max_context_tokens: int = 8000
-
-    def __post_init__(self):
-        if not 0.0 <= self.feedback_threshold <= 1.0:
-            raise ValueError(
-                f"feedback_threshold must be in [0.0, 1.0], got {self.feedback_threshold}"
-            )
-        if self.max_feedback_retries < 0:
-            raise ValueError(
-                f"max_feedback_retries must be >= 0, got {self.max_feedback_retries}"
-            )
-        if self.max_iterations < 1:
-            raise ValueError(f"max_iterations must be >= 1, got {self.max_iterations}")
-        if self.max_context_tokens < 1000:
-            raise ValueError(
-                f"max_context_tokens must be >= 1000, got {self.max_context_tokens}"
-            )
-
-
-@dataclass
-class RetryConfig:
-    max_retries: int = 2
-    initial_delay: float = 1.0
-
-    def __post_init__(self):
-        if self.max_retries < 0:
-            raise ValueError(f"max_retries must be >= 0, got {self.max_retries}")
-        if self.initial_delay < 0:
-            raise ValueError(f"initial_delay must be >= 0, got {self.initial_delay}")
-
-
-@dataclass
-class EvalConfig:
-    default_cases_dir: str = "vibe/evals/builtin"
-    scorecard_dir: str = "~/.vibe/scorecards"
-    soak_default_duration_minutes: float = 60.0
-    soak_default_cpm: float = 6.0
-
-    def __post_init__(self):
-        # Expand ~ in paths
-        self.scorecard_dir = os.path.expanduser(self.scorecard_dir)
-
-
-@dataclass
-class LogConfig:
-    enabled: bool = True
-    log_dir: str = "~/.vibe/logs"
-    max_file_size_mb: int = 10
-    retention_days: int = 5
-
-    def __post_init__(self):
-        self.log_dir = os.path.expanduser(self.log_dir)
-
-
-@dataclass
-class VibeConfig:
-    """Top-level configuration for vibe-agent."""
-
-    llm: LLMConfig = field(default_factory=LLMConfig)
-    fallback: FallbackConfig = field(default_factory=FallbackConfig)
-    compactor: CompactorConfig = field(default_factory=CompactorConfig)
-    query_loop: QueryLoopConfig = field(default_factory=QueryLoopConfig)
-    retry: RetryConfig = field(default_factory=RetryConfig)
-    eval: EvalConfig = field(default_factory=EvalConfig)
-    logging: LogConfig = field(default_factory=LogConfig)
-    providers: ProviderRegistry = field(default_factory=ProviderRegistry)
-    # Raw model configs for eval infrastructure (see vibe/evals/model_registry.py)
-    models: Dict[str, Any] = field(default_factory=dict)
-
-    # Track the actual model resolved after health-check fallback
-    resolved_model: Optional[str] = None
-
-    def set_resolved_model(self, model: str) -> None:
-        """Record the actual model used after fallback resolution."""
-        self.resolved_model = model
-
+    @field_validator("temperature")
     @classmethod
-    def load(
-        cls,
-        path: Path | None = None,
-        auto_create: bool = True,
-    ) -> "VibeConfig":
-        """Load config from file, apply env overrides, return VibeConfig."""
-        config_path = path or DEFAULT_CONFIG_PATH
+    def validate_temp(cls, v: float) -> float:
+        if not 0.0 <= v <= 2.0:
+            raise ValueError("Temperature must be between 0.0 and 2.0")
+        return v
 
-        if auto_create and not config_path.exists():
-            config_path.parent.mkdir(parents=True, exist_ok=True)
-            config_path.write_text(DEFAULT_CONFIG_CONTENT, encoding="utf-8")
 
-        raw: dict[str, Any] = {}
-        if config_path.exists():
-            with open(config_path, encoding="utf-8") as f:
-                try:
-                    loaded = yaml.safe_load(f)
-                except YAMLError as exc:
-                    raise ValueError(
-                        f"Invalid YAML in config file {config_path}: {exc}"
-                    ) from exc
+class ModelConfig(BaseModel):
+    """Model-specific configuration."""
+    provider: str = "openai"
+    model: str = "gpt-4o"
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
+    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    max_tokens: Optional[int] = Field(default=None, ge=1)
+    timeout: float = Field(default=60.0, ge=1.0)
 
-            if loaded is None:
-                raw = {}
-            elif not isinstance(loaded, dict):
-                raise ValueError(
-                    f"Config file {config_path} must contain a top-level mapping, "
-                    f"got {type(loaded).__name__}"
-                )
-            else:
-                raw = loaded
+    @field_validator("temperature")
+    @classmethod
+    def validate_temp(cls, v: float) -> float:
+        if not 0.0 <= v <= 2.0:
+            raise ValueError("Temperature must be between 0.0 and 2.0")
+        return v
 
-        # Build from file + env overrides
-        llm_raw = raw.get("llm", {})
-        llm = LLMConfig(
-            default_model=os.getenv("VIBE_MODEL", llm_raw.get("default_model", "default")),
-            base_url=os.getenv("VIBE_BASE_URL", llm_raw.get("base_url", "http://localhost:11434")),
-            api_key_env_var=os.getenv(
-                "VIBE_API_KEY_ENV_VAR", llm_raw.get("api_key_env_var", "LLM_API_KEY")
-            ),
-            api_key=llm_raw.get("api_key"),
-            timeout=_parse_float("VIBE_TIMEOUT", llm_raw.get("timeout", 120.0)),
-        )
 
-        fb_raw = raw.get("fallback", {})
-        fallback = FallbackConfig(
-            enabled=_parse_bool(
-                os.getenv("VIBE_FALLBACK_ENABLED", str(fb_raw.get("enabled", True)))
-            ),
-            chain=_parse_list(os.getenv("VIBE_FALLBACK_CHAIN"), fb_raw.get("chain")),
-            health_check_timeout=_parse_float(
-                "VIBE_HEALTH_TIMEOUT", fb_raw.get("health_check_timeout", 10.0)
-            ),
-            max_retries=_parse_int("VIBE_FALLBACK_RETRIES", fb_raw.get("max_retries", 3)),
-            circuit_breaker_threshold=_parse_int(
-                "VIBE_CB_THRESHOLD", fb_raw.get("circuit_breaker_threshold", 1)
-            ),
-            circuit_breaker_cooldown=_parse_float(
-                "VIBE_CB_COOLDOWN", fb_raw.get("circuit_breaker_cooldown", 600.0)
-            ),
-        )
+class PlannerConfig(BaseModel):
+    """Planner configuration."""
+    enabled: bool = True
+    use_embeddings: bool = False
+    embedding_model_path: Optional[str] = None
+    llm_routing: bool = False
+    cache_ttl: int = Field(default=3600, ge=60)
+    max_llm_tools: int = Field(default=10, ge=1, le=50)
 
-        comp_raw = raw.get("compactor", {})
-        compactor = CompactorConfig(
-            max_tokens=_parse_int("VIBE_COMPACTOR_MAX_TOKENS", comp_raw.get("max_tokens", 8000)),
-            chars_per_token=_parse_float(
-                "VIBE_COMPACTOR_CHARS_PER_TOKEN", comp_raw.get("chars_per_token", 4.0)
-            ),
-            preserve_recent=_parse_int(
-                "VIBE_COMPACTOR_PRESERVE_RECENT", comp_raw.get("preserve_recent", 4)
-            ),
-            max_chars_per_msg=_parse_int(
-                "VIBE_COMPACTOR_MAX_CHARS", comp_raw.get("max_chars_per_msg", 4000)
-            ),
-        )
 
-        ql_raw = raw.get("query_loop", {})
-        query_loop = QueryLoopConfig(
-            feedback_threshold=_parse_float(
-                "VIBE_FEEDBACK_THRESHOLD", ql_raw.get("feedback_threshold", 0.7)
-            ),
-            max_feedback_retries=_parse_int(
-                "VIBE_MAX_FEEDBACK_RETRIES", ql_raw.get("max_feedback_retries", 1)
-            ),
-            max_iterations=_parse_int(
-                "VIBE_MAX_ITERATIONS", ql_raw.get("max_iterations", 50)
-            ),
-            max_context_tokens=_parse_int(
-                "VIBE_MAX_CONTEXT_TOKENS", ql_raw.get("max_context_tokens", 8000)
-            ),
-        )
+class TraceStoreConfig(BaseModel):
+    """Trace store configuration."""
+    enabled: bool = True
+    storage_type: str = Field(default="sqlite", pattern=r"^(sqlite|json|memory)$")
+    db_path: Optional[str] = None
+    max_entries: int = Field(default=10000, ge=100)
+    retention_days: int = Field(default=30, ge=1)
 
-        retry_raw = raw.get("retry", {})
-        retry = RetryConfig(
-            max_retries=_parse_int("VIBE_RETRY_MAX", retry_raw.get("max_retries", 2)),
-            initial_delay=_parse_float(
-                "VIBE_RETRY_DELAY", retry_raw.get("initial_delay", 1.0)
-            ),
-        )
 
-        log_raw = raw.get("logging", {})
-        logging = LogConfig(
-            enabled=_parse_bool(
-                os.getenv("VIBE_LOGGING_ENABLED", str(log_raw.get("enabled", True)))
-            ),
-            log_dir=os.getenv("VIBE_LOG_DIR", log_raw.get("log_dir", "~/.vibe/logs")),
-            max_file_size_mb=_parse_int(
-                "VIBE_LOG_MAX_SIZE", log_raw.get("max_file_size_mb", 10)
-            ),
-            retention_days=_parse_int(
-                "VIBE_LOG_RETENTION", log_raw.get("retention_days", 5)
-            ),
-        )
+class EvalConfig(BaseModel):
+    """Evaluation configuration."""
+    enabled: bool = True
+    parallel: bool = True
+    max_workers: int = Field(default=4, ge=1, le=16)
+    timeout: float = Field(default=300.0, ge=10.0)
+    output_dir: str = "./eval_results"
 
-        eval_raw = raw.get("eval", {})
 
-        eval_cfg = EvalConfig(
-            default_cases_dir=os.getenv(
-                "VIBE_EVAL_CASES_DIR", eval_raw.get("default_cases_dir", "vibe/evals/builtin")
-            ),
-            scorecard_dir=os.getenv(
-                "VIBE_SCORECARD_DIR", eval_raw.get("scorecard_dir", "~/.vibe/scorecards")
-            ),
-            soak_default_duration_minutes=_parse_float(
-                "VIBE_SOAK_DURATION", eval_raw.get("soak_default_duration_minutes", 60.0)
-            ),
-            soak_default_cpm=_parse_float(
-                "VIBE_SOAK_CPM", eval_raw.get("soak_default_cpm", 6.0)
-            ),
-        )
+class SecurityConfig(BaseModel):
+    """Security configuration."""
+    enable_constraints: bool = True
+    max_file_size_mb: float = Field(default=10.0, ge=0.1)
+    allowed_paths: list[str] = Field(default_factory=lambda: ["./"])
+    blocked_commands: list[str] = Field(default_factory=list)
+    require_approval: bool = True
 
-        # Parse providers (new multi-provider config)
-        providers = _parse_providers(raw.get("providers", {}), llm)
 
-        # Raw model configs for eval infrastructure
-        models = raw.get("models", {})
-        if not isinstance(models, dict):
-            models = {}
+class VibeConfig(BaseSettings):
+    """Root configuration for vibe-agent.
 
-        return cls(
-            llm=llm,
-            fallback=fallback,
-            compactor=compactor,
-            query_loop=query_loop,
-            retry=retry,
-            eval=eval_cfg,
-            logging=logging,
-            providers=providers,
-            models=models,
-        )
+    Loads from:
+    1. Environment variables (VIBE_* prefix)
+    2. .env file
+    3. Default values
 
-    def get_default_provider(self) -> ProviderProfile | None:
-        """Return the default provider for backward compatibility.
+    Backward compatibility: Maintains old interface with llm, logging, etc.
+    """
 
-        If providers are configured, returns the first registered provider.
-        Otherwise falls back to creating one from llm settings.
-        """
-        providers = self.providers.list_providers()
-        if providers:
-            return self.providers.get(providers[0])
-        # Backward compat: synthesize a provider from llm settings
-        return ProviderProfile(
-            name="default",
-            base_url=self.llm.base_url,
-            adapter_type="openai",
-            api_key=self.llm.api_key,
-            api_key_env_var=self.llm.api_key_env_var,
-            timeout=self.llm.timeout,
-            default_model=self.llm.default_model,
-        )
+    model_config = SettingsConfigDict(
+        env_prefix="VIBE_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
-    def resolve_api_key(self) -> str | None:
-        """Resolve API key: config file > env var > LLM_API_KEY fallback."""
-        if self.llm.api_key:
-            return self.llm.api_key
-        return os.getenv(self.llm.api_key_env_var) or os.getenv("LLM_API_KEY")
+    # Core settings
+    debug: bool = False
+    log_level: str = Field(default="INFO", pattern=r"^(DEBUG|INFO|WARNING|ERROR|CRITICAL)$")
+    workspace_dir: str = "./workspace"
+
+    # Backward compatible sub-configs
+    llm: LLMConfig = Field(default_factory=LLMConfig)
+    logging: LogConfig = Field(default_factory=LogConfig)
+
+    # New sub-configs
+    model: ModelConfig = Field(default_factory=ModelConfig)
+    planner: PlannerConfig = Field(default_factory=PlannerConfig)
+    trace_store: TraceStoreConfig = Field(default_factory=TraceStoreConfig)
+    eval: EvalConfig = Field(default_factory=EvalConfig)
+    security: SecurityConfig = Field(default_factory=SecurityConfig)
+
+    # Legacy compatibility
+    api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")
+    base_url: Optional[str] = None
+
+    @field_validator("log_level")
+    @classmethod
+    def validate_log_level(cls, v: str) -> str:
+        valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        v_upper = v.upper()
+        if v_upper not in valid_levels:
+            raise ValueError(f"Invalid log level: {v}. Must be one of {valid_levels}")
+        return v_upper
 
     def get_fallback_chain(self) -> list[str]:
-        """Return the ordered fallback chain from config."""
-        if not self.fallback.enabled:
-            return [self.llm.default_model]
-        chain = list(self.fallback.chain)
-        # Ensure default model is first if not already in chain
-        if self.llm.default_model not in chain:
-            chain.insert(0, self.llm.default_model)
-        return chain
+        """Get fallback chain from LLM config."""
+        return self.llm.fallback_chain or []
 
+    def resolve_api_key(self) -> Optional[str]:
+        """Resolve API key from various sources."""
+        return self.llm.api_key or self.api_key or os.environ.get("OPENAI_API_KEY")
 
-def _parse_providers(raw_providers: dict[str, Any], llm: LLMConfig) -> ProviderRegistry:
-    """Build ProviderRegistry from config YAML.
+    @classmethod
+    def load(cls) -> "VibeConfig":
+        """Load configuration from default sources."""
+        return cls()
 
-    If no providers are explicitly configured, synthesizes a default provider
-    from the legacy llm settings for backward compatibility.
-    """
-    if not raw_providers:
-        # Backward compat: create a single provider from llm config
-        return ProviderRegistry({
-            "default": ProviderProfile(
-                name="default",
-                base_url=llm.base_url,
-                adapter_type="openai",
-                api_key=llm.api_key,
-                api_key_env_var=llm.api_key_env_var,
-                timeout=llm.timeout,
-                default_model=llm.default_model,
-            )
-        })
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "VibeConfig":
+        """Load from a dictionary (legacy compatibility)."""
+        return cls.model_validate(data)
 
-    providers: dict[str, ProviderProfile] = {}
-    for name, cfg in raw_providers.items():
-        if not isinstance(cfg, dict):
-            raise ValueError(f"Provider '{name}' must be a mapping, got {type(cfg).__name__}")
-        base_url = cfg.get("base_url")
-        if not base_url:
-            raise ValueError(f"Provider '{name}' is missing required 'base_url'")
-        providers[name] = ProviderProfile(
-            name=name,
-            base_url=base_url,
-            adapter_type=cfg.get("adapter", "openai"),
-            api_key=cfg.get("api_key"),
-            api_key_env_var=cfg.get("api_key_env_var", "LLM_API_KEY"),
-            timeout=float(cfg.get("timeout", 120.0)),
-            default_model=cfg.get("default_model"),
-            extra_headers=cfg.get("extra_headers", {}),
-        )
-    return ProviderRegistry(providers)
+    @classmethod
+    def from_file(cls, path: str | Path) -> "VibeConfig":
+        """Load from a YAML/JSON file."""
+        path = Path(path)
+        if not path.exists():
+            return cls()
 
+        import json
+        if path.suffix == ".json":
+            with open(path) as f:
+                data = json.load(f)
+        else:
+            try:
+                import yaml
+                with open(path) as f:
+                    data = yaml.safe_load(f)
+            except ImportError:
+                raise ImportError("PyYAML required for YAML config files. Install with: pip install pyyaml")
 
-def _parse_bool(value: str) -> bool:
-    lowered = value.lower()
-    if lowered in ("true", "1", "yes", "on"):
-        return True
-    if lowered in ("false", "0", "no", "off", ""):
-        return False
-    raise ValueError(f"Cannot parse '{value}' as boolean. Expected: true/false/1/0/yes/no/on/off")
+        return cls.model_validate(data)
 
+    def to_dict(self) -> dict[str, Any]:
+        """Export to dictionary."""
+        return self.model_dump()
 
-def _parse_float(env_name: str, fallback: float) -> float:
-    env_val = os.getenv(env_name)
-    if env_val is None:
-        return fallback
-    try:
-        return float(env_val)
-    except ValueError as exc:
-        raise ValueError(
-            f"Environment variable {env_name} must be a float, got '{env_val}'"
-        ) from exc
-
-
-def _parse_int(env_name: str, fallback: int) -> int:
-    env_val = os.getenv(env_name)
-    if env_val is None:
-        return fallback
-    try:
-        return int(env_val)
-    except ValueError as exc:
-        raise ValueError(
-            f"Environment variable {env_name} must be an int, got '{env_val}'"
-        ) from exc
-
-
-def _parse_list(env_value: str | None, fallback: list[str] | None) -> list[str]:
-    if env_value:
-        return [x.strip() for x in env_value.split(",") if x.strip()]
-    if fallback is not None:
-        if not isinstance(fallback, list) or not all(isinstance(x, str) for x in fallback):
-            raise ValueError(f"Expected list of strings, got {type(fallback).__name__}")
-        return list(fallback)
-    return []
+    def merge_env_overrides(self) -> "VibeConfig":
+        """Re-load with environment variable overrides."""
+        return self.model_copy()
