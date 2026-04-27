@@ -7,6 +7,11 @@ All notable changes to Vibe Agent will be documented in this file.
 ## [0.3.0-alpha] — 2026-04-26
 
 ### Added
+- **Tripartite Memory System**:
+  - **LLMWiki**: Markdown-based long-term memory with strict file locking and parallelized backlink resolution. Uses FlashLLM for contradiction detection.
+  - **KnowledgeExtractor**: Asynchronous background knowledge extraction utilizing `asyncio.gather` for parallel novelty scoring and confidence gating.
+  - **RLMThresholdAnalyzer**: Telemetry-driven analysis evaluating session tokens and compaction rates to trigger Recursive Language Model training.
+  - **CLI Memory Commands**: Added `vibe memory status` and `vibe wiki expire` for memory system management.
 - **Phase 2 Skill System**: Native vibe skill format (TOML + Markdown), atomic installation from git/tarball/local, and step-by-step verification.
 - **Embedding Unification**: Shared `vibe/harness/embeddings.py` module with `fastText` singleton loader and LRU cache (1000 entries).
 - **Secret Redaction**: `SecretRedactor` with 9 default patterns (OpenAI, AWS, GitHub, Bearer, etc.) wired into all `TraceStore` backends.

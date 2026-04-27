@@ -35,6 +35,7 @@
 | **Multi-Provider Fallback** | Seamlessly switches between OpenAI, Anthropic, OpenRouter, Ollama, and other providers when primary models fail. |
 | **Secure Tool Execution** | Sandboxed Bash and File system tools with three-layer security defense and path jailing. |
 | **Context Management** | Automated compaction and summarization to handle long-running conversations within token limits. |
+| **Tripartite Memory System** | Automated async knowledge extraction, FlashLLM contradiction detection, and RLM telemetry analysis. |
 | **Eval-Driven Development** | Built-in suite of 30+ evaluation cases to ensure every update maintains performance and stability. |
 | **Customizable Skills** | Extend the agent's capabilities with markdown-based skill definitions. |
 
@@ -179,6 +180,13 @@ Manages long-running conversations within token limits.
 - **Strategies**: `TRUNCATE`, `LLM_SUMMARIZE`, `OFFLOAD`, `DROP`
 - **Estimator**: tiktoken when available; char-based fallback (`chars_per_token`)
 - **Preservation**: Always keeps `preserve_recent` most recent messages
+
+### Tripartite Memory System (`vibe/memory/`)
+
+Implements long-term memory via three interconnected pillars:
+1. **LLMWiki (`wiki.py`)**: Markdown files with YAML frontmatter, strict file locking, and concurrent backlink resolution. Uses FlashLLM for contradiction detection.
+2. **KnowledgeExtractor (`extraction.py`)**: Async background task utilizing `asyncio.gather` for parallel PageIndex novelty scoring and LLM confidence gating.
+3. **RLMThresholdAnalyzer (`rlm_analyzer.py`)**: Telemetry-driven analysis tracking token boundaries and compaction rates to trigger Recursive Language Model training events.
 
 ### Error Recovery (`vibe/core/error_recovery.py`)
 
@@ -341,10 +349,11 @@ vibe "What is 15 * 27?"
 # Run evals
 vibe eval run --tag file_ops --limit 10
 
-# Soak test
+# Run soak test
 vibe eval soak --duration 60 --cpm 6
 
-# Inspect memory
+# Inspect memory system
+vibe memory status
 vibe memory traces --limit 20
 ```
 

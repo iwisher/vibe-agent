@@ -234,7 +234,41 @@ planner:
 
 ---
 
-## 12. Memory & Trace Store
+## 12. Tripartite Memory
+
+Configuration for the Tripartite Memory System (LLMWiki, KnowledgeExtractor, RLM Analyzer).
+
+```yaml
+memory:
+  enabled: true
+  
+  wiki:
+    base_path: "~/.vibe/wiki"
+    auto_extract: true
+    novelty_threshold: 0.5
+    confidence_threshold: 0.8
+    flash_model:
+      base_url: "http://localhost:11434/v1"
+      model: "qwen3:1.7b"
+      timeout: 15.0
+
+  pageindex:
+    index_path: "~/.vibe/memory/index.json"
+    max_nodes_per_index: 100
+    token_threshold: 4000
+    routing_timeout_seconds: 2.0
+
+  rlm:
+    enabled: true
+    trigger_threshold_chars: 100000
+    trigger_threshold_compaction_pct: 0.3
+    trigger_window_sessions: 50
+    min_sessions_before_trigger: 10
+```
+
+---
+
+## 13. Trace Store
 
 Configuration for episodic session memory.
 

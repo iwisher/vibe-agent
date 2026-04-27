@@ -9,6 +9,7 @@ Vibe Agent is an open, visual-first interactive CLI agent harness. It is designe
 -   **Context Management**: Automated compaction and summarization to handle long-running conversations within token limits.
 -   **Eval-Driven Development**: A built-in suite of 30+ evaluation cases to ensure every update maintains performance and stability.
 -   **Phase 2 Skill System**: Native vibe skill format with TOML frontmatter, markdown body, validation, security scanning, and atomic installation.
+-   **Tripartite Memory System**: Automated async knowledge extraction, FlashLLM contradiction detection, and telemetry-triggered RLM analysis.
 -   **Secret Redaction**: Automatic stripping of API keys (OpenAI, AWS, GitHub, etc.) and passwords from trace stores and logs.
 -   **Interactive CLI**: Readline support with persistent history, token metrics display, and rich skill management commands.
 
@@ -79,6 +80,15 @@ vibe skill run my-skill greeting="Hello World"
 
 # Uninstall a skill
 vibe skill uninstall my-skill
+```
+
+### Managing Memory
+```bash
+# Show tripartite memory system status
+vibe memory status
+
+# Expire old draft pages
+vibe wiki expire --days 30
 ```
 
 ### Running Evaluations

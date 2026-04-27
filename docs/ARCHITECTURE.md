@@ -92,6 +92,7 @@ graph TD
 - **Compaction:** Triggered before every LLM call if estimated tokens exceed threshold. Four strategies: `TRUNCATE` (default), `LLM_SUMMARIZE`, `OFFLOAD`, `DROP`.
 - **Feedback:** `FeedbackCoordinator` evaluates content responses via `FeedbackEngine`. Score below threshold (default 0.7) → inject retry hint and continue loop. Currently silently returns `score=0.5` on any exception (planned fix).
 - **Iteration limit:** `max_iterations` (default 50) with `INCOMPLETE` state on exhaustion.
+- **Background Extraction & Telemetry:** Upon loop completion, asynchronous knowledge extraction is spawned along with an RLM threshold analyzer that evaluates telemetry metrics.
 
 ---
 
@@ -164,7 +165,10 @@ Native skill format with TOML frontmatter (`+++` delimited):
 *   **Secret Redactor** (`vibe/harness/security/redactor.py`):
     - Standardized layer for stripping credentials (OpenAI, AWS, GitHub, etc.) before they hit any persistence layer (TraceStore, EvalStore, Audit Logs).
 *   **EvalStore:** SQLite storage for `evals` and `eval_results`.
-*   **Wiki:** (Archived) Markdown-based long-term memory.
+*   **Tripartite Memory System**:
+    - **LLMWiki** (`wiki.py`): Markdown-based long-term memory with strict file locking and parallelized backlink resolution. Uses FlashLLM for contradiction detection.
+    - **KnowledgeExtractor** (`extraction.py`): Asynchronous background knowledge extraction utilizing `asyncio.gather` for parallel novelty scoring and confidence gating.
+    - **RLMThresholdAnalyzer** (`rlm_analyzer.py`): Telemetry-driven analysis evaluating session tokens and compaction rates to trigger Recursive Language Model training.
 
 ---
 

@@ -50,6 +50,14 @@ This document tracks the progress of Vibe Agent, from its core foundation to fut
 - [x] Interactive CLI with readline history and real-time token metrics.
 - [x] Skill management CLI (`vibe skill create/validate/install/list/run/uninstall`).
 
+### Phase 2e: Tripartite Memory System
+- [x] Phase 1b: Async background knowledge extraction with parallelized novelty scoring.
+- [x] Phase 2: RLM Threshold Analyzer MVP for telemetry-driven token and compaction tracking.
+- [x] Phase 3: FlashLLM Contradiction Detection and Quality Gates.
+- [x] Concurrent async fetch optimization (`asyncio.gather`) across wiki read loops.
+- [x] Memory CLI (`vibe memory status`, `vibe wiki expire`).
+- [ ] Phase 3b: Real Recursive Language Model training (Deferred).
+
 ---
 
 ## 🏗️ In Progress (Phase 2 Hardening)
