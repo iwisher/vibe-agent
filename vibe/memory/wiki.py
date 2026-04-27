@@ -125,6 +125,10 @@ class LLMWiki:
         self._loaded = False
         self._flash_client: Any | None = None  # FlashLLMClient — set externally if available
 
+    def set_flash_client(self, client: Any) -> None:
+        """Set the FlashLLMClient for quality gate operations."""
+        self._flash_client = client
+
     # ------------------------------------------------------------------
     # Index management
     # ------------------------------------------------------------------
@@ -280,6 +284,36 @@ class LLMWiki:
         async with page_lock:
             _write_page_file(page.path, page)
             self._update_backlinks_for_page(page, old_links)
+
+        # Quality gate: contradiction detection via FlashLLMClient
+        if self._flash_client is not None and content is not None:
+            try:
+                # Fetch content of pages that link TO this page (backlinks)
+                backlink_ids = self._backlinks.get(page.slug, set())
+                existing_contents: list[str] = []
+                for linked_id in list(backlink_ids)[:3]:
+                    linked_page = await self.get_page(linked_id)
+                    if linked_page is not None:
+                        existing_contents.append(linked_page.content)
+
+                if existing_contents:
+                    has_contradiction = await self._flash_client.detect_contradiction(
+                        content, existing_contents
+                    )
+                    if has_contradiction:
+                        logger.warning(
+                            "Contradiction detected for page %s — downgrading to draft",
+                            page_id,
+                        )
+                        page.status = "draft"
+                        # Add contradiction flag to citations metadata
+                        page.citations.append({
+                            "type": "contradiction_flag",
+                            "detected_at": _today_iso(),
+                            "linked_pages": list(backlink_ids)[:3],
+                        })
+            except Exception as e:
+                logger.debug("Contradiction detection failed for %s (non-fatal): %s", page_id, e)
 
         # Sync to DB
         if self.db is not None:
@@ -459,6 +493,21 @@ class LLMWiki:
         if page.status == "verified":
             return page
         return await self.update_page(page_id)  # update_page auto-promotes if criteria met
+
+    async def get_status_counts(self) -> dict[str, int]:
+        """Return counts of wiki pages by status: {total, verified, draft}."""
+        md_files = list(self.base_path.glob("*.md"))
+        total = len(md_files)
+        verified = 0
+        draft = 0
+        for md in md_files:
+            page = _parse_page_file(md)
+            if page:
+                if page.status == "verified":
+                    verified += 1
+                elif page.status == "draft":
+                    draft += 1
+        return {"total": total, "verified": verified, "draft": draft}
 
     async def close(self) -> None:
         """Release resources. Part of Closable protocol."""

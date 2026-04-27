@@ -19,7 +19,6 @@ from vibe.evals.runner import EvalRunner
 from vibe.harness.memory.eval_store import EvalStore
 from vibe.harness.memory.trace_store import TraceStore
 from vibe.cli.skill_commands import app as skill_app
-
 app = typer.Typer(help="Vibe Agent — an open agent harness platform")
 eval_app = typer.Typer(help="Run and manage evals")
 app.add_typer(eval_app, name="eval")
@@ -531,7 +530,7 @@ def wiki_index_rebuild():
 
 @wiki_app.command("expire")
 def wiki_expire(
-    days: int = typer.Option(30, "--days", "-d", help="Expire drafts older than N days"),
+    days: int = typer.Option(30, "--days", "-d", help="Expire draft wiki pages older than N days"),
 ):
     """Expire draft wiki pages older than N days."""
     import asyncio
@@ -541,6 +540,75 @@ def wiki_expire(
         console.print(f"[dim]No draft pages older than {days} days found.[/dim]")
     else:
         console.print(f"[green]✓[/green] Expired {count} draft wiki page(s) older than {days} days.")
+
+
+@memory_app.command("status")
+def memory_status():
+    """Show tripartite memory system status: wiki pages, index size, telemetry summary."""
+    import asyncio
+    import json
+    from pathlib import Path
+
+    wiki = _get_wiki()
+    base_path = Path(wiki.base_path)
+
+    # Count pages
+    counts = asyncio.run(wiki.get_status_counts())
+    total_pages = counts["total"]
+    verified_pages = counts["verified"]
+    draft_pages = counts["draft"]
+
+    # Index size
+    index_path = base_path / ".slug_index.json"
+    index_entries = 0
+    if index_path.exists():
+        try:
+            data = json.loads(index_path.read_text())
+            index_entries = len(data.get("slug_to_id", {}))
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    # Telemetry summary (last 24h)
+    sessions_24h = 0
+    avg_duration = 0.0
+    compactions_24h = 0
+    if wiki.db is not None:
+        try:
+            import time
+            cutoff = time.time() - 86400
+            cursor = wiki.db.conn.execute(
+                "SELECT COUNT(*), AVG(duration_seconds) FROM _telemetry WHERE type = 'session' AND timestamp > ?",
+                (cutoff,),
+            )
+            row = cursor.fetchone()
+            if row:
+                sessions_24h = row[0] or 0
+                avg_duration = row[1] or 0.0
+
+            cursor = wiki.db.conn.execute(
+                "SELECT COUNT(*) FROM _telemetry WHERE type = 'compaction' AND timestamp > ?",
+                (cutoff,),
+            )
+            compactions_24h = cursor.fetchone()[0] or 0
+        except Exception as e:
+            import logging
+            logging.getLogger("vibe.cli").debug("Failed to fetch telemetry for memory status: %s", e)
+
+    # Print status
+    table = Table(title="Tripartite Memory Status")
+    table.add_column("Component", style="cyan")
+    table.add_column("Metric", style="bold")
+    table.add_column("Value", style="dim")
+
+    table.add_row("Wiki", "Total pages", str(total_pages))
+    table.add_row("Wiki", "Verified", f"[green]{verified_pages}[/green]")
+    table.add_row("Wiki", "Draft", f"[yellow]{draft_pages}[/yellow]")
+    table.add_row("Index", "Entries", str(index_entries))
+    table.add_row("Telemetry (24h)", "Sessions", str(sessions_24h))
+    table.add_row("Telemetry (24h)", "Avg duration", f"{avg_duration:.1f}s")
+    table.add_row("Telemetry (24h)", "Compactions", str(compactions_24h))
+
+    console.print(table)
 
 
 if __name__ == "__main__":

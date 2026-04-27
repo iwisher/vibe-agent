@@ -188,12 +188,17 @@ class QueryLoopFactory:
             return None
 
     def _create_tripartite(self, mem_cfg: Any) -> tuple[Any, Any, Any]:
-        """Create LLMWiki, PageIndex, and TelemetryCollector from config."""
+        """Create LLMWiki, PageIndex, and TelemetryCollector from config.
+
+        Also wires FlashLLMClient into LLMWiki for quality gate operations
+        if a flash model is configured.
+        """
         try:
             from vibe.memory.wiki import LLMWiki
             from vibe.memory.pageindex import PageIndex
             from vibe.memory.shared_db import SharedMemoryDB
             from vibe.memory.telemetry import TelemetryCollector
+            from vibe.memory.flash_client import FlashLLMClient
 
             wiki_cfg = getattr(mem_cfg, "wiki", None)
             idx_cfg = getattr(mem_cfg, "pageindex", None)
@@ -211,6 +216,18 @@ class QueryLoopFactory:
                 routing_timeout_seconds=getattr(idx_cfg, "routing_timeout_seconds", 2.0) if idx_cfg else 2.0,
             )
             telemetry = TelemetryCollector(db=db)
+
+            # Wire FlashLLMClient for quality gates (contradiction detection)
+            flash_model = getattr(wiki_cfg, "flash_model", None) if wiki_cfg else None
+            if flash_model:
+                flash_client = FlashLLMClient(
+                    base_url=getattr(flash_model, "base_url", "http://localhost:11434/v1"),
+                    model=getattr(flash_model, "model", "qwen3:1.7b"),
+                    api_key=getattr(flash_model, "api_key", None),
+                    timeout=getattr(flash_model, "timeout", 15.0),
+                )
+                wiki.set_flash_client(flash_client)
+
             return wiki, pageindex, telemetry
         except Exception as e:
             import logging

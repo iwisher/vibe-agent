@@ -382,6 +382,8 @@ class WikiConfig(BaseModel):
     novelty_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     confidence_threshold: float = Field(default=0.8, ge=0.0, le=1.0)
     default_ttl_days: int = Field(default=30, ge=1)
+    extraction_batch_size: int = Field(default=5, ge=1, le=50)
+    extraction_timeout_seconds: float = Field(default=30.0, ge=1.0, le=300.0)
 
 
 class PageIndexConfig(BaseModel):
@@ -395,9 +397,14 @@ class PageIndexConfig(BaseModel):
 
 
 class RLMConfig(BaseModel):
-    """Recursive Language Model config — Phase 1a placeholder."""
+    """Recursive Language Model config — Phase 2 telemetry-triggered activation."""
 
     enabled: bool = False
+    trigger_threshold_chars: int = Field(default=100_000, ge=1_000)
+    trigger_threshold_compaction_pct: float = Field(default=0.3, ge=0.0, le=1.0)
+    trigger_window_sessions: int = Field(default=50, ge=5, le=500)
+    min_sessions_before_trigger: int = Field(default=10, ge=1, le=100)
+    rlm_model_path: Optional[str] = None
 
 
 class TripartiteMemoryConfig(BaseModel):

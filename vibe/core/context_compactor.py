@@ -47,10 +47,10 @@ class ContextCompactor:
         if config is not None:
             # Support passing a CompactorConfig or VibeConfig directly
             cfg = getattr(config, "compactor", config)
-            max_tokens = getattr(cfg, "max_tokens", max_tokens)
+            max_tokens = int(getattr(cfg, "max_tokens", max_tokens))
             chars_per_token = getattr(cfg, "chars_per_token", chars_per_token)
-            preserve_recent = getattr(cfg, "preserve_recent", preserve_recent)
-            max_chars_per_msg = getattr(cfg, "max_chars_per_msg", max_chars_per_msg)
+            preserve_recent = int(getattr(cfg, "preserve_recent", preserve_recent))
+            max_chars_per_msg = int(getattr(cfg, "max_chars_per_msg", max_chars_per_msg))
         self.max_tokens = max_tokens
         self.chars_per_token = chars_per_token
         self.strategy = strategy
