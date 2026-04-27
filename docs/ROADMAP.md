@@ -71,24 +71,28 @@ This document tracks the progress of Vibe Agent, from its core foundation to fut
 
 ---
 
-## 🚀 Future Roadmap (Phase 3+)
+## 🧠 Architectural Critique
 
-### Advanced Orchestration
-- [ ] **Budget Governance**: `IterationBudget` + `BudgetConfig` for turn and token caps.
-- [ ] **Checkpointing**: Shadow git snapshots for filesystem rollback.
-- [ ] **Async Session Orchestration**: spawn/steer/kill primitives.
-- [ ] **TaskFlows**: Managed iterative workflows with block/resume/retry.
-- [ ] **Topology Planner**: Intelligent sync vs. async execution decisions.
+At the conclusion of Phase 2, the system's architecture demonstrates strong resilience and sandbox security, but also highlights areas for growth:
+- **Harness & QueryLoop**: The decoupling of the monolithic QueryLoop into distinct Coordinators has been successful for testability. However, the linear iteration limit (max 50) remains rigid. It lacks native DAG-based task execution and background task suspension (e.g., waiting on human-in-the-loop input).
+- **Skill System**: The v2 markdown-based skill system (`SKILL.md`) is highly secure and portable. But variable substitution currently relies on basic string templating; it requires more structured argument parsing and validation.
+- **Memory (Tripartite)**: The foundation is solid (Wiki + Extractor + RLM Analyzer) and properly utilizes parallel asynchronous fetches. However, the `RLMThresholdAnalyzer` only tracks telemetry and doesn't actually trigger the physical training pipeline yet (Phase 3b deferred). Additionally, `fastText` is fast but lacks the deeper semantic understanding of a modern lightweight transformer.
+- **Security**: The sandboxing and path jailing are robust, but for complex, multi-file code refactoring, the system lacks automated rollback capabilities (such as shadow git workspaces) to undo destructive operations seamlessly.
 
-### Platform & API
-- [ ] **FastAPI Server**: REST and WebSocket API for external integrations.
-- [ ] **React Dashboard**: Visual interface for trace viewing and session monitoring.
+---
 
-### Intelligence & Optimization
-- [ ] **Auto-Harness Optimizer**: `vibe optimize` for autonomous hill-climbing.
-- [ ] **Trace Mining**: Auto-generate eval candidates from failure patterns.
-- [ ] **MCP Bridge Expansion**: Enhanced Model Context Protocol server support.
-- [ ] **Cost-Aware Routing**: Automatically choose cheapest capable model for a task.
+## 🚀 Top 10 Next Steps (Phase 3+)
+
+1. **Real-time Vector Search Upgrade**: Migrate from `fastText` to a lightweight local transformer (e.g., `all-MiniLM-L6-v2`) for richer semantic routing in the PageIndex without relying on external APIs.
+2. **Phase 3b RLM Training Pipeline**: Implement the automated LoRA fine-tuning and distillation pipeline that is triggered by the `RLMThresholdAnalyzer`.
+3. **Agentic "Steerable" Sessions**: Upgrade the Query Loop to support async suspension, human-in-the-loop branching, and background persistence (spawn/steer/kill primitives).
+4. **Topology Task Planner**: Evolve the `ContextPlanner` to build Directed Acyclic Graphs (DAGs) of sync/async tasks (spawning parallel sub-agents) instead of just sequential tool selection.
+5. **Advanced MCP Bridge Expansion**: Broaden Model Context Protocol support to handle dynamic resource discovery, pagination, and OAuth authentication flows.
+6. **Cost-Aware Dynamic Routing**: Implement a dynamic router that selects the cheapest capable model from the `ProviderRegistry` based on the prompt's estimated complexity.
+7. **React-Based Trace Dashboard**: Build a visual Web UI (FastAPI + React) to inspect session traces, wiki memory graphs, and skill execution logs in real-time.
+8. **Multi-Agent Swarm Orchestration**: Extend the harness to allow multiple specialized Vibe Agents to communicate and delegate sub-tasks to one another.
+9. **Autonomous Skill Generation (Skill-Maker)**: Create a native pipeline that allows the agent to write, test, sandbox, and install its own `SKILL.md` files autonomously based on recurring tasks.
+10. **Shadow Workspace Rollbacks**: Implement hidden git-based file checkpointing to automatically rollback the workspace if the agent fails a complex refactoring task.
 
 ---
 

@@ -17,6 +17,20 @@ Vibe Agent is an open, visual-first interactive CLI agent harness. It is designe
 
 Vibe Agent is built on a modular "Harness" architecture:
 
+```mermaid
+graph TD
+    User([User CLI]) -->|Query| QL[Query Loop State Machine]
+    QL -->|Selects| Planner[Context Planner]
+    QL -->|Token Budget| Compactor[Context Compactor]
+    QL -->|Executes| Tools[Tool System]
+    Tools -->|Bash / File| Sandbox[(Jailed Sandbox)]
+    QL -->|API Call| MG[Model Gateway]
+    MG -->|Adapters| Providers((OpenRouter, Anthropic, Ollama))
+    QL -->|Extraction & Telemetry| Memory[Tripartite Memory System]
+    Memory --> LLMWiki[(LLMWiki)]
+    Memory --> RLM[RLM Threshold Analyzer]
+```
+
 -   **Query Loop**: A state-machine-driven orchestrator that manages planning, tool use, and feedback.
 -   **Model Gateway**: An adapter-based gateway that normalizes different LLM APIs and handles resilience (circuit breakers, retries).
 -   **Tool System**: A registry-based system for secure, isolated tool execution.
@@ -45,7 +59,7 @@ fallback:
   chain: ["primary", "backup-model"]
 ```
 
-See the [Configuration Guide](docs/CONFIGURATION.md) for full details.
+See the [Configuration Guide](docs/CONFIGURATION.md) for full details on setting up providers, multi-model fallback, and the tripartite memory system.
 
 ## 🛠️ Usage
 
@@ -55,9 +69,15 @@ pip install -e .
 ```
 
 ### Running the Agent
+
+You can start an interactive chat session, or pass a one-shot query directly.
+
 ```bash
 # Start an interactive session
 python -m vibe
+
+# Ask a one-shot query (e.g., stock market example)
+vibe "What is the current price of QQQ stock and its 52-week high?"
 ```
 
 ### Managing Skills

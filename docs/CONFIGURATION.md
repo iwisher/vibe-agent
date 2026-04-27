@@ -1,5 +1,7 @@
 # Vibe Agent Configuration Guide
 
+[Back to README](../README.md)
+
 Vibe Agent is configured via `~/.vibe/config.yaml`. For a complete example, see **[Sample Configuration File](./sample_config.yaml)**.
 
 The configuration is hierarchical: **Defaults → `config.yaml` → Environment Variables (`VIBE_*`)**.
@@ -236,7 +238,17 @@ planner:
 
 ## 12. Tripartite Memory
 
-Configuration for the Tripartite Memory System (LLMWiki, KnowledgeExtractor, RLM Analyzer).
+Configuration for the Tripartite Memory System (LLMWiki, KnowledgeExtractor, RLM Analyzer). This system automatically extracts knowledge from your conversations and saves them to a Markdown-based wiki.
+
+### Detailed Instructions
+
+1. **Enable the System**: Set `enabled: true` under `memory`.
+2. **Wiki Settings**: 
+   - `auto_extract`: Must be `true` for the agent to automatically extract knowledge in the background after every session.
+   - `novelty_threshold` and `confidence_threshold`: Controls how strict the quality gates are (0.0 to 1.0). Higher values mean fewer, but higher quality, extractions.
+   - `flash_model`: Define a cheap, fast model (e.g., a local `qwen3:1.7b` via Ollama) to perform contradiction checks and confidence scoring without consuming expensive API tokens.
+3. **PageIndex**: Adjust `max_nodes_per_index` and `token_threshold` to control when the routing tree splits. `routing_timeout_seconds` ensures the agent doesn't hang if the local DB is slow.
+4. **RLM Analyzer**: Use `rlm` settings to control when the system triggers a Recursive Language Model tuning recommendation based on `trigger_threshold_chars` (total character volume) or `trigger_threshold_compaction_pct` (summarization frequency).
 
 ```yaml
 memory:
