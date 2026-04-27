@@ -12,9 +12,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, Optional
+from typing import Any
 
-from vibe.memory.models import WikiPage
+from vibe.memory.models import WikiPage  # noqa: F401 — re-exported for convenience
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +101,9 @@ class KnowledgeExtractor:
                 logger.debug("Extraction skipped: empty transcript")
                 return []
 
-            prompt = _EXTRACTION_PROMPT_TEMPLATE.replace("{transcript}", transcript)
+            # Use format_map with a safe dict so that {{}} escapes in the template
+            # don't cause KeyError when extra curly-brace literal text is present.
+            prompt = _EXTRACTION_PROMPT_TEMPLATE.format(transcript=transcript)
             response = await self._call_llm(prompt)
             if not response:
                 return []

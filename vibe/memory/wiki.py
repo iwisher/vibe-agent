@@ -261,7 +261,6 @@ class LLMWiki:
             raise KeyError(f"Wiki page not found: {page_id}")
 
         old_links = _extract_outgoing_links(page.content)
-        old_content = page.content
 
         # Apply updates
         if content is not None:
@@ -276,17 +275,12 @@ class LLMWiki:
                     page.citations.append(c)
         page.last_updated = _today_iso()
 
-        # Auto-promote to verified if quality criteria met
-        if page.status == "draft" and page.has_distinct_sessions():
-            page.status = "verified"
-            logger.info("Promoted wiki page to verified: %s", page_id)
-
         page_lock = self._get_async_file_lock(Path(str(page.path) + ".lock"))
-        async with page_lock:
-            _write_page_file(page.path, page)
-            self._update_backlinks_for_page(page, old_links)
 
-        # Quality gate: contradiction detection via FlashLLMClient
+        # Quality gate: contradiction detection via FlashLLMClient runs BEFORE
+        # auto-promotion so that a contradicted page is never promoted to "verified"
+        # and immediately downgraded again.
+        contradiction_detected = False
         if self._flash_client is not None and content is not None:
             try:
                 # Fetch content of pages that link TO this page (backlinks)
@@ -303,8 +297,9 @@ class LLMWiki:
                         content, existing_contents
                     )
                     if has_contradiction:
+                        contradiction_detected = True
                         logger.warning(
-                            "Contradiction detected for page %s — downgrading to draft",
+                            "Contradiction detected for page %s — keeping as draft",
                             page_id,
                         )
                         page.status = "draft"
@@ -316,6 +311,15 @@ class LLMWiki:
                         })
             except Exception as e:
                 logger.debug("Contradiction detection failed for %s (non-fatal): %s", page_id, e)
+
+        # Auto-promote to verified only when no contradiction was detected
+        if not contradiction_detected and page.status == "draft" and page.has_distinct_sessions():
+            page.status = "verified"
+            logger.info("Promoted wiki page to verified: %s", page_id)
+
+        async with page_lock:
+            _write_page_file(page.path, page)
+            self._update_backlinks_for_page(page, old_links)
 
         # Sync to DB
         if self.db is not None:

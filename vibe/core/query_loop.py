@@ -551,8 +551,8 @@ class QueryLoop:
         if self.wiki is None:
             return None
         try:
-            # Try exact title match via search
-            results = await self.wiki.search(title, limit=5)
+            # Try exact title match via search_pages()
+            results = await self.wiki.search_pages(title, limit=5)
             title_lower = title.lower()
             for page in results:
                 if hasattr(page, "title") and page.title.lower() == title_lower:

@@ -7,9 +7,10 @@ Actual training deferred to Phase 3.
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -128,8 +129,6 @@ class RLMThresholdAnalyzer:
 
             if not rows:
                 return stats
-
-            import json
 
             total_chars_list: list[int] = []
             total_duration = 0.0

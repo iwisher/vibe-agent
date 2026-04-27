@@ -373,6 +373,15 @@ class FallbackConfig(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class FlashModelConfig(BaseModel):
+    """Configuration for the lightweight Flash LLM used for quality gates."""
+
+    base_url: str = "http://localhost:11434/v1"
+    model: str = "qwen3:1.7b"
+    api_key: Optional[str] = None
+    timeout: float = Field(default=15.0, ge=1.0, le=120.0)
+
+
 class WikiConfig(BaseModel):
     """LLM Wiki storage configuration."""
 
@@ -384,6 +393,8 @@ class WikiConfig(BaseModel):
     default_ttl_days: int = Field(default=30, ge=1)
     extraction_batch_size: int = Field(default=5, ge=1, le=50)
     extraction_timeout_seconds: float = Field(default=30.0, ge=1.0, le=300.0)
+    # Optional lightweight model for contradiction detection / confidence scoring
+    flash_model: Optional[FlashModelConfig] = None
 
 
 class PageIndexConfig(BaseModel):
