@@ -27,3 +27,4 @@ htmlcov/
 ~/.vibe/
 *.db
 vibe/**/__pycache__/
+*.pyc

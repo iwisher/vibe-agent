@@ -9,6 +9,7 @@ Provides KnowledgeExtractor that:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any, Optional
@@ -123,15 +124,28 @@ class KnowledgeExtractor:
         if self.pageindex is None:
             return [1.0] * len(items)
 
-        scores: list[float] = []
-        for item in items:
-            try:
-                score = await self._score_single_novelty(item)
-                scores.append(score)
-            except Exception as e:
-                logger.debug("Novelty scoring failed for item '%s': %s", item.get("title", ""), e)
-                scores.append(1.0)  # Default to "novel" on error
-        return scores
+        semaphore = asyncio.Semaphore(5)
+
+        async def _score_with_semaphore(item: dict) -> float:
+            async with semaphore:
+                try:
+                    return await self._score_single_novelty(item)
+                except Exception as e:
+                    logger.debug("Novelty scoring failed for item '%s': %s", item.get("title", ""), e)
+                    return 1.0  # Default to "novel" on error
+
+        try:
+            results = await asyncio.wait_for(
+                asyncio.gather(*[_score_with_semaphore(item) for item in items]),
+                timeout=30.0,
+            )
+            return list(results)
+        except asyncio.TimeoutError:
+            logger.warning("Novelty scoring timed out after 30s")
+            return [1.0] * len(items)
+        except Exception as e:
+            logger.warning("Novelty scoring failed (non-fatal): %s", e)
+            return [1.0] * len(items)
 
     async def apply_gates(
         self,
@@ -163,25 +177,39 @@ class KnowledgeExtractor:
         if self.flash_client is None:
             return novel_items
 
-        approved_items: list[dict] = []
-        for item in novel_items:
-            try:
-                confidence = await self.flash_client.score_confidence(item.get("content", ""))
-                if confidence >= confidence_threshold:
-                    item["_confidence"] = confidence  # Attach for debugging
-                    approved_items.append(item)
-                else:
-                    logger.debug(
-                        "Gated extraction: item '%s' rejected by confidence %.2f < %.2f",
-                        item.get("title", ""),
-                        confidence,
-                        confidence_threshold,
-                    )
-            except Exception as e:
-                logger.debug("Confidence scoring failed for '%s': %s", item.get("title", ""), e)
-                approved_items.append(item)  # Pass through on error
+        semaphore = asyncio.Semaphore(5)
 
-        return approved_items
+        async def _score_conf_with_semaphore(item: dict) -> dict | None:
+            async with semaphore:
+                try:
+                    confidence = await self.flash_client.score_confidence(item.get("content", ""))
+                    if confidence >= confidence_threshold:
+                        item["_confidence"] = confidence  # Attach for debugging
+                        return item
+                    else:
+                        logger.debug(
+                            "Gated extraction: item '%s' rejected by confidence %.2f < %.2f",
+                            item.get("title", ""),
+                            confidence,
+                            confidence_threshold,
+                        )
+                        return None
+                except Exception as e:
+                    logger.debug("Confidence scoring failed for '%s': %s", item.get("title", ""), e)
+                    return item  # Pass through on error
+
+        try:
+            results = await asyncio.wait_for(
+                asyncio.gather(*[_score_conf_with_semaphore(item) for item in novel_items]),
+                timeout=30.0,
+            )
+            return [r for r in results if r is not None]
+        except asyncio.TimeoutError:
+            logger.warning("Confidence scoring timed out after 30s")
+            return novel_items
+        except Exception as e:
+            logger.warning("Confidence scoring failed (non-fatal): %s", e)
+            return novel_items
 
     # ------------------------------------------------------------------
     # Internal helpers

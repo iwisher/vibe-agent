@@ -10,6 +10,7 @@ Implements Andrej Karpathy's LLM Wiki pattern:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -289,12 +290,13 @@ class LLMWiki:
         if self._flash_client is not None and content is not None:
             try:
                 # Fetch content of pages that link TO this page (backlinks)
-                backlink_ids = self._backlinks.get(page.slug, set())
+                backlink_ids_list = list(self._backlinks.get(page.slug, set()))[:3]
                 existing_contents: list[str] = []
-                for linked_id in list(backlink_ids)[:3]:
-                    linked_page = await self.get_page(linked_id)
-                    if linked_page is not None:
-                        existing_contents.append(linked_page.content)
+                if backlink_ids_list:
+                    linked_pages = await asyncio.gather(*(self.get_page(lid) for lid in backlink_ids_list))
+                    for linked_page in linked_pages:
+                        if linked_page is not None:
+                            existing_contents.append(linked_page.content)
 
                 if existing_contents:
                     has_contradiction = await self._flash_client.detect_contradiction(
@@ -310,7 +312,7 @@ class LLMWiki:
                         page.citations.append({
                             "type": "contradiction_flag",
                             "detected_at": _today_iso(),
-                            "linked_pages": list(backlink_ids)[:3],
+                            "linked_pages": backlink_ids_list,
                         })
             except Exception as e:
                 logger.debug("Contradiction detection failed for %s (non-fatal): %s", page_id, e)
@@ -359,12 +361,11 @@ class LLMWiki:
         if self.db is not None:
             try:
                 results = self.db.search_wiki(query, limit=limit)
-                pages = []
-                for row in results:
-                    page = await self.get_page(row["page_id"])
-                    if page:
-                        pages.append(page)
-                return pages
+                page_ids = [row["page_id"] for row in results]
+                if page_ids:
+                    fetched_pages = await asyncio.gather(*(self.get_page(pid) for pid in page_ids))
+                    return [p for p in fetched_pages if p is not None]
+                return []
             except Exception as e:
                 logger.warning("DB search failed, falling back to linear scan: %s", e)
 
@@ -456,13 +457,12 @@ class LLMWiki:
         if page is None:
             return []
 
-        linking_page_ids = self._backlinks.get(page.slug, set())
-        result = []
-        for linking_id in linking_page_ids:
-            linking_page = await self.get_page(linking_id)
-            if linking_page:
-                result.append(linking_page)
-        return result
+        linking_page_ids = list(self._backlinks.get(page.slug, set()))
+        if not linking_page_ids:
+            return []
+
+        linked_pages = await asyncio.gather(*(self.get_page(lid) for lid in linking_page_ids))
+        return [p for p in linked_pages if p is not None]
 
     async def expire_drafts(self, cutoff_days: int | None = None) -> int:
         """Delete draft pages older than cutoff_days. Returns count of expired pages."""
