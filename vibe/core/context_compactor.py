@@ -42,6 +42,7 @@ class ContextCompactor:
         preserve_recent: int = 4,
         max_chars_per_msg: int = 4000,
         config: Any | None = None,
+        telemetry_collector: Any | None = None,  # TelemetryCollector instance
     ):
         if config is not None:
             # Support passing a CompactorConfig or VibeConfig directly
@@ -57,6 +58,7 @@ class ContextCompactor:
         self.preserve_recent = preserve_recent
         self.max_chars_per_msg = max_chars_per_msg
         self._encoding = _get_encoding()
+        self._telemetry = telemetry_collector  # Phase 1a: telemetry hook
 
     def estimate_tokens(self, messages: list[dict[str, Any]]) -> int:
         if self._encoding is not None:
@@ -117,11 +119,26 @@ class ContextCompactor:
         if self.strategy == SummarizationStrategy.OFFLOAD:
             summary["content"] = f"[Context offloaded: {len(to_summarize)} earlier messages moved to storage]"
         compacted = system_messages + [summary] + keep_intact
-        return CompactionResult(
+        result = CompactionResult(
             messages=compacted,
             was_compacted=True,
             strategy_used="summarize_middle" if self.strategy == SummarizationStrategy.TRUNCATE else "offload",
         )
+        # Telemetry hook
+        if self._telemetry is not None:
+            try:
+                content_size = sum(len(m.get("content", "") or "") for m in messages)
+                token_count = self.estimate_tokens(messages)
+                self._telemetry.record_compaction(
+                    session_id=None,
+                    content_size=content_size,
+                    token_count=token_count,
+                    strategy=result.strategy_used or "unknown",
+                    was_compacted=result.was_compacted,
+                )
+            except Exception:
+                pass
+        return result
 
     async def compact_async(self, messages: list[dict[str, Any]]) -> CompactionResult:
         """Asynchronous compaction; uses LLM summarization when configured."""

@@ -361,5 +361,188 @@ def list_traces(
     console.print(table)
 
 
+# --- Wiki sub-commands ---
+
+wiki_app = typer.Typer(help="Manage the LLM Wiki knowledge base")
+memory_app.add_typer(wiki_app, name="wiki")
+wiki_index_app = typer.Typer(help="Wiki index management")
+wiki_app.add_typer(wiki_index_app, name="index")
+
+
+def _get_wiki() -> "Any":
+    """Get a configured LLMWiki instance."""
+    from vibe.memory.wiki import LLMWiki
+    return LLMWiki(base_path="~/.vibe/wiki")
+
+
+@wiki_app.command("list")
+def wiki_list(
+    tag: str | None = typer.Option(None, "--tag", "-t", help="Filter by tag"),
+    status: str | None = typer.Option(None, "--status", "-s", help="Filter by status (draft|verified)"),
+):
+    """List wiki pages."""
+    import asyncio
+    wiki = _get_wiki()
+    pages = asyncio.run(wiki.list_pages(tag=tag, status=status))
+    if not pages:
+        console.print("[dim]No wiki pages found.[/dim]")
+        return
+    table = Table(title="Wiki Pages")
+    table.add_column("ID", style="cyan", no_wrap=True)
+    table.add_column("Title", style="bold")
+    table.add_column("Status", style="dim")
+    table.add_column("Tags")
+    table.add_column("Updated", style="dim")
+    for p in pages:
+        status_style = "[green]verified[/green]" if p.status == "verified" else "[yellow]draft[/yellow]"
+        table.add_row(p.id[:8], p.title, status_style, ", ".join(p.tags), p.last_updated)
+    console.print(table)
+
+
+@wiki_app.command("search")
+def wiki_search(
+    query: str = typer.Argument(..., help="Search query"),
+    limit: int = typer.Option(10, "--limit", "-n"),
+):
+    """Search wiki pages (BM25)."""
+    import asyncio
+    wiki = _get_wiki()
+    pages = asyncio.run(wiki.search_pages(query=query, limit=limit))
+    if not pages:
+        console.print(f"[dim]No results for '{query}'.[/dim]")
+        return
+    for p in pages:
+        console.print(f"[bold cyan]{p.title}[/bold cyan] [dim]({p.id[:8]})[/dim]")
+        console.print(f"  Tags: {', '.join(p.tags)}  |  Status: {p.status}")
+        snippet = p.content[:200].replace("\n", " ")
+        console.print(f"  {snippet}...")
+        console.print()
+
+
+@wiki_app.command("show")
+def wiki_show(
+    page_id: str = typer.Argument(..., help="Page ID (or slug)"),
+):
+    """Show a wiki page with rendered links."""
+    import asyncio
+    wiki = _get_wiki()
+    # Try by ID, then by slug
+    page = asyncio.run(wiki.get_page(page_id))
+    if page is None:
+        page = asyncio.run(wiki.get_page_by_slug(page_id))
+    if page is None:
+        console.print(f"[red]Page not found: {page_id}[/red]")
+        raise typer.Exit(code=1)
+    console.print(Panel(
+        f"[bold]{page.title}[/bold]\n"
+        f"ID: {page.id}\nStatus: {page.status}\nTags: {', '.join(page.tags)}\n"
+        f"Created: {page.date_created} | Updated: {page.last_updated}\n"
+        f"Citations: {len(page.citations)}\n\n{page.content}",
+        title=f"Wiki: {page.title}",
+        border_style="cyan",
+    ))
+
+
+@wiki_app.command("create")
+def wiki_create(
+    title: str = typer.Option(..., "--title", "-t", help="Page title"),
+    tags: str = typer.Option("", "--tags", help="Comma-separated tags"),
+    content: str = typer.Option("", "--content", "-c", help="Initial content (or opens $EDITOR if empty)"),
+):
+    """Create a new wiki page. Opens $EDITOR if no --content provided."""
+    import asyncio
+    import os
+    import subprocess
+    import tempfile
+
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+
+    if not content:
+        # Open $EDITOR for content input
+        editor = os.environ.get("EDITOR", "nano")
+        with tempfile.NamedTemporaryFile(suffix=".md", mode="w", delete=False) as f:
+            f.write(f"# {title}\n\n")
+            tmp_path = f.name
+        try:
+            subprocess.run([editor, tmp_path], check=True)
+            with open(tmp_path) as f:
+                content = f.read().strip()
+        finally:
+            os.unlink(tmp_path)
+
+    if not content:
+        console.print("[yellow]No content provided. Aborting.[/yellow]")
+        raise typer.Exit(code=1)
+
+    wiki = _get_wiki()
+    page = asyncio.run(wiki.create_page(title=title, content=content, tags=tag_list))
+    console.print(f"[green]✓[/green] Created wiki page: [bold]{page.title}[/bold] (ID: {page.id[:8]})")
+
+
+@wiki_app.command("edit")
+def wiki_edit(
+    page_id: str = typer.Argument(..., help="Page ID or slug"),
+):
+    """Edit a wiki page in $EDITOR."""
+    import asyncio
+    import os
+    import subprocess
+    import tempfile
+
+    wiki = _get_wiki()
+    page = asyncio.run(wiki.get_page(page_id))
+    if page is None:
+        page = asyncio.run(wiki.get_page_by_slug(page_id))
+    if page is None:
+        console.print(f"[red]Page not found: {page_id}[/red]")
+        raise typer.Exit(code=1)
+
+    editor = os.environ.get("EDITOR", "nano")
+    with tempfile.NamedTemporaryFile(suffix=".md", mode="w", delete=False) as f:
+        f.write(page.content)
+        tmp_path = f.name
+
+    try:
+        subprocess.run([editor, tmp_path], check=True)
+        with open(tmp_path) as f:
+            new_content = f.read().strip()
+    finally:
+        os.unlink(tmp_path)
+
+    if new_content == page.content:
+        console.print("[dim]No changes made.[/dim]")
+        return
+
+    updated = asyncio.run(wiki.update_page(page.id, content=new_content))
+    console.print(f"[green]✓[/green] Updated: [bold]{updated.title}[/bold]")
+
+
+@wiki_index_app.command("rebuild")
+def wiki_index_rebuild():
+    """Rebuild the wiki page index (full rebuild)."""
+    import asyncio
+    from vibe.memory.pageindex import PageIndex
+    wiki = _get_wiki()
+    pageindex = PageIndex(index_path="~/.vibe/memory/index.json")
+    console.print("Rebuilding wiki index...")
+    pageindex.rebuild(wiki, incremental=False)
+    console.print("[green]✓[/green] Wiki index rebuilt.")
+
+
+@wiki_app.command("expire")
+def wiki_expire(
+    days: int = typer.Option(30, "--days", "-d", help="Expire drafts older than N days"),
+):
+    """Expire draft wiki pages older than N days."""
+    import asyncio
+    wiki = _get_wiki()
+    count = asyncio.run(wiki.expire_drafts(cutoff_days=days))
+    if count == 0:
+        console.print(f"[dim]No draft pages older than {days} days found.[/dim]")
+    else:
+        console.print(f"[green]✓[/green] Expired {count} draft wiki page(s) older than {days} days.")
+
+
 if __name__ == "__main__":
     app()
+

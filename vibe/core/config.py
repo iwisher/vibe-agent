@@ -96,6 +96,49 @@ class SecurityConfig(BaseModel):
     require_approval: bool = True
 
 
+class WikiConfig(BaseModel):
+    """LLM Wiki storage configuration."""
+
+    auto_extract: bool = False  # default false — explicit opt-in only
+    base_path: str = "~/.vibe/wiki"
+    extraction_prompt: Optional[str] = None  # Custom prompt template
+    novelty_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
+    confidence_threshold: float = Field(default=0.8, ge=0.0, le=1.0)
+    default_ttl_days: int = Field(default=30, ge=1)
+
+
+class PageIndexConfig(BaseModel):
+    """PageIndex routing configuration."""
+
+    index_path: str = "~/.vibe/memory/index.json"
+    rebuild_on_change: bool = True
+    max_nodes_per_index: int = Field(default=100, ge=10)
+    token_threshold: int = Field(default=4000, ge=100)
+    routing_timeout_seconds: float = Field(default=2.0, ge=0.1, le=30.0)
+
+
+class RLMConfig(BaseModel):
+    """Recursive Language Model config — Phase 1a placeholder only.
+
+    Full config deferred to Phase 2. Only enabled flag exists for now.
+    """
+
+    enabled: bool = False
+
+
+class TripartiteMemoryConfig(BaseModel):
+    """Tripartite Memory System configuration (Wiki + PageIndex + RLM).
+
+    When enabled=False (default), zero behavior changes to existing system.
+    Enable with: VIBE_MEMORY__ENABLED=true environment variable.
+    """
+
+    enabled: bool = False
+    wiki: WikiConfig = Field(default_factory=WikiConfig)
+    pageindex: PageIndexConfig = Field(default_factory=PageIndexConfig)
+    rlm: RLMConfig = Field(default_factory=RLMConfig)
+
+
 class VibeConfig(BaseSettings):
     """Root configuration for vibe-agent.
 
@@ -129,6 +172,7 @@ class VibeConfig(BaseSettings):
     trace_store: TraceStoreConfig = Field(default_factory=TraceStoreConfig)
     eval: EvalConfig = Field(default_factory=EvalConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
+    memory: TripartiteMemoryConfig = Field(default_factory=TripartiteMemoryConfig)
 
     # Legacy compatibility
     api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")

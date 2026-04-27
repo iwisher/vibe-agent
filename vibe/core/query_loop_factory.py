@@ -1,5 +1,6 @@
 """Factory for creating wired QueryLoop instances."""
 
+from pathlib import Path
 from typing import Any
 
 from vibe.core.context_compactor import ContextCompactor
@@ -155,7 +156,69 @@ class QueryLoopFactory:
             kwargs["hook_pipeline"] = HookPipeline()
         if self.config is not None:
             kwargs["config"] = self.config
+
+        # v4: Wire trace_store FIRST, then tripartite components when enabled
+        trace_store = self._create_trace_store()
+        if trace_store is not None:
+            kwargs["trace_store"] = trace_store
+
+        # v4: Conditionally create wiki/pageindex when tripartite_enabled
+        mem_cfg = getattr(self.config, "memory", None) if self.config is not None else None
+        if mem_cfg is not None and getattr(mem_cfg, "enabled", False):
+            wiki, pageindex, telemetry = self._create_tripartite(mem_cfg)
+            kwargs["wiki"] = wiki
+            kwargs["pageindex"] = pageindex
+            kwargs["telemetry"] = telemetry
+
         return QueryLoop(**kwargs)
+
+    def _create_trace_store(self) -> Any | None:
+        """Create and return a TraceStore if configured."""
+        if self.config is None:
+            return None
+        ts_cfg = getattr(self.config, "trace_store", None)
+        if ts_cfg is None or not getattr(ts_cfg, "enabled", True):
+            return None
+        try:
+            from vibe.harness.memory.trace_store import TraceStore
+            storage_type = getattr(ts_cfg, "storage_type", "sqlite")
+            db_path = getattr(ts_cfg, "db_path", None)
+            return TraceStore(storage_type=storage_type, db_path=db_path)
+        except Exception:
+            return None
+
+    def _create_tripartite(self, mem_cfg: Any) -> tuple[Any, Any, Any]:
+        """Create LLMWiki, PageIndex, and TelemetryCollector from config."""
+        try:
+            from vibe.memory.wiki import LLMWiki
+            from vibe.memory.pageindex import PageIndex
+            from vibe.memory.shared_db import SharedMemoryDB
+            from vibe.memory.telemetry import TelemetryCollector
+
+            wiki_cfg = getattr(mem_cfg, "wiki", None)
+            idx_cfg = getattr(mem_cfg, "pageindex", None)
+
+            base_path = getattr(wiki_cfg, "base_path", "~/.vibe/wiki") if wiki_cfg else "~/.vibe/wiki"
+            index_path = getattr(idx_cfg, "index_path", "~/.vibe/memory/index.json") if idx_cfg else "~/.vibe/memory/index.json"
+
+            db = SharedMemoryDB()
+            wiki = LLMWiki(base_path=base_path, db=db)
+            pageindex = PageIndex(
+                index_path=index_path,
+                llm_client=None,  # wired separately when flash client available
+                max_nodes_per_index=getattr(idx_cfg, "max_nodes_per_index", 100) if idx_cfg else 100,
+                token_threshold=getattr(idx_cfg, "token_threshold", 4000) if idx_cfg else 4000,
+                routing_timeout_seconds=getattr(idx_cfg, "routing_timeout_seconds", 2.0) if idx_cfg else 2.0,
+            )
+            telemetry = TelemetryCollector(db=db)
+            return wiki, pageindex, telemetry
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(
+                "Failed to initialize tripartite memory components: %s. "
+                "Continuing without wiki/pageindex.", e
+            )
+            return None, None, None
 
     @classmethod
     def from_profile(

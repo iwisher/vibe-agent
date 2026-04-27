@@ -38,6 +38,7 @@ class PlanRequest:
     available_skills: list[Skill] = field(default_factory=list)
     available_mcps: list[dict[str, Any]] = field(default_factory=list)
     history_summary: str = ""
+    wiki_hint: str = ""  # v4: injected by QueryLoop.run() from PageIndex, not by planner itself
 
 
 @dataclass
@@ -71,9 +72,12 @@ class HybridPlanner:
         embedding_model_path: Optional[str] = None,
         llm_client: Any | None = None,
         cache_dir: Optional[Path] = None,
+        *,
+        pageindex: Any | None = None,  # v4: keyword-only, preserves positional compat
     ):
         self.trace_store = trace_store
         self.llm_client = llm_client
+        self.pageindex = pageindex  # kept for reference; routing done in QueryLoop.run()
         self._embedding_model = None
         self._embedding_cache: dict[str, list[float]] = {}
 
@@ -262,6 +266,11 @@ class HybridPlanner:
                 memory_hint = "\n\n## Historical Context\nPreviously successful sessions on similar topics used models such as: " + ", ".join(
                     {s.get("model", "unknown") for s in similar if s.get("model")}
                 ) + "."
+
+        # v4: Wiki hint comes from PlanRequest.wiki_hint (injected by QueryLoop.run())
+        # PageIndex retrieval happens BEFORE planner in async context, NOT here.
+        if request.wiki_hint:
+            memory_hint += request.wiki_hint
 
         if memory_hint:
             prompt_parts.append(memory_hint.strip())

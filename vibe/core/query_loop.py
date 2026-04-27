@@ -80,6 +80,10 @@ class QueryLoop:
         trace_store: Any | None = None,
         config: Any | None = None,
         logger: Any | None = None,
+        # v4: Tripartite Memory System — optional, zero behavioral change when None
+        wiki: Any | None = None,
+        pageindex: Any | None = None,
+        telemetry: Any | None = None,
     ):
         # Allow VibeConfig to override individual parameters
         if config is not None:
@@ -125,6 +129,12 @@ class QueryLoop:
         self._plan_result: PlanResult | None = None
         self._trace_store = trace_store
         self._session_id: str | None = None
+        # v4: Tripartite Memory System
+        self.wiki = wiki
+        self.pageindex = pageindex
+        self._telemetry = telemetry
+        self._wiki_extract_task: asyncio.Task | None = None  # Phase 1b: async extraction
+        self._session_start_time: float = 0.0
 
     @property
     def state(self) -> QueryState:
@@ -154,11 +164,36 @@ class QueryLoop:
         self._set_state(QueryState.PLANNING)
         import uuid
         self._session_id = str(uuid.uuid4())
+        self._session_start_time = time.time()
         if self.logger:
             self.logger.info(f"Starting QueryLoop run. Initial query: {initial_query}")
         try:
             if initial_query:
                 self.messages.append(Message(role="user", content=initial_query))
+
+            # v4: Wiki retrieval happens BEFORE planner (async context)
+            wiki_hint = ""
+            if initial_query and self.wiki is not None and self.pageindex is not None:
+                try:
+                    routing_timeout = 2.0
+                    if hasattr(self, '_config_memory'):
+                        routing_timeout = getattr(
+                            self._config_memory, 'routing_timeout_seconds', 2.0
+                        )
+                    wiki_nodes = await asyncio.wait_for(
+                        self.pageindex.route(initial_query),
+                        timeout=routing_timeout,
+                    )
+                    if wiki_nodes:
+                        wiki_hint = "\n\n## Relevant Knowledge\n" + "\n".join(
+                            f"- [[{n.node_id}]] {n.title}: {n.description}"
+                            for n in wiki_nodes[:3]
+                        )
+                except asyncio.TimeoutError:
+                    pass  # Fail gracefully — preserve planner latency
+                except Exception as e:
+                    if self.logger:
+                        self.logger.debug(f"PageIndex routing failed (non-fatal): {e}")
 
             # --- Planning: tool, skill, and MCP selection ---
             self._plan_result = None
@@ -171,10 +206,11 @@ class QueryLoop:
                         {"name": cfg.name, "description": cfg.description}
                         for cfg in (self.mcp_bridge.configs if self.mcp_bridge else [])
                     ],
+                    wiki_hint=wiki_hint,  # v4: pass wiki hints via PlanRequest
                 )
                 self._plan_result = self.context_planner.plan(plan_request)
                 if self.logger:
-                    self.logger.info(f"Planner selected tools: {self._plan_result.tools}")
+                    self.logger.info(f"Planner selected tools: {self._plan_result.selected_tool_names}")
                 if self._plan_result.system_prompt_append:
                     self.messages.insert(
                         0,
@@ -240,6 +276,21 @@ class QueryLoop:
                     self._set_state(QueryState.COMPLETED)
         finally:
             self._running = False
+            # Record session telemetry
+            if self._telemetry is not None and self._session_id:
+                try:
+                    elapsed = time.time() - self._session_start_time
+                    total_chars = sum(
+                        len(m.content) for m in self.messages if m.content
+                    )
+                    self._telemetry.record_session(
+                        session_id=self._session_id,
+                        duration_seconds=elapsed,
+                        total_chars=total_chars,
+                        state=self._state.name,
+                    )
+                except Exception:
+                    pass
             # Log session to trace store if available
             if self._trace_store and self._session_id:
                 try:
@@ -392,7 +443,30 @@ class QueryLoop:
         self.feedback_coord.reset()
 
     async def close(self) -> None:
-        """Closes the underlying LLM client and releases resources."""
+        """Close all subsystems via Closable protocol. Cancel pending wiki extract task."""
+        # v4: Close all closable subsystems via protocol
+        for subsystem in [
+            self.wiki,
+            getattr(self, "feedback_coord", None),
+            self.compactor,
+        ]:
+            if subsystem is not None and hasattr(subsystem, "close"):
+                try:
+                    result = subsystem.close()
+                    if asyncio.iscoroutine(result):
+                        await result
+                except Exception:
+                    pass
+
+        # Cancel any pending wiki extract task (Phase 1b)
+        if self._wiki_extract_task is not None and not self._wiki_extract_task.done():
+            self._wiki_extract_task.cancel()
+            try:
+                await self._wiki_extract_task
+            except asyncio.CancelledError:
+                pass
+
+        # Close LLM client and MCP bridge
         if self.llm is not None:
             await self.llm.close()
         if self.mcp_bridge is not None:
