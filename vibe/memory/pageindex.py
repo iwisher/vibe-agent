@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from vibe.memory.models import IndexNode
+from vibe.memory.vector_index import VectorIndex, KeywordIndex
 
 logger = logging.getLogger(__name__)
 
@@ -43,9 +44,15 @@ class PageIndex:
         self.token_threshold = token_threshold
         self.routing_timeout_seconds = routing_timeout_seconds
 
+        self.vector_index: VectorIndex = KeywordIndex()
+
         # Root structure
         self._root: IndexNode | None = None
         self._loaded = False
+        
+    def set_vector_index(self, vector_index: VectorIndex) -> None:
+        """Set a specific VectorIndex implementation."""
+        self.vector_index = vector_index
 
     # ------------------------------------------------------------------
     # Load / Save
@@ -178,8 +185,8 @@ class PageIndex:
         if self.llm_client is not None:
             return await self._llm_route(query, root)
         else:
-            # Tag/keyword fallback when no LLM client
-            return self._keyword_route(query, root)
+            # Vector/Keyword fallback when no LLM client
+            return self._vector_route(query, root)
 
     async def _llm_route(self, query: str, root: IndexNode) -> list[IndexNode]:
         """Use LLM to reason over index and select relevant nodes."""
@@ -239,41 +246,24 @@ Only return the JSON, no other text."""
         except Exception as e:
             logger.warning("PageIndex LLM routing failed: %s", e)
 
-        # Fallback to keyword routing
-        return self._keyword_route(query, root)
+        # Fallback to vector routing
+        return self._vector_route(query, root)
 
-    def _keyword_route(self, query: str, root: IndexNode) -> list[IndexNode]:
-        """Simple keyword-based routing fallback (no LLM)."""
-        q = query.lower().split()
-        scored: list[tuple[float, IndexNode]] = []
-
-        def _score(node: IndexNode) -> float:
-            score = 0.0
-            text = f"{node.title} {node.description} {' '.join(node.tags)}".lower()
-            for word in q:
-                if len(word) > 2 and word in text:
-                    score += 1.0
-            return score
-
+    def _vector_route(self, query: str, root: IndexNode) -> list[IndexNode]:
+        """Vector-based routing fallback (or keyword if using KeywordIndex)."""
+        leaf_nodes: list[IndexNode] = []
+        
         def _traverse(node: IndexNode) -> None:
-            if node.file_path:  # Only score leaf nodes
-                s = _score(node)
-                if s > 0:
-                    node_copy = IndexNode(
-                        node_id=node.node_id,
-                        title=node.title,
-                        description=node.description,
-                        file_path=node.file_path,
-                        tags=node.tags,
-                        confidence=min(1.0, s / max(1, len(q))),
-                    )
-                    scored.append((s, node_copy))
+            if node.file_path:
+                leaf_nodes.append(node)
             for child in node.sub_nodes:
                 _traverse(child)
 
         _traverse(root)
-        scored.sort(key=lambda x: x[0], reverse=True)
-        return [n for _, n in scored[:5]]
+        if not leaf_nodes:
+            return []
+            
+        return self.vector_index.search(query, leaf_nodes, top_k=5)
 
     # ------------------------------------------------------------------
     # Rebuild
@@ -314,6 +304,17 @@ Only return the JSON, no other text."""
         self._root = root
         self._partition_if_needed(root)
         self._save()
+        
+        # Re-encode nodes for the embedding cache
+        leaf_nodes = [n for n in root.sub_nodes if n.file_path is not None]
+        if leaf_nodes and hasattr(self.vector_index, "encode"):
+            try:
+                # To populate the cache, we call search with a dummy query or directly encode.
+                # Since VectorIndex handles caching during search, we can just do a dummy search.
+                self.vector_index.search("dummy", leaf_nodes, top_k=1)
+            except Exception as e:
+                logger.debug("Failed to re-encode index nodes: %s", e)
+                
         logger.info("PageIndex rebuilt with %d pages", len(pages))
 
     # ------------------------------------------------------------------

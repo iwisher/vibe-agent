@@ -405,10 +405,12 @@ class PageIndexConfig(BaseModel):
     max_nodes_per_index: int = Field(default=100, ge=10)
     token_threshold: int = Field(default=4000, ge=100)
     routing_timeout_seconds: float = Field(default=2.0, ge=0.1, le=30.0)
+    vector_search_enabled: bool = False
+    embedding_model: str = "all-MiniLM-L6-v2"
 
 
 class RLMConfig(BaseModel):
-    """Recursive Language Model config — Phase 2 telemetry-triggered activation."""
+    """Recursive Language Model config — Phase 2/3 telemetry-triggered training."""
 
     enabled: bool = False
     trigger_threshold_chars: int = Field(default=100_000, ge=1_000)
@@ -416,6 +418,13 @@ class RLMConfig(BaseModel):
     trigger_window_sessions: int = Field(default=50, ge=5, le=500)
     min_sessions_before_trigger: int = Field(default=10, ge=1, le=100)
     rlm_model_path: Optional[str] = None
+    
+    auto_train: bool = False
+    base_model: str = "qwen3:1.7b"
+    lora_r: int = Field(default=8, ge=1, le=256)
+    max_train_steps: int = Field(default=100, ge=1)
+    training_device: str = Field(default="auto", pattern=r"^(auto|cpu|cuda|mps)$")
+    ollama_register: bool = True
 
 
 class TripartiteMemoryConfig(BaseModel):

@@ -577,7 +577,7 @@ class QueryLoop:
     async def _maybe_trigger_rlm(self) -> None:
         """Background task: analyze telemetry and decide if RLM should trigger.
 
-        Phase 2 MVP: Only logs the decision. Actual training deferred to Phase 3.
+        Phase 3 MVP: Can now optionally trigger training via analyze_and_train.
         Never raises.
         """
         if self._telemetry is None or self._config_memory is None:
@@ -585,18 +585,26 @@ class QueryLoop:
 
         try:
             from vibe.memory.rlm_analyzer import RLMThresholdAnalyzer
+            from vibe.memory.rlm_trainer import RLMTrainer
 
             analyzer = RLMThresholdAnalyzer(self._telemetry, self._config_memory.rlm)
-            decision = await analyzer.analyze()
+            trainer = RLMTrainer()
+            
+            decision = await analyzer.analyze_and_train(
+                wiki=self.wiki,
+                trace_store=self._trace_store,
+                rlm_trainer=trainer,
+                rlm_config=self._config_memory.rlm
+            )
 
             if decision.should_trigger:
                 if self.logger:
                     self.logger.info(
-                        f"RLM trigger: YES — {decision.reason} (metrics: {decision.metrics})"
+                        f"RLM trigger decision: YES — {decision.reason} (metrics: {decision.metrics})"
                     )
             else:
                 if self.logger:
-                    self.logger.debug(f"RLM trigger: NO — {decision.reason}")
+                    self.logger.debug(f"RLM trigger decision: NO — {decision.reason}")
         except Exception as e:
             if self.logger:
                 self.logger.debug(f"RLM trigger analysis failed (non-fatal): {e}")

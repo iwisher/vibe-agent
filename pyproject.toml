@@ -28,6 +28,16 @@ dev = [
     "ruff>=0.3.0",
     "mypy>=1.9.0",
 ]
+memory = [
+    "sentence-transformers>=2.7.0",
+    "torch>=2.0.0",
+]
+rlm = [
+    "peft>=0.10.0",
+    "transformers>=4.40.0",
+    "torch>=2.0.0",
+    "datasets>=2.18.0",
+]
 
 [project.scripts]
 vibe = "vibe.cli.main:app"

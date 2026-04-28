@@ -216,6 +216,13 @@ class QueryLoopFactory:
                 routing_timeout_seconds=getattr(idx_cfg, "routing_timeout_seconds", 2.0) if idx_cfg else 2.0,
             )
             telemetry = TelemetryCollector(db=db)
+            
+            if idx_cfg and getattr(idx_cfg, "vector_search_enabled", False):
+                from vibe.memory.vector_index import get_vector_index
+                from pathlib import Path
+                model_name = getattr(idx_cfg, "embedding_model", "all-MiniLM-L6-v2")
+                cache_path = Path(str(index_path)).with_suffix(".npy")
+                pageindex.set_vector_index(get_vector_index(model_name, cache_path))
 
             # Wire FlashLLMClient for quality gates (contradiction detection)
             flash_model = getattr(wiki_cfg, "flash_model", None) if wiki_cfg else None

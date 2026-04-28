@@ -55,6 +55,8 @@ The **Tripartite Memory System** replaces the vector-based similarity search par
 
 ### 2.2 Target Architecture (Tripartite Integration)
 
+![Tripartite Memory Architecture](assets/tripartite_memory_architecture.png)
+
 | Layer | Replaces / Augments | New Component | Persistence |
 |-------|---------------------|---------------|-------------|
 | **Index** | Augments planner with memory hints | `PageIndex` | `~/.vibe/memory/index.json` |
