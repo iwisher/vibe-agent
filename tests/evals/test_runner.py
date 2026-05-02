@@ -245,6 +245,7 @@ class TestRunAll:
 
         def factory(case):
             new_loop = MockQueryLoop("factory")
+            new_loop.copy = lambda: new_loop  # Factory loops don't need copying
             factory_loops.append(new_loop)
             return new_loop
 

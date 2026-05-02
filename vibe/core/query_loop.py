@@ -673,7 +673,12 @@ class QueryLoop:
         self.feedback_coord.reset()
 
     def copy(self) -> "QueryLoop":
-        """Return a shallow copy with reset per-session state."""
+        """Return a shallow copy with reset per-session state.
+
+        Creates fresh instances of per-session mutable coordinators to prevent
+        state bleed when the same QueryLoop is used across multiple eval cases
+        or concurrent sessions.
+        """
         new_loop = copy.copy(self)
         new_loop.messages = []
         new_loop._running = False
@@ -684,11 +689,25 @@ class QueryLoop:
         new_loop._session_start_time = 0.0
         new_loop._wiki_extract_task = None
         new_loop._rlm_trigger_task = None
+        # Fresh coordinators to prevent state bleed across copies
         new_loop.feedback_coord = FeedbackCoordinator(
             self.feedback_coord.engine,
             self.feedback_coord.threshold,
             self.feedback_coord.max_retries,
         )
+        if self.compactor is not None:
+            from vibe.core.coordinators import CompactionCoordinator
+            new_loop.compactor = CompactionCoordinator(self.compactor.compactor)
+        if getattr(self, "tool_executor", None) is not None:
+            from vibe.core.coordinators import ToolExecutor
+            new_loop.tool_executor = ToolExecutor(
+                self.tool_executor.tools,
+                self.tool_executor.hook_pipeline,
+                getattr(self.tool_executor, "mcp_bridge", None),
+            )
+            # Copy registered handlers to new executor
+            if hasattr(self.tool_executor, "_handlers"):
+                new_loop.tool_executor._handlers = dict(self.tool_executor._handlers)
         return new_loop
 
     async def close(self) -> None:

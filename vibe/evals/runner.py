@@ -364,7 +364,8 @@ class EvalRunner:
         async def _run(case: EvalCase) -> EvalResult:
             async with self._semaphore:
                 loop = self._get_query_loop(case)
-                if loop is self.query_loop:
+                # Always copy to prevent state bleed, whether default or factory-created
+                if hasattr(loop, "copy") and callable(loop.copy):
                     loop = loop.copy()
                 created_loops.append(loop)
                 return await self.run_case(case, query_loop=loop)

@@ -8,6 +8,7 @@ main wiki.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import sqlite3
@@ -133,7 +134,7 @@ class WikiCompiler:
         db_path = getattr(self.trace_store, "db_path", None)
         if db_path:
             try:
-                with sqlite3.connect(db_path) as conn:
+                with contextlib.closing(sqlite3.connect(db_path)) as conn:
                     conn.row_factory = sqlite3.Row
                     rows = conn.execute(
                         "SELECT * FROM sessions WHERE start_time > ? ORDER BY start_time DESC",
@@ -156,7 +157,7 @@ class WikiCompiler:
         db_path = getattr(self.trace_store, "db_path", None)
         if db_path:
             try:
-                with sqlite3.connect(db_path) as conn:
+                with contextlib.closing(sqlite3.connect(db_path)) as conn:
                     conn.row_factory = sqlite3.Row
                     rows = conn.execute(
                         "SELECT role, content, tool_calls FROM messages WHERE session_id = ? ORDER BY id",
@@ -203,12 +204,14 @@ class WikiCompiler:
         slug = _make_slug(title)
         existing = await self.pending_wiki.get_page_by_slug(slug)
         if existing is not None:
-            # Merge content instead of creating duplicate
+            # Merge content and citations instead of creating duplicate
             merged_content = f"{existing.content}\n\n---\n\n{content}"
+            merged_citations = list(existing.citations or [])
+            merged_citations.extend(citations)
             await self.pending_wiki.update_page(
                 existing.id,
                 content=merged_content,
-                citations=citations,
+                citations=merged_citations,
             )
             logger.debug("Merged pending page for slug: %s", slug)
             return

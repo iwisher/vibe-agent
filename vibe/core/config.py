@@ -641,7 +641,7 @@ class VibeConfig(BaseSettings):
         """Return the active SecurityConfig, applying VIBE_APPROVAL_MODE env override."""
         sec = self.security
         override = os.environ.get("VIBE_APPROVAL_MODE")
-        if override and override in ("manual", "smart", "auto"):
+        if override and override in ("manual", "smart", "auto", "strict"):
             sec = sec.model_copy(update={"approval_mode": override})
         return sec
 
