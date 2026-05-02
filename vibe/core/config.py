@@ -294,7 +294,8 @@ class AuditConfig(BaseModel):
 class SecurityConfig(BaseModel):
     """Full security configuration for vibe-agent tools.
 
-    Controls approval mode, file safety, env sanitization, sandbox, and audit.
+    Controls approval mode, file safety, env sanitization, sandbox, audit,
+    smart approver, and checkpointing.
     """
 
     approval_mode: str = Field(default="smart")
@@ -302,6 +303,8 @@ class SecurityConfig(BaseModel):
     secret_redaction: bool = True
     audit_logging: bool = True
     fail_closed: bool = True
+    smart_approver_enabled: bool = True
+    checkpoint_enabled: bool = True
 
     file_safety: FileSafetyConfig = Field(default_factory=FileSafetyConfig)
     env_sanitization: EnvSanitizationConfig = Field(default_factory=EnvSanitizationConfig)
@@ -318,7 +321,7 @@ class SecurityConfig(BaseModel):
     @field_validator("approval_mode")
     @classmethod
     def validate_approval_mode(cls, v: str) -> str:
-        valid = {"manual", "smart", "auto"}
+        valid = {"manual", "smart", "auto", "strict"}
         if v not in valid:
             raise ValueError(f"approval_mode must be one of {sorted(valid)}, got {v!r}")
         return v
@@ -330,6 +333,10 @@ class SecurityConfig(BaseModel):
     def is_auto_approve(self) -> bool:
         """Return True if tools run without approval."""
         return self.approval_mode == "auto"
+
+    def is_strict_mode(self) -> bool:
+        """Return True if all flagged commands are denied."""
+        return self.approval_mode == "strict"
 
 
 # ---------------------------------------------------------------------------

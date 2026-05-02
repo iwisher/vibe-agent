@@ -158,3 +158,163 @@ def test_mcp_001_mutable_defaults_isolated():
     assert "--foo" not in cfg2.args
     cfg1.tools.append({"name": "t1"})
     assert len(cfg2.tools) == 0
+
+
+# ─── 5-Layer SecurityCoordinator tests ───
+
+from vibe.core.coordinators import SecurityCoordinator, SecurityCheckResult
+from vibe.core.config import SecurityConfig
+
+
+def test_security_layer1_pattern_blocks_critical():
+    """Layer 1: Critical patterns like rm -rf / must be blocked."""
+    config = SecurityConfig(approval_mode="auto")
+    coord = SecurityCoordinator(config=config)
+
+    result = coord.evaluate_tool_call("bash", {"command": "rm -rf /"})
+    assert not result.allowed
+    assert result.layer == "pattern_scan"
+    assert "Critical pattern" in result.reason
+
+
+def test_security_layer1_pattern_allows_safe():
+    """Layer 1: Safe commands should pass pattern scanning."""
+    config = SecurityConfig(approval_mode="auto")
+    coord = SecurityCoordinator(config=config)
+
+    result = coord.evaluate_tool_call("bash", {"command": "echo hello"})
+    assert result.allowed
+
+
+def test_security_layer2_file_safety_blocks_denylist():
+    """Layer 2: Writing to denylisted paths must be blocked."""
+    config = SecurityConfig(
+        approval_mode="auto",
+        file_safety={"write_denylist_enabled": True, "read_blocklist_enabled": True, "safe_root": str(Path.home())},
+    )
+    coord = SecurityCoordinator(config=config)
+
+    result = coord.evaluate_tool_call("write_file", {"path": "~/.ssh/authorized_keys", "content": "x"})
+    assert not result.allowed
+    assert result.layer == "file_safety"
+
+
+def test_security_layer2_file_safety_allows_safe_path():
+    """Layer 2: Safe paths should pass file safety."""
+    config = SecurityConfig(
+        approval_mode="auto",
+        file_safety={"write_denylist_enabled": True, "read_blocklist_enabled": True, "safe_root": str(Path.home())},
+    )
+    coord = SecurityCoordinator(config=config)
+
+    result = coord.evaluate_tool_call("write_file", {"path": "~/workspace/test.txt", "content": "x"})
+    assert result.allowed
+
+
+def test_security_layer3_human_approval_strict_blocks():
+    """Layer 3: STRICT approval mode should block destructive tools."""
+    config = SecurityConfig(approval_mode="strict")
+    coord = SecurityCoordinator(config=config)
+
+    result = coord.evaluate_tool_call("bash", {"command": "echo hello"})
+    assert not result.allowed
+    assert result.layer == "human_approval"
+
+
+def test_security_layer3_human_approval_auto_allows():
+    """Layer 3: AUTO approval mode should allow destructive tools."""
+    config = SecurityConfig(approval_mode="auto")
+    coord = SecurityCoordinator(config=config)
+
+    result = coord.evaluate_tool_call("bash", {"command": "echo hello"})
+    assert result.allowed
+
+
+def test_security_layer4_smart_approver_blocks_high_risk():
+    """Layer 4: Smart approver heuristic should block critical-risk content."""
+    config = SecurityConfig(approval_mode="auto", smart_approver_enabled=True)
+    # No LLM client -> uses heuristics only
+    coord = SecurityCoordinator(config=config, llm_client=None)
+
+    # write_file with eval( passes pattern scanning (eval is WARNING, not CRITICAL)
+    # but smart approver catches eval( inside the content argument
+    result = coord.evaluate_tool_call("write_file", {"path": "/tmp/x", "content": "eval(1+1)"})
+    # Heuristic should flag eval( in content as critical risk and reject
+    assert not result.allowed
+    assert result.layer == "smart_approver"
+    assert result.risk_level in ("high", "critical")
+
+
+def test_security_layer5_checkpoint_creates_rollback():
+    """Layer 5: Checkpoints should be created for destructive tools."""
+    from vibe.tools.security.checkpoints import CheckpointManager
+
+    cp = CheckpointManager()
+    config = SecurityConfig(approval_mode="auto", checkpoint_enabled=True)
+    coord = SecurityCoordinator(config=config, checkpoint_manager=cp)
+
+    result = coord.evaluate_tool_call("bash", {"command": "echo hello"})
+    assert result.allowed
+    assert result.checkpoint_id is not None
+
+
+def test_security_layer5_no_checkpoint_for_safe_tools():
+    """Layer 5: Safe tools should not trigger checkpoint creation."""
+    from vibe.tools.security.checkpoints import CheckpointManager
+
+    cp = CheckpointManager()
+    config = SecurityConfig(approval_mode="auto", checkpoint_enabled=True)
+    coord = SecurityCoordinator(config=config, checkpoint_manager=cp)
+
+    result = coord.evaluate_tool_call("read_file", {"path": "hello.txt"})
+    assert result.allowed
+    assert result.checkpoint_id is None
+
+
+def test_security_disabled_passes_all():
+    """When all layers are disabled, everything passes."""
+    config = SecurityConfig(
+        approval_mode="auto",
+        dangerous_patterns_enabled=False,
+        smart_approver_enabled=False,
+        checkpoint_enabled=False,
+    )
+    coord = SecurityCoordinator(config=config)
+
+    result = coord.evaluate_tool_call("bash", {"command": "echo hello"})
+    assert result.allowed
+
+
+# ---------------------------------------------------------------------------
+# QueryLoop integration
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_query_loop_security_blocks_destructive_tool():
+    """QueryLoop with security should block destructive tool calls."""
+    from unittest.mock import AsyncMock, MagicMock
+    from vibe.core.query_loop import QueryLoop, QueryState
+    from vibe.tools.tool_system import ToolSystem
+
+    tool_system = ToolSystem()
+    mock_llm = MagicMock()
+    mock_llm.model = "test"
+    mock_llm.complete = AsyncMock(return_value=MagicMock(
+        content="",
+        tool_calls=[{"id": "c1", "function": {"name": "bash", "arguments": '{"command": "rm -rf /"}'}}],
+        is_error=False,
+        usage={},
+    ))
+
+    security_config = SecurityConfig(approval_mode="strict")
+    loop = QueryLoop(
+        llm_client=mock_llm,
+        tool_system=tool_system,
+        security_config=security_config,
+    )
+
+    results = [r async for r in loop.run("do something")]
+    # The loop should process the tool call and security should block it
+    assert len(results) >= 1
+    # Check that a tool result with error was generated
+    assert any("Security blocked" in str(r.tool_results) for r in results if r.tool_results)

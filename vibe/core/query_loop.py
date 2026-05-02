@@ -9,7 +9,7 @@ from typing import AsyncIterator, Callable, Any
 
 from vibe.core.model_gateway import LLMClient, LLMResponse
 from vibe.core.context_compactor import ContextCompactor
-from vibe.core.coordinators import CompactionCoordinator, FeedbackCoordinator, ToolExecutor
+from vibe.core.coordinators import CompactionCoordinator, FeedbackCoordinator, SecurityCoordinator, ToolExecutor
 from vibe.core.error_recovery import ErrorRecovery, RetryPolicy
 from vibe.harness.constraints import HookPipeline, HookOutcome
 from vibe.harness.feedback import FeedbackEngine
@@ -81,6 +81,8 @@ class QueryLoop:
         trace_store: Any | None = None,
         config: Any | None = None,
         logger: Any | None = None,
+        security_config: Any | None = None,
+        checkpoint_manager: Any | None = None,
         # v4: Tripartite Memory System — optional, zero behavioral change when None
         wiki: Any | None = None,
         pageindex: Any | None = None,
@@ -120,6 +122,17 @@ class QueryLoop:
         self.tool_executor = ToolExecutor(
             tool_system, self.hook_pipeline, mcp_bridge=mcp_bridge
         )
+        # Phase 6: 5-layer security defense
+        sec_cfg = security_config
+        if sec_cfg is None and config is not None and hasattr(config, "security"):
+            sec_cfg = config.security
+        self.security_coord = None
+        if sec_cfg is not None:
+            self.security_coord = SecurityCoordinator(
+                config=sec_cfg,
+                llm_client=llm_client,
+                checkpoint_manager=checkpoint_manager,
+            )
         self.messages: list[Message] = []
         self._running = False
         self._state = QueryState.IDLE
@@ -385,10 +398,44 @@ class QueryLoop:
         )
         return selected
 
+    async def _execute_with_security(self, tool_calls: list) -> list[ToolResult]:
+        """Execute tool calls with 5-layer security checks.
+
+        Returns results in the same order as tool_calls, with blocked calls
+        replaced by error ToolResults.
+        """
+        if self.security_coord is None:
+            return await self.tool_executor.execute(tool_calls)
+
+        results: list[ToolResult | None] = [None] * len(tool_calls)
+        allowed_calls: list[Any] = []
+        allowed_indices: list[int] = []
+
+        for i, call in enumerate(tool_calls):
+            call_name = extract_tool_call_name(call)
+            arguments = extract_tool_call_arguments(call)
+            check = self.security_coord.evaluate_tool_call(call_name, arguments)
+            if check.allowed:
+                allowed_calls.append(call)
+                allowed_indices.append(i)
+            else:
+                results[i] = ToolResult(
+                    success=False,
+                    content=None,
+                    error=f"Security blocked: {check.reason}",
+                )
+
+        if allowed_calls:
+            executed = await self.tool_executor.execute(allowed_calls)
+            for idx, result in zip(allowed_indices, executed):
+                results[idx] = result
+
+        return [r for r in results if r is not None]
+
     async def _process_tool_response(self, response: LLMResponse, metrics: Metrics) -> QueryResult:
         """Handle a response containing tool calls."""
         self._set_state(QueryState.TOOL_EXECUTION)
-        tool_results = await self.tool_executor.execute(response.tool_calls)
+        tool_results = await self._execute_with_security(response.tool_calls)
         self.messages.append(
             Message(
                 role="assistant",
