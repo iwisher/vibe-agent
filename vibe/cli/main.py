@@ -542,6 +542,110 @@ def wiki_expire(
         console.print(f"[green]✓[/green] Expired {count} draft wiki page(s) older than {days} days.")
 
 
+@wiki_app.command("compile")
+def wiki_compile(
+    hours: int = typer.Option(24, "--hours", "-h", help="Look back N hours for sessions"),
+    novelty: float = typer.Option(0.5, "--novelty", "-n", help="Novelty threshold (0.0-1.0)"),
+    confidence: float = typer.Option(0.8, "--confidence", "-c", help="Confidence threshold (0.0-1.0)"),
+):
+    """Compile recent trace sessions into pending wiki pages for review."""
+    import asyncio
+    from vibe.memory.compiler import WikiCompiler
+    from vibe.harness.memory.trace_store import TraceStore
+    from vibe.core.query_loop_factory import QueryLoopFactory
+
+    wiki = _get_wiki()
+    trace_store = TraceStore()
+    # Reuse the factory to get an LLM client for extraction
+    factory = QueryLoopFactory(
+        base_url=DEFAULT_CONFIG.llm.base_url,
+        model=DEFAULT_CONFIG.llm.default_model,
+        api_key=DEFAULT_CONFIG.resolve_api_key(),
+        config=DEFAULT_CONFIG,
+    )
+    llm_client = factory._create_llm_client()
+
+    compiler = WikiCompiler(
+        trace_store=trace_store,
+        wiki=wiki,
+        llm_client=llm_client,
+        config=DEFAULT_CONFIG,
+    )
+    summary = asyncio.run(compiler.compile_recent(
+        hours=hours,
+        novelty_threshold=novelty,
+        confidence_threshold=confidence,
+    ))
+    console.print(f"[green]✓[/green] Compilation complete:")
+    console.print(f"  Sessions scanned: {summary.sessions_scanned}")
+    console.print(f"  Items extracted: {summary.items_extracted}")
+    console.print(f"  Items approved: {summary.items_approved}")
+    console.print(f"  Pages created: {summary.pages_created}")
+    if summary.errors:
+        console.print(f"  [yellow]Errors: {summary.errors}[/yellow]")
+
+
+@wiki_app.command("review")
+def wiki_review(
+    auto_approve: bool = typer.Option(False, "--auto-approve", "-a", help="Approve all pending pages"),
+    list_only: bool = typer.Option(False, "--list", "-l", help="List pending pages without action"),
+):
+    """Review pending wiki pages. Approve, reject, or list them."""
+    import asyncio
+    from vibe.memory.compiler import WikiCompiler
+    from vibe.core.query_loop_factory import QueryLoopFactory
+
+    wiki = _get_wiki()
+    compiler = WikiCompiler(
+        trace_store=None,  # Not needed for review
+        wiki=wiki,
+        llm_client=None,   # Not needed for review
+    )
+
+    pending = asyncio.run(compiler.list_pending())
+    if not pending:
+        console.print("[dim]No pending pages awaiting review.[/dim]")
+        raise typer.Exit(code=0)
+
+    table = Table(title="Pending Wiki Pages")
+    table.add_column("ID", style="cyan", no_wrap=True)
+    table.add_column("Title", style="bold")
+    table.add_column("Tags")
+    table.add_column("Created", style="dim")
+    for p in pending:
+        table.add_row(p.id[:8], p.title, ", ".join(p.tags), p.date_created)
+    console.print(table)
+
+    if list_only:
+        return
+
+    if auto_approve:
+        result = asyncio.run(compiler.review_all(auto_approve=True))
+        console.print(f"[green]✓[/green] Auto-approved {result['approved']} page(s).")
+        return
+
+    # Interactive review
+    for p in pending:
+        console.print(f"\n[bold]{p.title}[/bold] [dim]({p.id[:8]})[/dim]")
+        snippet = p.content[:300].replace("\n", " ")
+        console.print(f"  {snippet}...")
+        choice = typer.prompt("Approve? [y/n/s] (y=yes, n=no, s=skip)", default="s")
+        if choice.lower() == "y":
+            try:
+                asyncio.run(compiler.approve_page(p.id))
+                console.print("  [green]Approved[/green]")
+            except Exception as e:
+                console.print(f"  [red]Error: {e}[/red]")
+        elif choice.lower() == "n":
+            try:
+                asyncio.run(compiler.reject_page(p.id))
+                console.print("  [red]Rejected[/red]")
+            except Exception as e:
+                console.print(f"  [red]Error: {e}[/red]")
+        else:
+            console.print("  [dim]Skipped[/dim]")
+
+
 @memory_app.command("status")
 def memory_status():
     """Show tripartite memory system status: wiki pages, index size, telemetry summary."""
