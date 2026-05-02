@@ -1,9 +1,12 @@
 """Tests for factory-per-case EvalRunner."""
 
+import asyncio
+import time
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from vibe.core.query_loop import QueryLoop
+from vibe.core.query_loop import QueryLoop, QueryResult
 from vibe.evals.runner import EvalRunner, QueryLoopFactory
 from vibe.harness.memory.eval_store import EvalCase, EvalResult
 
@@ -15,6 +18,7 @@ class MockQueryLoop:
         self.name = name
         self.messages = []
         self._results = []
+        self._closed = False
 
     def clear_history(self):
         self.messages = []
@@ -24,7 +28,12 @@ class MockQueryLoop:
             yield result
 
     async def close(self):
-        pass
+        self._closed = True
+
+    def copy(self):
+        new = MockQueryLoop(self.name)
+        new._results = self._results
+        return new
 
 
 class TestFactoryPerCase:
@@ -143,3 +152,110 @@ class TestEvalRunnerTypeAlias:
         # Should be callable
         result = factory(EvalCase(id="test", input={}, expected={}, tags=[]))
         assert isinstance(result, MockQueryLoop)
+
+
+class TestRunAll:
+    """Test run_all behavior: fresh loops, concurrency, cleanup."""
+
+    @pytest.mark.asyncio
+    async def test_fresh_query_loop_per_case(self):
+        """Each case should receive a distinct QueryLoop instance."""
+        loop = MockQueryLoop("default")
+        runner = EvalRunner(query_loop=loop)
+
+        cases = [
+            EvalCase(id="case-1", input={"prompt": "hello"}, expected={}, tags=[]),
+            EvalCase(id="case-2", input={"prompt": "world"}, expected={}, tags=[]),
+        ]
+
+        passed_loops = []
+        original_run_case = runner.run_case
+
+        async def mock_run_case(case, query_loop=None):
+            passed_loops.append(query_loop)
+            return EvalResult(eval_id=case.id, passed=True, diff={}, total_tokens=0)
+
+        runner.run_case = mock_run_case
+
+        await runner.run_all(cases)
+
+        assert len(passed_loops) == 2
+        assert passed_loops[0] is not passed_loops[1]
+        assert passed_loops[0] is not loop
+        assert passed_loops[1] is not loop
+
+    @pytest.mark.asyncio
+    async def test_concurrent_execution(self):
+        """Cases should run concurrently, not sequentially."""
+        loop = MockQueryLoop("default")
+        runner = EvalRunner(query_loop=loop, max_concurrency=3)
+
+        async def slow_run(initial_query=""):
+            await asyncio.sleep(0.1)
+            yield QueryResult(response="ok")
+
+        loop.run = slow_run
+
+        cases = [
+            EvalCase(id="case-1", input={"prompt": "hello"}, expected={}, tags=[]),
+            EvalCase(id="case-2", input={"prompt": "world"}, expected={}, tags=[]),
+        ]
+
+        start = time.time()
+        results = await runner.run_all(cases)
+        elapsed = time.time() - start
+
+        assert len(results) == 2
+        # Concurrent execution of two 0.1s sleeps should finish in < 0.18s.
+        assert elapsed < 0.18
+
+    @pytest.mark.asyncio
+    async def test_all_default_loops_closed(self):
+        """Copies of the default QueryLoop should be closed after use."""
+        loop = MockQueryLoop("default")
+        copied_loops = []
+
+        original_copy = loop.copy
+
+        def tracking_copy():
+            new_loop = original_copy()
+            copied_loops.append(new_loop)
+            return new_loop
+
+        loop.copy = tracking_copy
+
+        runner = EvalRunner(query_loop=loop)
+
+        cases = [
+            EvalCase(id="case-1", input={"prompt": "hello"}, expected={}, tags=[]),
+            EvalCase(id="case-2", input={"prompt": "world"}, expected={}, tags=[]),
+        ]
+
+        await runner.run_all(cases)
+
+        assert len(copied_loops) == 2
+        assert all(l._closed for l in copied_loops)
+        assert not loop._closed
+
+    @pytest.mark.asyncio
+    async def test_factory_loops_closed(self):
+        """Factory-created QueryLoops should also be closed after use."""
+        loop = MockQueryLoop("default")
+        factory_loops = []
+
+        def factory(case):
+            new_loop = MockQueryLoop("factory")
+            factory_loops.append(new_loop)
+            return new_loop
+
+        runner = EvalRunner(query_loop=loop, default_factory=factory)
+
+        cases = [
+            EvalCase(id="case-1", input={"prompt": "hello"}, expected={}, tags=[]),
+            EvalCase(id="case-2", input={"prompt": "world"}, expected={}, tags=[]),
+        ]
+
+        await runner.run_all(cases)
+
+        assert len(factory_loops) == 2
+        assert all(l._closed for l in factory_loops)

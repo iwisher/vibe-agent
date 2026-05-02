@@ -9,6 +9,7 @@ Supports:
 import os
 import re
 import shlex
+import string
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -93,46 +94,43 @@ class SkillExecutor:
 
         return True, ""
 
-    def _substitute_env_vars(self, content: str) -> str:
-        """Substitute environment variables in content.
+    def _build_substitution_mapping(
+        self,
+        context: Optional[dict[str, Any]] = None,
+        extra_env: Optional[dict[str, str]] = None,
+    ) -> dict[str, str]:
+        """Build a string-only mapping for string.Template substitution."""
+        mapping: dict[str, str] = {}
+        mapping.update(self.env)
+        if extra_env:
+            mapping.update(extra_env)
+        if context:
+            for key, value in context.items():
+                if isinstance(value, str):
+                    mapping[key] = value
+                elif isinstance(value, (int, float, bool)):
+                    mapping[key] = str(value)
+        return mapping
 
-        Supports:
-        - ${VAR} syntax
-        - $VAR syntax
-        - Default values: ${VAR:-default}
+    def _apply_default_patterns(self, content: str, mapping: dict[str, str]) -> str:
+        """Pre-process ${VAR:-default} syntax before string.Template."""
 
-        All substituted values are shlex-quoted to prevent injection.
-        """
-        # ${VAR:-default} syntax
-        def replace_with_default(match):
+        def replace_default(match):
             var_name = match.group(1)
             default = match.group(2) or ""
-            value = self.env.get(var_name, default)
-            return shlex.quote(value)
+            return mapping.get(var_name, default)
 
-        content = re.sub(r'\$\{(\w+):-([^}]*)\}', replace_with_default, content)
+        return re.sub(r"\$\{(\w+):-([^}]*)\}", replace_default, content)
 
-        # ${VAR} syntax
-        def replace_var(match):
-            var_name = match.group(1)
-            value = self.env.get(var_name)
-            if value is not None:
-                return shlex.quote(value)
-            return match.group(0)  # Keep original if not found
+    def _substitute_template(self, content: str, mapping: dict[str, str]) -> str:
+        """Primary substitution using string.Template.
 
-        content = re.sub(r'\$\{(\w+)\}', replace_var, content)
-
-        # $VAR syntax (but not $$ which is escaped)
-        def replace_dollar_var(match):
-            var_name = match.group(1)
-            value = self.env.get(var_name)
-            if value is not None:
-                return shlex.quote(value)
-            return match.group(0)  # Keep original if not found
-
-        content = re.sub(r'\$(\w+)', replace_dollar_var, content)
-
-        return content
+        Supports $var and ${var} syntax.
+        Raises KeyError on missing variables.
+        """
+        content = self._apply_default_patterns(content, mapping)
+        template = string.Template(content)
+        return template.substitute(mapping)
 
     def _render_template(self, content: str, context: Optional[dict[str, Any]] = None) -> str:
         """Render Jinja2 template with context."""
@@ -154,7 +152,7 @@ class SkillExecutor:
         context: Optional[dict[str, Any]] = None,
         extra_env: Optional[dict[str, str]] = None,
     ) -> ExecutionResult:
-        """Execute a skill with env var substitution and template rendering.
+        """Execute a skill with template substitution and rendering.
 
         Args:
             skill: The skill to execute
@@ -164,18 +162,20 @@ class SkillExecutor:
         Returns:
             ExecutionResult with output and status
         """
-        # Merge extra env into current env
-        if extra_env:
-            self.env.update(extra_env)
+        try:
+            mapping = self._build_substitution_mapping(context, extra_env)
+            content = self._substitute_template(skill.content, mapping)
+        except KeyError as e:
+            return ExecutionResult(
+                success=False,
+                output="",
+                error=f"Missing template variable: {e}",
+                exit_code=-1,
+            )
 
-        # Substitute env vars
-        content = self._substitute_env_vars(skill.content)
-
-        # Render template
+        # Render template (Jinja2 fallback for complex logic)
         content = self._render_template(content, context)
 
-        # Execute (for now, just return the processed content)
-        # In a real implementation, this would execute the skill content
         return ExecutionResult(
             success=True,
             output=content,
@@ -203,10 +203,18 @@ class SkillExecutor:
         # Merge extra env
         env = {**self.env, **(extra_env or {})}
 
-        # Substitute env vars
-        content = self._substitute_env_vars(skill.content)
+        try:
+            mapping = self._build_substitution_mapping(context, extra_env)
+            content = self._substitute_template(skill.content, mapping)
+        except KeyError as e:
+            return ExecutionResult(
+                success=False,
+                output="",
+                error=f"Missing template variable: {e}",
+                exit_code=-1,
+            )
 
-        # Render template
+        # Render template (Jinja2 fallback for complex logic)
         content = self._render_template(content, context)
 
         # Sanitize command

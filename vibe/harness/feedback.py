@@ -10,11 +10,20 @@ Supports:
 import json
 import re
 from dataclasses import dataclass, field
+from enum import Enum, auto
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
 from vibe.core.model_gateway import LLMClient
+
+
+class FeedbackStatus(Enum):
+    """Status of a feedback evaluation."""
+    OK = auto()
+    BELOW_THRESHOLD = auto()
+    ENGINE_ERROR = auto()
+    VALIDATION_ERROR = auto()
 
 
 class FeedbackSchema(BaseModel):
@@ -26,6 +35,10 @@ class FeedbackSchema(BaseModel):
     category_scores: dict[str, float] = Field(
         default_factory=dict,
         description="Per-category scores (e.g., correctness, completeness, clarity)"
+    )
+    status: FeedbackStatus = Field(
+        default=FeedbackStatus.OK,
+        description="Evaluation status"
     )
 
     @field_validator("score")
@@ -44,6 +57,7 @@ class FeedbackResult:
     suggested_fix: str | None = None
     confidence: float = 0.8
     category_scores: dict[str, float] = field(default_factory=dict)
+    status: FeedbackStatus = FeedbackStatus.OK
 
     @classmethod
     def from_pydantic(cls, schema: FeedbackSchema) -> "FeedbackResult":
@@ -54,6 +68,7 @@ class FeedbackResult:
             suggested_fix=schema.suggested_fix,
             confidence=schema.confidence,
             category_scores=schema.category_scores,
+            status=schema.status,
         )
 
 
@@ -196,6 +211,7 @@ class FeedbackEngine:
                     suggested_fix=data.get("suggested_fix"),
                     confidence=float(data.get("confidence", 0.8)),
                     category_scores=data.get("category_scores", {}),
+                    status=FeedbackStatus.VALIDATION_ERROR,
                 )
         except Exception:
             # If feedback fails, return a neutral result so the loop doesn't block
@@ -203,6 +219,7 @@ class FeedbackEngine:
                 score=0.5,
                 issues=["Feedback evaluation failed."],
                 confidence=0.0,
+                status=FeedbackStatus.ENGINE_ERROR,
             )
 
     def validate_feedback_schema(self, data: dict[str, Any]) -> FeedbackSchema:

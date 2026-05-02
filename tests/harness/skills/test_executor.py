@@ -11,36 +11,39 @@ from vibe.harness.skills.executor import ExecutionResult, SkillExecutor
 class TestSkillExecutor:
     """Test SkillExecutor functionality."""
 
-    def test_env_var_substitution(self):
-        """Should substitute environment variables."""
+    def test_string_template_substitution(self):
+        """Should substitute variables via string.Template."""
         executor = SkillExecutor(env={"TEST_VAR": "hello", "EMPTY_VAR": ""})
+        mapping = executor._build_substitution_mapping()
 
         # ${VAR} syntax
-        result = executor._substitute_env_vars("Value is ${TEST_VAR}")
+        result = executor._substitute_template("Value is ${TEST_VAR}", mapping)
         assert result == "Value is hello"
 
         # $VAR syntax
-        result = executor._substitute_env_vars("Value is $TEST_VAR")
+        result = executor._substitute_template("Value is $TEST_VAR", mapping)
         assert result == "Value is hello"
 
-    def test_env_var_default(self):
-        """Should use default value for missing env vars."""
+    def test_string_template_default(self):
+        """Should use default value for missing vars."""
         executor = SkillExecutor(env={"SET_VAR": "set"})
+        mapping = executor._build_substitution_mapping()
 
         # ${VAR:-default} syntax
-        result = executor._substitute_env_vars("Value is ${MISSING:-default}")
+        result = executor._substitute_template("Value is ${MISSING:-default}", mapping)
         assert result == "Value is default"
 
         # Existing var should not use default
-        result = executor._substitute_env_vars("Value is ${SET_VAR:-default}")
+        result = executor._substitute_template("Value is ${SET_VAR:-default}", mapping)
         assert result == "Value is set"
 
-    def test_missing_env_var_preserved(self):
-        """Should preserve syntax for missing env vars without default."""
+    def test_string_template_missing_raises(self):
+        """Should raise KeyError on missing variables."""
         executor = SkillExecutor(env={})
+        mapping = executor._build_substitution_mapping()
 
-        result = executor._substitute_env_vars("Value is ${MISSING}")
-        assert result == "Value is ${MISSING}"
+        with pytest.raises(KeyError):
+            executor._substitute_template("Value is ${MISSING}", mapping)
 
     def test_template_rendering(self):
         """Should render Jinja2 templates."""
@@ -72,6 +75,7 @@ class TestSkillExecutor:
         result = executor.execute(skill)
         assert result.success is True
         assert "secret123" in result.output
+        assert result.error is None
 
     def test_execute_with_context(self):
         """Should execute with template context."""
@@ -103,6 +107,38 @@ class TestSkillExecutor:
         assert result.success is True
         assert "Base: base" in result.output
         assert "Extra: extra" in result.output
+
+    def test_execute_missing_variable_returns_error(self):
+        """Should return error result when template variable is missing."""
+        executor = SkillExecutor(env={})
+
+        skill = Skill(
+            name="test_skill",
+            description="Test skill",
+            content="Value is ${MISSING}",
+            tags=["test"],
+        )
+
+        result = executor.execute(skill)
+        assert result.success is False
+        assert "Missing template variable" in (result.error or "")
+        assert result.exit_code == -1
+
+    def test_mixed_string_template_and_jinja2(self):
+        """Should apply string.Template first, then Jinja2."""
+        executor = SkillExecutor(env={"USER": "alice"})
+
+        skill = Skill(
+            name="mixed",
+            description="Mixed substitution",
+            content="User: $USER, Mode: {{ mode }}",
+            tags=["test"],
+        )
+
+        result = executor.execute(skill, context={"mode": "dev"})
+        assert result.success is True
+        assert "User: alice" in result.output
+        assert "Mode: dev" in result.output
 
     def test_shell_execution(self):
         """Should execute shell commands."""

@@ -63,7 +63,7 @@ class EvalRunner:
         # Fall back to default query_loop
         return self.query_loop
 
-    async def run_case(self, case: EvalCase) -> EvalResult:
+    async def run_case(self, case: EvalCase, query_loop: QueryLoop | None = None) -> EvalResult:
         start_time = time.time()
         case_span = None
         if self.obs:
@@ -73,7 +73,8 @@ class EvalRunner:
             )
 
         # Get the appropriate query loop for this case
-        query_loop = self._get_query_loop(case)
+        if query_loop is None:
+            query_loop = self._get_query_loop(case)
         query_loop.clear_history()
         results: list[QueryResult] = []
 
@@ -358,11 +359,18 @@ class EvalRunner:
 
     async def run_all(self, cases: list[EvalCase]) -> list[EvalResult]:
         filtered = [c for c in cases if self.run_holdout or not c.holdout_set]
+        created_loops: list[QueryLoop] = []
+
         async def _run(case: EvalCase) -> EvalResult:
             async with self._semaphore:
-                return await self.run_case(case)
+                loop = self._get_query_loop(case)
+                if loop is self.query_loop:
+                    loop = loop.copy()
+                created_loops.append(loop)
+                return await self.run_case(case, query_loop=loop)
 
         try:
             return await asyncio.gather(*(_run(c) for c in filtered))
         finally:
-            await self.query_loop.close()
+            for loop in created_loops:
+                await loop.close()

@@ -14,7 +14,7 @@ from typing import Callable
 from vibe.core.context_compactor import ContextCompactor
 from vibe.core.model_gateway import LLMResponse
 from vibe.harness.constraints import HookPipeline
-from vibe.harness.feedback import FeedbackEngine
+from vibe.harness.feedback import FeedbackEngine, FeedbackStatus
 from vibe.tools.mcp_bridge import MCPBridge
 from vibe.tools.tool_system import ToolSystem, ToolResult
 from vibe.tools._utils import extract_tool_call_name, extract_tool_call_arguments
@@ -115,10 +115,16 @@ class FeedbackCoordinator:
             return False, None
 
         fb = await self.engine.self_verify(content)
+
+        # Don't retry on engine or validation errors
+        if fb.status in (FeedbackStatus.ENGINE_ERROR, FeedbackStatus.VALIDATION_ERROR):
+            return False, None
+
         if fb.score >= self.threshold:
             return False, None
 
         self._retry_count += 1
+        fb.status = FeedbackStatus.BELOW_THRESHOLD
         fix_hint = fb.suggested_fix or "Please improve your response."
         issues_text = "\n".join(f"- {i}" for i in fb.issues) if fb.issues else ""
         hint = (

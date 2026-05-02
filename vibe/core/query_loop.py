@@ -1,6 +1,7 @@
 """Query loop implementation for Vibe Agent."""
 
 import asyncio
+import copy
 import time
 from dataclasses import dataclass, field
 from enum import Enum, auto
@@ -623,6 +624,25 @@ class QueryLoop:
         self._running = False
         self._plan_result = None
         self.feedback_coord.reset()
+
+    def copy(self) -> "QueryLoop":
+        """Return a shallow copy with reset per-session state."""
+        new_loop = copy.copy(self)
+        new_loop.messages = []
+        new_loop._running = False
+        new_loop._state = QueryState.IDLE
+        new_loop._feedback_retries = 0
+        new_loop._plan_result = None
+        new_loop._session_id = None
+        new_loop._session_start_time = 0.0
+        new_loop._wiki_extract_task = None
+        new_loop._rlm_trigger_task = None
+        new_loop.feedback_coord = FeedbackCoordinator(
+            self.feedback_coord.engine,
+            self.feedback_coord.threshold,
+            self.feedback_coord.max_retries,
+        )
+        return new_loop
 
     async def close(self) -> None:
         """Close all subsystems via Closable protocol. Cancel pending background tasks."""
