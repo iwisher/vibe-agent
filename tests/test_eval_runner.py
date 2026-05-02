@@ -151,6 +151,7 @@ async def test_runner_run_all():
     ql = MagicMock()
     ql.clear_history = MagicMock()
     ql.close = AsyncMock()
+    ql.copy = MagicMock(return_value=ql)
     ql.run = MagicMock(return_value=_async_gen([QueryResult(response="done", state=QueryState.COMPLETED)]))
 
     runner = EvalRunner(query_loop=ql)
