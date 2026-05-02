@@ -29,6 +29,23 @@ All notable changes to Vibe Agent will be documented in this file.
 
 ---
 
+## [0.3.1-alpha] — 2026-05-02
+
+### Added
+- **Factory-per-Case EvalRunner**: Fresh `QueryLoop.copy()` per eval case with concurrent `asyncio.gather` execution. Eliminates state bleed between runs.
+- **Structured FeedbackEngine**: `FeedbackStatus` enum (`OK`, `BELOW_THRESHOLD`, `ENGINE_ERROR`, `VALIDATION_ERROR`) replaces silent 0.5-score footgun with explicit failure mode tracking.
+- **Safe SkillExecutor**: `string.Template` is now the primary substitution mechanism (safer than regex). Type coercion for `int/float/bool`, default values via `${VAR:-default}`, and `KeyError` safety on missing variables.
+- **Real LLM Summarization Metrics**: `CompactionResult` now tracks `tokens_before`, `tokens_after`, and `summarization_latency_ms`. Telemetry records token savings on successful LLM summarization.
+- **5-Layer Security Defense**: `SecurityCoordinator` orchestrates pattern scanning, file safety, human approval gates, smart approver, and checkpoints+rollback. Wired into `QueryLoop` before tool execution.
+- **Wiki Compiler**: `vibe wiki compile` scans recent traces, extracts knowledge, and creates draft pages in `pending/` for human review. `vibe wiki review` supports approve/reject workflow.
+
+### Changed
+- **EvalRunner.run_all()**: Now creates fresh QueryLoop copies per case and runs them concurrently under the existing semaphore.
+- **FeedbackCoordinator.evaluate()**: Uses `FeedbackStatus` for retry decisions — skips retries on `ENGINE_ERROR` and `VALIDATION_ERROR`.
+- **ContextCompactor**: Efficiency metrics tracked on all compaction paths. Telemetry hook receives `tokens_before` for accurate reporting.
+
+---
+
 ## [0.2.0-alpha] — 2026-04-19
 
 ### Added

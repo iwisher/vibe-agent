@@ -70,12 +70,13 @@ This document tracks the progress of Vibe Agent, from its core foundation to fut
 
 ## 🏗️ In Progress (Phase 2 Hardening)
 
-- [ ] **Factory-per-case EvalRunner**: Fresh QueryLoop per eval case to prevent state bleed between runs.
-- [ ] **Structured FeedbackEngine**: `FeedbackStatus` enum to distinguish failure modes from neutral scores.
-- [ ] **Safe SkillExecutor**: Env-var passing as primary method, `string.Template` as fallback.
-- [ ] **Real LLM Summarization**: Wire `ContextCompactor` to loop's LLM client with efficiency metrics.
-- [ ] **Security Expansion**: 5-layer defense model + Pydantic config validation.
-- [ ] **Wiki Compiler**: Nightly trace compilation with `pending/` human review mechanism.
+- [x] **Factory-per-case EvalRunner**: Fresh QueryLoop per eval case to prevent state bleed between runs.
+- [x] **Structured FeedbackEngine**: `FeedbackStatus` enum to distinguish failure modes from neutral scores.
+- [x] **Safe SkillExecutor**: Env-var passing as primary method, `string.Template` as fallback.
+- [x] **Real LLM Summarization**: Wire `ContextCompactor` to loop's LLM client with efficiency metrics.
+- [x] **Security Expansion**: 5-layer defense model + Pydantic config validation.
+- [x] **Wiki Compiler**: Nightly trace compilation with `pending/` human review mechanism.
+- [ ] **Phase 3b**: Real Recursive Language Model training (Deferred to Phase 4).
 
 ---
 
@@ -219,4 +220,4 @@ CLIOnly            CLIOnly             CLI + React Dashboard
 
 ---
 
-*Last updated: 2026-04-27 | Test suite: **899 tests passing***
+*Last updated: 2026-05-02 | Test suite: **944 tests collected, 882 passing***
