@@ -1,6 +1,7 @@
 """Tests for ContextCompactor LLM summarization strategy."""
 
 import pytest
+from unittest.mock import MagicMock
 
 from vibe.core.context_compactor import (
     CompactionResult,
@@ -42,6 +43,11 @@ async def test_compactor_llm_summarize_success():
     assert len(result.messages) == 3  # summary + 2 preserved
     assert result.messages[0]["role"] == "system"
     assert "Earlier conversation summary" in result.messages[0]["content"]
+    # Efficiency metrics
+    assert result.tokens_before > 0
+    assert result.tokens_after > 0
+    assert result.tokens_after < result.tokens_before
+    assert result.summarization_latency_ms >= 0.0
 
 
 @pytest.mark.asyncio
@@ -58,6 +64,9 @@ async def test_compactor_llm_summarize_fallback_on_failure():
     assert result.was_compacted is True
     assert result.strategy_used == "summarize_middle"  # fallback
     assert result.summary_text is None
+    assert result.tokens_before > 0
+    assert result.tokens_after > 0
+    assert result.summarization_latency_ms == 0.0
 
 
 @pytest.mark.asyncio
@@ -73,6 +82,8 @@ async def test_compactor_llm_summarize_no_fn_uses_fallback():
     result = await compactor.compact_async(messages)
     assert result.was_compacted is True
     assert result.strategy_used == "summarize_middle"
+    assert result.tokens_before > 0
+    assert result.tokens_after > 0
 
 
 @pytest.mark.asyncio
@@ -89,6 +100,8 @@ async def test_compactor_truncate_strategy_ignores_summarize_fn():
     assert result.was_compacted is True
     assert result.strategy_used == "summarize_middle"  # TRUNCATE uses old behavior
     assert result.summary_text is None
+    assert result.tokens_before > 0
+    assert result.tokens_after > 0
 
 
 @pytest.mark.asyncio
@@ -104,3 +117,48 @@ async def test_compactor_preserve_recent_respected():
     result = await compactor.compact_async(messages)
     assert result.was_compacted is True
     assert len(result.messages) == 4  # summary + 3 preserved
+    assert result.tokens_before > 0
+    assert result.tokens_after > 0
+
+
+@pytest.mark.asyncio
+async def test_compactor_llm_summarize_records_telemetry():
+    """Telemetry should be recorded when LLM summarization succeeds."""
+    telemetry = MagicMock()
+    compactor = ContextCompactor(
+        max_tokens=100,
+        chars_per_token=1.0,
+        strategy=SummarizationStrategy.LLM_SUMMARIZE,
+        summarize_fn=fake_summarizer,
+        preserve_recent=2,
+        telemetry_collector=telemetry,
+    )
+    messages = _make_messages(6)
+    result = await compactor.compact_async(messages)
+    assert result.strategy_used == "llm_summarize"
+    telemetry.record_compaction.assert_called_once()
+    call_kwargs = telemetry.record_compaction.call_args.kwargs
+    assert call_kwargs["was_compacted"] is True
+    assert call_kwargs["strategy"] == "llm_summarize"
+    assert call_kwargs["token_count"] == result.tokens_before
+
+
+@pytest.mark.asyncio
+async def test_compactor_fallback_still_records_telemetry():
+    """Telemetry should be recorded even when LLM summarization falls back."""
+    telemetry = MagicMock()
+    compactor = ContextCompactor(
+        max_tokens=100,
+        chars_per_token=1.0,
+        strategy=SummarizationStrategy.LLM_SUMMARIZE,
+        summarize_fn=failing_summarizer,
+        preserve_recent=2,
+        telemetry_collector=telemetry,
+    )
+    messages = _make_messages(6)
+    result = await compactor.compact_async(messages)
+    assert result.strategy_used == "summarize_middle"
+    telemetry.record_compaction.assert_called_once()
+    call_kwargs = telemetry.record_compaction.call_args.kwargs
+    assert call_kwargs["was_compacted"] is True
+    assert call_kwargs["strategy"] == "summarize_middle"

@@ -11,7 +11,7 @@ This separation allows QueryLoop.run() to remain a thin orchestrator
 
 from typing import Callable
 
-from vibe.core.context_compactor import ContextCompactor
+from vibe.core.context_compactor import CompactionResult, ContextCompactor
 from vibe.core.model_gateway import LLMResponse
 from vibe.harness.constraints import HookPipeline
 from vibe.harness.feedback import FeedbackEngine, FeedbackStatus
@@ -140,6 +140,7 @@ class CompactionCoordinator:
 
     def __init__(self, compactor: ContextCompactor):
         self.compactor = compactor
+        self.last_result: CompactionResult | None = None
 
     def should_compact(self, messages: list[dict]) -> bool:
         return self.compactor.should_compact(messages)
@@ -147,6 +148,8 @@ class CompactionCoordinator:
     async def compact(self, messages: list[dict]) -> tuple[list[dict], bool]:
         """Return (compacted_messages, was_compacted)."""
         if not self.should_compact(messages):
+            self.last_result = None
             return messages, False
         result = await self.compactor.compact_async(messages)
+        self.last_result = result
         return result.messages, result.was_compacted

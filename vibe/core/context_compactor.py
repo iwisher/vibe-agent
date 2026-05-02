@@ -1,6 +1,7 @@
 """Context compaction for managing token limits."""
 
 import logging
+import time
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any, Callable, Coroutine
@@ -30,6 +31,9 @@ class CompactionResult:
     was_compacted: bool = False
     strategy_used: str | None = None
     summary_text: str | None = None
+    tokens_before: int = 0
+    tokens_after: int = 0
+    summarization_latency_ms: float = 0.0
 
 
 class ContextCompactor:
@@ -88,28 +92,62 @@ class ContextCompactor:
     def should_compact(self, messages: list[dict[str, Any]]) -> bool:
         return self.estimate_tokens(messages) > self.max_tokens
 
+    def _record_compaction_telemetry(
+        self,
+        result: CompactionResult,
+        messages: list[dict[str, Any]],
+        session_id: str | None = None,
+    ) -> None:
+        """Record compaction telemetry if a collector is wired."""
+        if self._telemetry is None:
+            return
+        try:
+            content_size = sum(len(m.get("content", "") or "") for m in messages)
+            self._telemetry.record_compaction(
+                session_id=session_id,
+                content_size=content_size,
+                token_count=result.tokens_before,
+                strategy=result.strategy_used or "unknown",
+                was_compacted=result.was_compacted,
+            )
+        except Exception:
+            pass
+
     def compact(self, messages: list[dict[str, Any]]) -> CompactionResult:
         """Synchronous compaction using TRUNCATE, OFFLOAD, or DROP strategy."""
+        tokens_before = self.estimate_tokens(messages)
         if not self.should_compact(messages):
-            return CompactionResult(messages=messages)
+            return CompactionResult(messages=messages, tokens_before=tokens_before, tokens_after=tokens_before)
 
         system_messages = [m for m in messages if m.get("role") == "system"]
         non_system = [m for m in messages if m.get("role") != "system"]
 
         if len(non_system) <= self.preserve_recent:
             compacted = system_messages + [self._truncate(m) for m in non_system]
-            return CompactionResult(messages=compacted, was_compacted=True, strategy_used="truncate")
+            result = CompactionResult(
+                messages=compacted,
+                was_compacted=True,
+                strategy_used="truncate",
+                tokens_before=tokens_before,
+                tokens_after=self.estimate_tokens(compacted),
+            )
+            self._record_compaction_telemetry(result, messages)
+            return result
 
         to_summarize = non_system[: -self.preserve_recent]
         keep_intact = non_system[-self.preserve_recent :]
 
         if self.strategy == SummarizationStrategy.DROP:
             compacted = system_messages + keep_intact
-            return CompactionResult(
+            result = CompactionResult(
                 messages=compacted,
                 was_compacted=True,
                 strategy_used="drop",
+                tokens_before=tokens_before,
+                tokens_after=self.estimate_tokens(compacted),
             )
+            self._record_compaction_telemetry(result, messages)
+            return result
 
         # Default truncate / offload placeholder behavior
         summary = {
@@ -123,51 +161,57 @@ class ContextCompactor:
             messages=compacted,
             was_compacted=True,
             strategy_used="summarize_middle" if self.strategy == SummarizationStrategy.TRUNCATE else "offload",
+            tokens_before=tokens_before,
+            tokens_after=self.estimate_tokens(compacted),
         )
-        # Telemetry hook
-        if self._telemetry is not None:
-            try:
-                content_size = sum(len(m.get("content", "") or "") for m in messages)
-                token_count = self.estimate_tokens(messages)
-                self._telemetry.record_compaction(
-                    session_id=None,
-                    content_size=content_size,
-                    token_count=token_count,
-                    strategy=result.strategy_used or "unknown",
-                    was_compacted=result.was_compacted,
-                )
-            except Exception:
-                pass
+        self._record_compaction_telemetry(result, messages)
         return result
 
     async def compact_async(self, messages: list[dict[str, Any]]) -> CompactionResult:
         """Asynchronous compaction; uses LLM summarization when configured."""
+        tokens_before = self.estimate_tokens(messages)
         if not self.should_compact(messages):
-            return CompactionResult(messages=messages)
+            return CompactionResult(messages=messages, tokens_before=tokens_before, tokens_after=tokens_before)
 
         system_messages = [m for m in messages if m.get("role") == "system"]
         non_system = [m for m in messages if m.get("role") != "system"]
 
         if len(non_system) <= self.preserve_recent:
             compacted = system_messages + [self._truncate(m) for m in non_system]
-            return CompactionResult(messages=compacted, was_compacted=True, strategy_used="truncate")
+            result = CompactionResult(
+                messages=compacted,
+                was_compacted=True,
+                strategy_used="truncate",
+                tokens_before=tokens_before,
+                tokens_after=self.estimate_tokens(compacted),
+            )
+            self._record_compaction_telemetry(result, messages)
+            return result
 
         to_summarize = non_system[: -self.preserve_recent]
         keep_intact = non_system[-self.preserve_recent :]
 
         if self.strategy == SummarizationStrategy.LLM_SUMMARIZE and self.summarize_fn is not None:
+            start = time.monotonic()
             try:
                 summary_text = await self.summarize_fn(to_summarize)
+                latency_ms = (time.monotonic() - start) * 1000.0
                 summary = {
                     "role": "system",
                     "content": f"[Earlier conversation summary]:\n{summary_text}",
                 }
-                return CompactionResult(
-                    messages=system_messages + [summary] + keep_intact,
+                compacted = system_messages + [summary] + keep_intact
+                result = CompactionResult(
+                    messages=compacted,
                     was_compacted=True,
                     strategy_used="llm_summarize",
                     summary_text=summary_text,
+                    tokens_before=tokens_before,
+                    tokens_after=self.estimate_tokens(compacted),
+                    summarization_latency_ms=latency_ms,
                 )
+                self._record_compaction_telemetry(result, messages)
+                return result
             except Exception as exc:
                 logger.warning("LLM summarization failed, falling back to truncate: %s", exc)
 
@@ -177,11 +221,15 @@ class ContextCompactor:
             "content": f"[Context summarized: {len(to_summarize)} earlier messages omitted]",
         }
         compacted = system_messages + [summary] + keep_intact
-        return CompactionResult(
+        result = CompactionResult(
             messages=compacted,
             was_compacted=True,
             strategy_used="summarize_middle",
+            tokens_before=tokens_before,
+            tokens_after=self.estimate_tokens(compacted),
         )
+        self._record_compaction_telemetry(result, messages)
+        return result
 
     def _truncate(self, message: dict[str, Any], max_chars: int | None = None) -> dict[str, Any]:
         limit = max_chars if max_chars is not None else self.max_chars_per_msg
