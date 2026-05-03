@@ -203,6 +203,14 @@ class PlannerConfig(BaseModel):
     max_llm_tools: int = Field(default=10, ge=1, le=50)
 
 
+class CostRouterConfig(BaseModel):
+    """Cost-aware dynamic routing configuration (Phase 3.3)."""
+
+    enabled: bool = False
+    spend_limit: Optional[float] = None  # cost units; None = unlimited
+    default_tier: str = Field(default="standard", pattern=r"^(free|budget|standard|premium|ultra)$")
+
+
 class TraceStoreConfig(BaseModel):
     """Trace store configuration."""
     enabled: bool = True
@@ -478,6 +486,7 @@ class VibeConfig(BaseSettings):
     eval: EvalConfig = Field(default_factory=EvalConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     memory: TripartiteMemoryConfig = Field(default_factory=TripartiteMemoryConfig)
+    cost_router: CostRouterConfig = Field(default_factory=CostRouterConfig)
 
     # Legacy flat compat
     api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")

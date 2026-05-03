@@ -26,6 +26,11 @@ class ProviderProfile:
     api_key_env_var: Optional[str] = "LLM_API_KEY"
     timeout: float = 120.0
     default_model: Optional[str] = None
+    # Cost-aware routing (Phase 3.3)
+    cost_tier: str = "standard"  # free | budget | standard | premium | ultra
+    max_context_tokens: int = 8000
+    cost_per_1k_prompt: float = 0.0
+    cost_per_1k_completion: float = 0.0
     # Extra headers injected on every request (e.g., OpenRouter routing)
     extra_headers: Dict[str, str] = field(default_factory=dict)
 
@@ -104,6 +109,10 @@ class ProviderRegistry:
                 "api_key_env_var": p.api_key_env_var,
                 "timeout": p.timeout,
                 "default_model": p.default_model,
+                "cost_tier": p.cost_tier,
+                "max_context_tokens": p.max_context_tokens,
+                "cost_per_1k_prompt": p.cost_per_1k_prompt,
+                "cost_per_1k_completion": p.cost_per_1k_completion,
                 "extra_headers": p.extra_headers,
             }
             for name, p in self._providers.items()
@@ -122,6 +131,10 @@ class ProviderRegistry:
                 api_key_env_var=cfg.get("api_key_env_var", "LLM_API_KEY"),
                 timeout=float(cfg.get("timeout", 120.0)),
                 default_model=cfg.get("default_model"),
+                cost_tier=cfg.get("cost_tier", "standard"),
+                max_context_tokens=int(cfg.get("max_context_tokens", 8000)),
+                cost_per_1k_prompt=float(cfg.get("cost_per_1k_prompt", 0.0)),
+                cost_per_1k_completion=float(cfg.get("cost_per_1k_completion", 0.0)),
                 extra_headers=cfg.get("extra_headers", {}),
             )
         return cls(providers)
