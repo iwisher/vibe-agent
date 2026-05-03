@@ -87,19 +87,25 @@ This document tracks the progress of Vibe Agent, from its core foundation to fut
 - [x] Security: `np.savez` (no pickle), `threading.Lock`, `_async_vector_route`
 
 ### 3.2 Durable Session Suspension & Resumption
-- [ ] Serialize `QueryLoop.messages` + `QueryState` to SQLite on every transition
-- [ ] Resume incomplete sessions on startup
-- [ ] CLI: `vibe resume` and `vibe sessions` commands
+- [x] Serialize `QueryLoop.messages` + `QueryState` to SQLite on every transition
+- [x] Resume incomplete sessions on startup
+- [x] CLI: `vibe resume` and `vibe sessions` commands
 
 ### 3.3 Cost-Aware Dynamic Routing
-- [ ] `CostRouter` estimating prompt complexity (tokens + tool use)
-- [ ] Select cheapest capable model from `ProviderRegistry`
-- [ ] Track cumulative spend per session
+- [x] `CostRouter` estimating prompt complexity (tokens + tool use)
+- [x] Select cheapest capable model from `ProviderRegistry`
+- [x] Track cumulative spend per session
 
 ### 3.4 DAG-Based Task Planner
-- [ ] Evolve `ContextPlanner` to output task DAGs
-- [ ] Wire `asyncio.gather` at `ToolExecutor` for concurrent DAG nodes
-- [ ] Dependency resolution between parallel sub-tasks
+- [x] Evolve `ContextPlanner` to output task DAGs
+- [x] Wire `asyncio.gather` at `ToolExecutor` for concurrent DAG nodes
+- [x] Dependency resolution between parallel sub-tasks
+
+### 3.5 Context Planner (Pre-LLM)
+- [x] Intent classification (question, command, creative, analysis, conversation, multi-step)
+- [x] Context item prioritization (CRITICAL/HIGH/MEDIUM/LOW)
+- [x] Token budget estimation and model tier suggestion
+- [x] Structured ContextPlan consumed by QueryLoop
 
 ---
 
