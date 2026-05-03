@@ -64,7 +64,6 @@ This document tracks the progress of Vibe Agent, from its core foundation to fut
 - [x] Memory CLI: `vibe memory status`, `vibe memory wiki list/search/show/create/edit/expire`.
 - [x] `QueryLoopFactory` wires FlashLLM, PageIndex, and TelemetryCollector at startup.
 - [x] `FlashModelConfig` Pydantic model added to `WikiConfig` for proper config validation.
-- [ ] **Phase 3b**: Real Recursive Language Model training (Deferred to Phase 4).
 
 ---
 
@@ -76,7 +75,69 @@ This document tracks the progress of Vibe Agent, from its core foundation to fut
 - [x] **Real LLM Summarization**: Wire `ContextCompactor` to loop's LLM client with efficiency metrics.
 - [x] **Security Expansion**: 5-layer defense model + Pydantic config validation.
 - [x] **Wiki Compiler**: Nightly trace compilation with `pending/` human review mechanism.
-- [ ] **Phase 3b**: Real Recursive Language Model training (Deferred to Phase 4).
+
+---
+
+## 🚀 Phase 3: Platform & Intelligence
+
+### 3.1 Vector Search Upgrade (PageIndex)
+- [ ] Replace fastText with `sentence-transformers` (`all-MiniLM-L6-v2`) in PageIndex
+- [ ] Wrap behind `VectorIndex` protocol for transparent swap
+- [ ] Update HybridPlanner to use new vector index
+
+### 3.2 Durable Session Suspension & Resumption
+- [ ] Serialize `QueryLoop.messages` + `QueryState` to SQLite on every transition
+- [ ] Resume incomplete sessions on startup
+- [ ] CLI: `vibe resume` and `vibe sessions` commands
+
+### 3.3 Cost-Aware Dynamic Routing
+- [ ] `CostRouter` estimating prompt complexity (tokens + tool use)
+- [ ] Select cheapest capable model from `ProviderRegistry`
+- [ ] Track cumulative spend per session
+
+### 3.4 DAG-Based Task Planner
+- [ ] Evolve `ContextPlanner` to output task DAGs
+- [ ] Wire `asyncio.gather` at `ToolExecutor` for concurrent DAG nodes
+- [ ] Dependency resolution between parallel sub-tasks
+
+---
+
+## 🔮 Phase 4: Recursive Self-Improvement
+
+### 4.1 RLM Training Pipeline
+- [ ] LoRA fine-tuning pipeline triggered by `RLMThresholdAnalyzer`
+- [ ] Use `unsloth` or `llama.cpp` for local quantized training
+- [ ] Write fine-tuned weights to `rlm_model_path`
+- [ ] A/B test fine-tuned vs base model on eval suite
+
+### 4.2 Autonomous Skill Generation (Skill-Maker)
+- [ ] `SkillMakerPipeline` detecting recurring task patterns from wiki
+- [ ] LLM-generated `SKILL.md` drafts
+- [ ] Sandbox validation and approval gate
+
+### 4.3 Multi-Agent Swarm Orchestration
+- [ ] `SwarmOrchestrator` spawning specialized sub-agents
+- [ ] `AgentProtocol` message bus via `asyncio.Queue`
+- [ ] Shared wiki across swarm members
+
+---
+
+## 🖥️ Phase 5: Observability & Ecosystem
+
+### 5.1 React Trace Dashboard
+- [ ] FastAPI backend serving trace data
+- [ ] React frontend: session timeline, wiki graph, skill waterfall, telemetry
+- [ ] CLI: `vibe dashboard` to launch
+
+### 5.2 Shadow Workspace Rollbacks
+- [ ] Hidden git branch `vibe/shadow-<session-id>` before write-heavy tasks
+- [ ] `vibe rollback` to restore on ERROR/INCOMPLETE
+
+### 5.3 CI/CD Integration
+- [ ] GitHub Action for eval suite with regression gate
+- [ ] Scorecard publishing to PR comments
+
+---
 
 ---
 
@@ -220,4 +281,4 @@ CLIOnly            CLIOnly             CLI + React Dashboard
 
 ---
 
-*Last updated: 2026-05-02 | Test suite: **944 tests collected, 882 passing***
+*Last updated: 2026-05-02 | Test suite: **944 tests collected, 944 passing***
