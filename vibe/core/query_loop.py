@@ -87,6 +87,7 @@ class QueryLoop:
         wiki: Any | None = None,
         pageindex: Any | None = None,
         telemetry: Any | None = None,
+        session_store: Any | None = None,
     ):
         # Allow VibeConfig to override individual parameters
         if config is not None:
@@ -152,6 +153,9 @@ class QueryLoop:
         self._rlm_trigger_task: asyncio.Task | None = None  # Phase 2: RLM trigger
         self._session_start_time: float = 0.0
         self._config_memory = getattr(config, "tripartite", None) if config else None
+        # Phase 3.2: Session checkpointing for durable suspension/resumption
+        self._session_store = session_store
+        self._iteration = 0
 
     @property
     def state(self) -> QueryState:
@@ -159,6 +163,45 @@ class QueryLoop:
 
     def _set_state(self, state: QueryState) -> None:
         self._state = state
+        self._checkpoint()
+
+    def _checkpoint(self) -> None:
+        """Serialize current state to SessionStore. Called on every state transition."""
+        if self._session_store is None or self._session_id is None:
+            return
+        messages_json = [
+            {
+                "role": m.role,
+                "content": m.content,
+                "tool_calls": m.tool_calls,
+                "tool_call_id": m.tool_call_id,
+                "model_version": m.model_version,
+            }
+            for m in self.messages
+        ]
+        plan_json = None
+        if self._plan_result is not None:
+            plan_json = {
+                "selected_tool_names": self._plan_result.selected_tool_names,
+                "system_prompt_append": self._plan_result.system_prompt_append,
+            }
+        try:
+            self._session_store.save_checkpoint(
+                session_id=self._session_id,
+                state=self._state.name,
+                messages=messages_json,
+                plan_result=plan_json,
+                iteration=self._iteration,
+                feedback_retries=self._feedback_retries,
+                model=self.llm.model if self.llm else None,
+            )
+        except Exception as e:
+            # Checkpoint failures must not crash the session
+            if self.logger:
+                try:
+                    self.logger.debug(f"Checkpoint failed for {self._session_id}: {e}")
+                except Exception:
+                    pass
 
     def register_tool_handler(self, tool_name: str, handler: Callable) -> None:
         self.tool_executor.register_handler(tool_name, handler)
@@ -234,10 +277,11 @@ class QueryLoop:
                         Message(role="system", content=self._plan_result.system_prompt_append),
                     )
 
-            iteration = 0
+            iteration = self._iteration
             max_iterations = int(self.max_iterations) if self.max_iterations is not None else 50
             while self._running and iteration < max_iterations:
                 iteration += 1
+                self._iteration = iteration
                 self._set_state(QueryState.PROCESSING)
                 try:
                     llm_msgs = self._build_llm_messages()
@@ -364,6 +408,13 @@ class QueryLoop:
                     )
                 except Exception:
                     # Logging failures must not crash the session
+                    pass
+
+            # Phase 3.2: Delete checkpoint on completion (session is now durable in trace_store)
+            if self._session_store and self._session_id:
+                try:
+                    self._session_store.delete_checkpoint(self._session_id)
+                except Exception:
                     pass
 
     async def _maybe_compact(self, llm_msgs: list[dict]) -> QueryResult | None:
@@ -689,6 +740,7 @@ class QueryLoop:
         new_loop._session_start_time = 0.0
         new_loop._wiki_extract_task = None
         new_loop._rlm_trigger_task = None
+        new_loop._iteration = 0
         # Fresh coordinators to prevent state bleed across copies
         new_loop.feedback_coord = FeedbackCoordinator(
             self.feedback_coord.engine,
@@ -709,6 +761,66 @@ class QueryLoop:
             if hasattr(self.tool_executor, "_handlers"):
                 new_loop.tool_executor._handlers = dict(self.tool_executor._handlers)
         return new_loop
+
+    @classmethod
+    async def resume(
+        cls,
+        session_id: str,
+        session_store: "SessionStore",
+        factory: "QueryLoopFactory",
+    ) -> "QueryLoop":
+        """Restore a QueryLoop from a checkpoint.
+
+        Args:
+            session_id: The session ID to resume.
+            session_store: The SessionStore containing the checkpoint.
+            factory: The QueryLoopFactory used to create a fresh QueryLoop.
+
+        Returns:
+            A QueryLoop restored from the checkpoint.
+
+        Raises:
+            ValueError: If no checkpoint is found for the session_id.
+        """
+        checkpoint = session_store.load_checkpoint(session_id)
+        if checkpoint is None:
+            raise ValueError(f"No checkpoint found for session {session_id}")
+
+        # Create fresh QueryLoop via factory (shares config, tools, LLM)
+        loop = factory.create()
+        loop._session_store = session_store
+        loop._session_id = session_id
+        loop._state = QueryState[checkpoint["state"]]
+        loop._iteration = checkpoint.get("iteration", 0)
+        loop._feedback_retries = checkpoint.get("feedback_retries", 0)
+
+        # Restore messages
+        from vibe.core.query_loop import Message
+        loop.messages = [
+            Message(
+                role=m["role"],
+                content=m["content"],
+                tool_calls=m.get("tool_calls"),
+                tool_call_id=m.get("tool_call_id"),
+                model_version=m.get("model_version"),
+            )
+            for m in checkpoint["messages"]
+        ]
+
+        # Restore plan result
+        plan_data = checkpoint.get("plan_result")
+        if plan_data:
+            from vibe.harness.planner import PlanResult
+            loop._plan_result = PlanResult(
+                selected_tool_names=plan_data.get("selected_tool_names", []),
+                system_prompt_append=plan_data.get("system_prompt_append"),
+            )
+
+        # Restore model if checkpoint has one
+        if checkpoint.get("model") and loop.llm:
+            loop.llm.model = checkpoint["model"]
+
+        return loop
 
     async def close(self) -> None:
         """Close all subsystems via Closable protocol. Cancel pending background tasks."""

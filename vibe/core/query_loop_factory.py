@@ -162,6 +162,11 @@ class QueryLoopFactory:
         if trace_store is not None:
             kwargs["trace_store"] = trace_store
 
+        # Phase 3.2: Wire session_store for durable suspension/resumption
+        session_store = self._create_session_store()
+        if session_store is not None:
+            kwargs["session_store"] = session_store
+
         # v4: Conditionally create wiki/pageindex when tripartite_enabled
         mem_cfg = getattr(self.config, "memory", None) if self.config is not None else None
         if mem_cfg is not None and getattr(mem_cfg, "enabled", False):
@@ -171,6 +176,20 @@ class QueryLoopFactory:
             kwargs["telemetry"] = telemetry
 
         return QueryLoop(**kwargs)
+
+    def _create_session_store(self) -> Any | None:
+        """Create and return a SessionStore if configured."""
+        if self.config is None:
+            return None
+        # SessionStore is enabled by default when trace_store is enabled
+        ts_cfg = getattr(self.config, "trace_store", None)
+        if ts_cfg is None or not getattr(ts_cfg, "enabled", True):
+            return None
+        try:
+            from vibe.harness.memory.session_store import SessionStore
+            return SessionStore()
+        except Exception:
+            return None
 
     def _create_trace_store(self) -> Any | None:
         """Create and return a TraceStore if configured."""

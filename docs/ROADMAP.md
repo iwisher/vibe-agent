@@ -80,10 +80,11 @@ This document tracks the progress of Vibe Agent, from its core foundation to fut
 
 ## 🚀 Phase 3: Platform & Intelligence
 
-### 3.1 Vector Search Upgrade (PageIndex)
-- [ ] Replace fastText with `sentence-transformers` (`all-MiniLM-L6-v2`) in PageIndex
-- [ ] Wrap behind `VectorIndex` protocol for transparent swap
-- [ ] Update HybridPlanner to use new vector index
+### 3.1 Vector Search Upgrade (PageIndex) ✅
+- [x] Replace fastText with `sentence-transformers` (`all-MiniLM-L6-v2`) in PageIndex
+- [x] Wrap behind `VectorIndex` protocol for transparent swap
+- [x] Update HybridPlanner to use new vector index
+- [x] Security: `np.savez` (no pickle), `threading.Lock`, `_async_vector_route`
 
 ### 3.2 Durable Session Suspension & Resumption
 - [ ] Serialize `QueryLoop.messages` + `QueryState` to SQLite on every transition
@@ -281,4 +282,4 @@ CLIOnly            CLIOnly             CLI + React Dashboard
 
 ---
 
-*Last updated: 2026-05-02 | Test suite: **944 tests collected, 944 passing***
+*Last updated: 2026-05-02 | Test suite: **948 tests collected, 948 passing***

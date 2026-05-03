@@ -25,6 +25,11 @@ app.add_typer(eval_app, name="eval")
 memory_app = typer.Typer(help="Inspect stored traces and eval results")
 app.add_typer(memory_app, name="memory")
 app.add_typer(skill_app, name="skill")
+
+# Phase 3.2: Session management commands
+session_app = typer.Typer(help="Session management — list and resume incomplete sessions")
+app.add_typer(session_app, name="session")
+
 console = Console()
 
 DEFAULT_CONFIG = VibeConfig.load()
@@ -713,6 +718,100 @@ def memory_status():
     table.add_row("Telemetry (24h)", "Compactions", str(compactions_24h))
 
     console.print(table)
+
+
+# --- Session sub-commands (Phase 3.2) ---
+
+@session_app.command("list")
+def session_list(
+    limit: int = typer.Option(20, "--limit", "-n", help="Max sessions to show"),
+):
+    """List incomplete sessions that can be resumed."""
+    from vibe.harness.memory.session_store import SessionStore
+
+    store = SessionStore()
+    sessions = store.list_incomplete(limit=limit)
+    if not sessions:
+        console.print("[dim]No incomplete sessions found.[/dim]")
+        return
+
+    table = Table(title="Incomplete Sessions")
+    table.add_column("Session ID", style="cyan", no_wrap=True)
+    table.add_column("State", style="bold")
+    table.add_column("Iteration", style="dim")
+    table.add_column("Model", style="magenta")
+    table.add_column("Updated", style="dim")
+
+    for s in sessions:
+        table.add_row(
+            s.get("session_id", "?")[:16],
+            s.get("state", "?"),
+            str(s.get("iteration", 0)),
+            s.get("model", "?") or "?",
+            s.get("updated_at", "?"),
+        )
+    console.print(table)
+
+
+@session_app.command("resume")
+def session_resume(
+    session_id: str | None = typer.Argument(None, help="Session ID to resume (default: latest incomplete)"),
+    model: str = typer.Option(DEFAULT_CONFIG.llm.default_model, "--model", "-m"),
+    server: str = typer.Option(DEFAULT_CONFIG.llm.base_url, "--server", "-s"),
+    api_key: str | None = typer.Option(None, "--api-key", "-k"),
+    working_dir: str = typer.Option(".", "--working-dir", "-w"),
+    debug: bool = typer.Option(False, "--debug", "-d", help="Print request URL and redacted headers to stderr"),
+):
+    """Resume an incomplete session from a checkpoint."""
+    from vibe.harness.memory.session_store import SessionStore
+    from vibe.core.query_loop import QueryLoop
+
+    working_dir = str(Path(working_dir).expanduser().resolve())
+    store = SessionStore()
+
+    # Resolve session_id
+    if session_id is None:
+        sessions = store.list_incomplete(limit=1)
+        if not sessions:
+            console.print("[yellow]No incomplete sessions found. Start a new session with `vibe`.[/yellow]")
+            raise typer.Exit(code=0)
+        session_id = sessions[0]["session_id"]
+        console.print(f"[dim]Resuming latest session: {session_id[:16]}...[/dim]\n")
+
+    # Verify checkpoint exists
+    if not store.has_checkpoint(session_id):
+        console.print(f"[red]No checkpoint found for session {session_id[:16]}.[/red]")
+        raise typer.Exit(code=1)
+
+    # Initialize Session Logger
+    logger = setup_session_logger(DEFAULT_CONFIG.logging, session_id[:8])
+    if DEFAULT_CONFIG.logging.enabled:
+        logger.info(f"Resuming session {session_id} in {working_dir}")
+
+    # Create factory
+    fallback_chain = DEFAULT_CONFIG.get_fallback_chain()
+    factory = QueryLoopFactory(
+        base_url=server,
+        model=model,
+        api_key=api_key if api_key is not None else DEFAULT_CONFIG.resolve_api_key(),
+        working_dir=working_dir,
+        fallback_chain=fallback_chain,
+        config=DEFAULT_CONFIG,
+        logger=logger,
+        debug=debug,
+    )
+
+    async def _run_resume():
+        loop = await QueryLoop.resume(session_id, store, factory)
+        console.print(f"[green]✓[/green] Resumed session [bold]{session_id[:16]}[/bold] (state: {loop.state.name}, iteration: {loop._iteration})")
+        console.print("[dim]Continue the conversation. Type /exit to quit, /clear to reset.[/dim]\n")
+        await interactive_mode(loop)
+
+    try:
+        asyncio.run(_run_resume())
+    except ValueError as e:
+        console.print(f"[red]Failed to resume: {e}[/red]")
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":
