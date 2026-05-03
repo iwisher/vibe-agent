@@ -161,16 +161,10 @@ def test_planner_003_skill_matching_accuracy():
 
 # ─── Tier transition tests for HybridPlanner ───
 
-class MockEmbeddingModel:
-    """Mock fastText model for controlled embedding tests."""
-    def __init__(self, similarity_map=None):
-        self.similarity_map = similarity_map or {}
-
-    def get_word_vector(self, word):
-        # Return deterministic vectors based on word hash
-        import struct
-        h = hash(word) % 1000
-        return [float(h + i) for i in range(50)]
+def _mock_get_embedding(text: str) -> list[float]:
+    """Return deterministic 384-dim vectors for testing."""
+    h = hash(text) % 1000
+    return [float(h + i) for i in range(384)]
 
 
 def test_planner_tier_keyword_to_embedding_transition():
@@ -178,9 +172,9 @@ def test_planner_tier_keyword_to_embedding_transition():
     from vibe.harness.planner import HybridPlanner
 
     planner = HybridPlanner()
-    # Mock embedding model to return high similarity
-    planner._embedding_model = MockEmbeddingModel()
-    # Override cosine similarity to always return 0.85 (above HIGH_CONFIDENCE)
+    # Mock embedding to return deterministic 384-dim vectors
+    planner._get_embedding = _mock_get_embedding
+    # Override cosine similarity to always return 0.85 (above HIGH_CONFIDENCE=0.8)
     planner._cosine_similarity = lambda a, b: 0.85
 
     tools = [
@@ -199,8 +193,8 @@ def test_planner_tier_embedding_to_llm_transition():
     from vibe.harness.planner import HybridPlanner
 
     planner = HybridPlanner()
-    planner._embedding_model = MockEmbeddingModel()
-    # Low similarity - below EMBEDDING_MIN_SIMILARITY (0.3)
+    planner._get_embedding = _mock_get_embedding
+    # Low similarity - below EMBEDDING_MIN_SIMILARITY (0.75)
     planner._cosine_similarity = lambda a, b: 0.1
 
     # Mock LLM client to return a tool selection
@@ -222,13 +216,13 @@ def test_planner_tier_embedding_to_llm_transition():
 
 
 def test_planner_tier_embedding_medium_confidence():
-    """When embedding similarity is medium (0.3-0.8), use embedding result."""
+    """When embedding similarity is medium (0.75-0.8), use embedding result."""
     from vibe.harness.planner import HybridPlanner
 
     planner = HybridPlanner()
-    planner._embedding_model = MockEmbeddingModel()
-    # Medium similarity
-    planner._cosine_similarity = lambda a, b: 0.5
+    planner._get_embedding = _mock_get_embedding
+    # Medium similarity (above MIN 0.75, below HIGH 0.8)
+    planner._cosine_similarity = lambda a, b: 0.77
 
     tools = [
         {"name": "read_file", "description": "Read a file from disk"},

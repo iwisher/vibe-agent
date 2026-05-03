@@ -185,8 +185,8 @@ class PageIndex:
         if self.llm_client is not None:
             return await self._llm_route(query, root)
         else:
-            # Vector/Keyword fallback when no LLM client
-            return self._vector_route(query, root)
+            # Vector/Keyword fallback when no LLM client — run in executor to avoid blocking
+            return await self._async_vector_route(query, root)
 
     async def _llm_route(self, query: str, root: IndexNode) -> list[IndexNode]:
         """Use LLM to reason over index and select relevant nodes."""
@@ -246,8 +246,8 @@ Only return the JSON, no other text."""
         except Exception as e:
             logger.warning("PageIndex LLM routing failed: %s", e)
 
-        # Fallback to vector routing
-        return self._vector_route(query, root)
+        # Fallback to vector routing (async to avoid blocking)
+        return await self._async_vector_route(query, root)
 
     def _vector_route(self, query: str, root: IndexNode) -> list[IndexNode]:
         """Vector-based routing fallback (or keyword if using KeywordIndex)."""
@@ -264,6 +264,11 @@ Only return the JSON, no other text."""
             return []
             
         return self.vector_index.search(query, leaf_nodes, top_k=5)
+
+    async def _async_vector_route(self, query: str, root: IndexNode) -> list[IndexNode]:
+        """Async wrapper for vector-based routing to avoid blocking the event loop."""
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._vector_route, query, root)
 
     # ------------------------------------------------------------------
     # Rebuild

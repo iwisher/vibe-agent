@@ -224,6 +224,49 @@ def test_partition_tag_bucketing_deterministic(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Paraphrase routing (vector index)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_route_paraphrase_query(tmp_path):
+    """Paraphrase queries should match semantically similar pages."""
+    idx = PageIndex(index_path=tmp_path / "idx.json", llm_client=None)
+    idx.load()
+    idx.add_node(
+        "root_01",
+        "Rust Programming Guide",
+        "Learn how to write Rust code",
+        tags=["rust", "programming"],
+        file_path="/wiki/rust.md",
+    )
+
+    # Mock vector index that returns nodes for paraphrase queries
+    class ParaphraseVI:
+        def search(self, query, nodes, top_k):
+            # Match paraphrases of rust programming
+            rust_terms = {"rust", "programming", "write", "guide", "how to"}
+            query_words = set(query.lower().split())
+            if query_words & rust_terms:
+                return [
+                    IndexNode(
+                        node_id=n.node_id,
+                        title=n.title,
+                        description=n.description,
+                        file_path=n.file_path,
+                        tags=n.tags,
+                        confidence=0.85,
+                    )
+                    for n in nodes
+                ]
+            return []
+
+    idx.set_vector_index(ParaphraseVI())
+    results = await idx.route("how to write rust")
+    assert len(results) == 1
+    assert results[0].title == "Rust Programming Guide"
+
+
+# ---------------------------------------------------------------------------
 # IndexNode serialization
 # ---------------------------------------------------------------------------
 

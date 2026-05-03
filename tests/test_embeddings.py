@@ -17,11 +17,11 @@ class TestEmbeddings:
         """Clear cache before each test."""
         clear_cache()
 
-    def test_get_embedding_returns_50_dim(self):
-        """fastText embeddings should be 50-dimensional."""
+    def test_get_embedding_returns_expected_dim(self):
+        """Embeddings should be 384-dim (MiniLM) or 50-dim (fastText fallback)."""
         emb = get_embedding("hello world")
         if emb is not None:
-            assert len(emb) == 50
+            assert len(emb) in (384, 50)
             assert all(isinstance(v, float) for v in emb)
 
     def test_get_embedding_caches_results(self):
@@ -71,6 +71,13 @@ class TestEmbeddings:
         assert cosine_similarity([], []) == 0.0
         assert cosine_similarity([1.0], []) == 0.0
 
+    def test_cosine_similarity_any_dimension(self):
+        """Cosine similarity should work for any dimension."""
+        v384 = [1.0] * 384
+        v50 = [1.0] * 50
+        assert cosine_similarity(v384, v384) == pytest.approx(1.0)
+        assert cosine_similarity(v50, v50) == pytest.approx(1.0)
+
     def test_clear_cache(self):
         """clear_cache() should empty the cache."""
         emb = get_embedding("test")
@@ -99,3 +106,13 @@ class TestEmbeddings:
             sim_king_apple = cosine_similarity(emb1, emb3)
             # King and queen are more similar than king and apple
             assert sim_king_queen > sim_king_apple
+
+    def test_embedding_paraphrase_similarity(self):
+        """Paraphrases should have higher cosine similarity than unrelated text."""
+        emb1 = get_embedding("how to write rust")
+        emb2 = get_embedding("rust programming guide")
+        emb3 = get_embedding("banana smoothie recipe")
+        if emb1 is not None and emb2 is not None and emb3 is not None:
+            sim_paraphrase = cosine_similarity(emb1, emb2)
+            sim_unrelated = cosine_similarity(emb1, emb3)
+            assert sim_paraphrase > sim_unrelated

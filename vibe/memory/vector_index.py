@@ -89,9 +89,11 @@ class SentenceTransformerIndex:
         self.model_name = model_name
         if cache_path:
             self.cache_path = Path(cache_path)
-            # Suffix it to ensure it's a npy file
-            if self.cache_path.suffix != ".npy":
-                self.cache_path = self.cache_path.with_suffix(".npy")
+            # Normalize to .npz for savez format (no pickle)
+            if self.cache_path.suffix not in (".npz", ".npy"):
+                self.cache_path = self.cache_path.with_suffix(".npz")
+            elif self.cache_path.suffix == ".npy":
+                self.cache_path = self.cache_path.with_suffix(".npz")
         else:
             self.cache_path = None
         
@@ -129,10 +131,9 @@ class SentenceTransformerIndex:
             
         if self.cache_path.exists():
             try:
-                # Load dictionary of arrays
-                loaded = np.load(self.cache_path, allow_pickle=True).item()
-                if isinstance(loaded, dict):
-                    self._cache = loaded
+                # Load dictionary of arrays using np.savez format (no pickle)
+                with np.load(self.cache_path) as data:
+                    self._cache = dict(data)
                     logger.debug(f"Loaded {len(self._cache)} embeddings from cache.")
             except Exception as e:
                 logger.warning(f"Failed to load embedding cache from {self.cache_path}: {e}")
@@ -146,7 +147,7 @@ class SentenceTransformerIndex:
             
         try:
             self.cache_path.parent.mkdir(parents=True, exist_ok=True)
-            np.save(self.cache_path, self._cache)
+            np.savez(self.cache_path, **self._cache)
         except Exception as e:
             logger.warning(f"Failed to save embedding cache to {self.cache_path}: {e}")
 
@@ -212,7 +213,7 @@ class SentenceTransformerIndex:
                 
             score = float(np.dot(query_emb, emb))
             
-            if score > 0.1:  # Minimum similarity threshold
+            if score > 0.65:  # Minimum similarity threshold (MiniLM)
                 node_copy = IndexNode(
                     node_id=node.node_id,
                     title=node.title,

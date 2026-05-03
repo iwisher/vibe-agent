@@ -211,11 +211,12 @@ class TestHybridPlanner:
         # Empty vectors
         assert planner._cosine_similarity([], [1.0, 2.0]) == 0.0
 
-    def test_embedding_cache(self):
+    def test_embedding_cache(self, monkeypatch):
         """Should cache embeddings."""
         planner = HybridPlanner()
         
         # Without model, should return empty
+        monkeypatch.setattr("vibe.harness.embeddings.get_embedding", lambda text, model_path=None: None)
         emb1 = planner._get_embedding("test text")
         assert emb1 == []
         

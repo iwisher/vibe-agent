@@ -63,7 +63,7 @@ class HybridPlanner:
     # Thresholds
     KEYWORD_THRESHOLD = 1  # Minimum keyword score to trigger fast-path
     EMBEDDING_HIGH_CONFIDENCE = 0.8  # Skip LLM if embedding similarity > this
-    EMBEDDING_MIN_SIMILARITY = 0.3  # Below this, go straight to LLM
+    EMBEDDING_MIN_SIMILARITY = 0.75  # Below this, go straight to LLM
     MAX_LLM_TOOLS = 10  # Don't overwhelm LLM router with too many tools
 
     def __init__(
@@ -78,8 +78,7 @@ class HybridPlanner:
         self.trace_store = trace_store
         self.llm_client = llm_client
         self.pageindex = pageindex  # kept for reference; routing done in QueryLoop.run()
-        self._embedding_model = None
-        self._embedding_cache: dict[str, list[float]] = {}
+        self._embedding_model = None  # kept for test compat; not used directly
 
         # Setup cache directory
         if cache_dir is None:
@@ -95,61 +94,22 @@ class HybridPlanner:
         self._query_cache_ttl = 3600  # 1 hour
 
     def _init_fasttext(self, model_path: Optional[str]) -> None:
-        """Initialize fastText embedding model via shared module."""
+        """Initialize embedding model via shared module (singleton)."""
         from vibe.harness.embeddings import load_model
         self._embedding_model = load_model(model_path)
         if self._embedding_model is None:
             pass  # Silent fallback — keyword tier will handle
 
     def _get_embedding(self, text: str) -> list[float]:
-        """Get embedding vector for text using fastText."""
-        if self._embedding_model is None:
-            return []
-
-        # Cache check
-        cache_key = hashlib.md5(text.encode()).hexdigest()
-        if cache_key in self._embedding_cache:
-            return self._embedding_cache[cache_key]
-
-        # fastText word embeddings - average word vectors for sentence embedding
-        words = text.lower().split()
-        if not words:
-            return []
-
-        vectors = []
-        for word in words:
-            try:
-                vec = self._embedding_model.get_word_vector(word)
-                vectors.append(vec)
-            except Exception:
-                continue
-
-        if not vectors or np is None:
-            return []
-
-        # Average pooling
-        avg_vector = np.mean(vectors, axis=0)
-        result = avg_vector.tolist()
-
-        # Cache result
-        self._embedding_cache[cache_key] = result
-        return result
+        """Get embedding vector for text via shared module."""
+        from vibe.harness.embeddings import get_embedding
+        result = get_embedding(text)
+        return result if result is not None else []
 
     def _cosine_similarity(self, a: list[float], b: list[float]) -> float:
-        """Compute cosine similarity between two vectors."""
-        if not a or not b or len(a) != len(b) or np is None:
-            return 0.0
-
-        a_vec = np.array(a)
-        b_vec = np.array(b)
-
-        norm_a = np.linalg.norm(a_vec)
-        norm_b = np.linalg.norm(b_vec)
-
-        if norm_a == 0 or norm_b == 0:
-            return 0.0
-
-        return float(np.dot(a_vec, b_vec) / (norm_a * norm_b))
+        """Compute cosine similarity between two vectors via shared module."""
+        from vibe.harness.embeddings import cosine_similarity
+        return cosine_similarity(a, b)
 
     def _check_query_cache(self, request: PlanRequest) -> Optional[PlanResult]:
         """Check if we have a cached result for this query."""
@@ -195,26 +155,25 @@ class HybridPlanner:
             self._cache_result(request, keyword_result)
             return keyword_result
 
-        # Tier 2: Embedding scorer (if fastText available)
-        if self._embedding_model is not None:
-            embedding_result = self._embedding_plan(request)
-            if embedding_result:
-                max_sim = getattr(embedding_result, '_max_similarity', 0.0)
+        # Tier 2: Embedding scorer
+        embedding_result = self._embedding_plan(request)
+        if embedding_result:
+            max_sim = getattr(embedding_result, '_max_similarity', 0.0)
 
-                # High-confidence fast-path
-                if max_sim >= self.EMBEDDING_HIGH_CONFIDENCE:
-                    embedding_result.planner_tier = "embedding_high_confidence"
-                    self._cache_result(request, embedding_result)
-                    return embedding_result
+            # High-confidence fast-path
+            if max_sim >= self.EMBEDDING_HIGH_CONFIDENCE:
+                embedding_result.planner_tier = "embedding_high_confidence"
+                self._cache_result(request, embedding_result)
+                return embedding_result
 
-                # Low similarity - skip to LLM
-                if max_sim < self.EMBEDDING_MIN_SIMILARITY:
-                    pass  # Fall through to LLM
-                else:
-                    # Medium confidence - use embedding result but mark it
-                    embedding_result.planner_tier = "embedding"
-                    self._cache_result(request, embedding_result)
-                    return embedding_result
+            # Low similarity - skip to LLM
+            if max_sim < self.EMBEDDING_MIN_SIMILARITY:
+                pass  # Fall through to LLM
+            else:
+                # Medium confidence - use embedding result but mark it
+                embedding_result.planner_tier = "embedding"
+                self._cache_result(request, embedding_result)
+                return embedding_result
 
         # Tier 3: LLM router
         if self.llm_client is not None and request.available_tools:
@@ -295,8 +254,8 @@ class HybridPlanner:
         )
 
     def _embedding_plan(self, request: PlanRequest) -> Optional[PlanResult]:
-        """Tier 2: fastText embedding-based planning."""
-        if not self._embedding_model or not request.available_tools:
+        """Tier 2: Embedding-based planning."""
+        if not request.available_tools:
             return None
 
         query_emb = self._get_embedding(request.query)
@@ -319,7 +278,7 @@ class HybridPlanner:
 
         # Sort by similarity and take top matches
         scored_tools.sort(key=lambda x: x[0], reverse=True)
-        matched = [t for s, t in scored_tools if s > 0.3]
+        matched = [t for s, t in scored_tools if s > 0.75]
 
         if not matched:
             return None
@@ -446,9 +405,6 @@ Only select tools that are clearly relevant. Return empty array if none match.""
     # --- Embedding matching methods ---
 
     def _match_skills_embedding(self, query: str, skills: list[Skill]) -> list[Skill]:
-        if not self._embedding_model:
-            return []
-
         query_emb = self._get_embedding(query)
         if not query_emb:
             return []
@@ -459,16 +415,13 @@ Only select tools that are clearly relevant. Return empty array if none match.""
             skill_emb = self._get_embedding(text)
             if skill_emb:
                 sim = self._cosine_similarity(query_emb, skill_emb)
-                if sim > 0.3:
+                if sim > 0.75:
                     scored.append((sim, skill))
 
         scored.sort(key=lambda x: x[0], reverse=True)
         return [s for _, s in scored[:5]]
 
     def _match_mcps_embedding(self, query: str, mcps: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        if not self._embedding_model:
-            return []
-
         query_emb = self._get_embedding(query)
         if not query_emb:
             return []
@@ -479,7 +432,7 @@ Only select tools that are clearly relevant. Return empty array if none match.""
             mcp_emb = self._get_embedding(text)
             if mcp_emb:
                 sim = self._cosine_similarity(query_emb, mcp_emb)
-                if sim > 0.3:
+                if sim > 0.75:
                     scored.append((sim, mcp))
 
         scored.sort(key=lambda x: x[0], reverse=True)
