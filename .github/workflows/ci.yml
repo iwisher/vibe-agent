@@ -38,6 +38,8 @@ jobs:
 
   eval:
     runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
     if: github.event_name == 'push' || (github.event_name == 'pull_request' && !github.event.pull_request.draft)
     steps:
       - uses: actions/checkout@v4
@@ -52,24 +54,20 @@ jobs:
           VIBE_BASE_URL: ${{ secrets.VIBE_BASE_URL || 'http://localhost:11434' }}
           VIBE_MODEL: ${{ secrets.VIBE_CI_MODEL || 'default' }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-      - name: Regression check
-        run: |
-          python -c "
-          import json, sys
-          from vibe.harness.memory.eval_store import EvalStore
-          store = EvalStore()
-          summary = store.summary()
-          score = summary['score']
-          print(f'Eval score: {score:.2%}')
-          # Load baseline
-          try:
-              with open('docs/baseline_scorecard.json') as f:
-                  baseline = json.load(f)
-              baseline_score = baseline.get('overall_score', 1.0)
-              if score < baseline_score * 0.95:
-                  print(f'REGRESSION: {score:.2%} < {baseline_score * 0.95:.2%} (baseline * 0.95)')
-                  sys.exit(1)
-              print(f'OK: within 5% of baseline ({baseline_score:.2%})')
-          except FileNotFoundError:
-              print('No baseline found, skipping regression check')
-          "
+      - name: Regression check and Report Generation
+        run: python scripts/ci_eval_report.py
+      - name: Post PR Comment
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            if (fs.existsSync('eval_report.md')) {
+              const report = fs.readFileSync('eval_report.md', 'utf8');
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: report
+              });
+            }

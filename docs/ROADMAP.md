@@ -142,8 +142,8 @@ This document tracks the progress of Vibe Agent, from its core foundation to fut
 - [ ] `vibe rollback` to restore on ERROR/INCOMPLETE
 
 ### 5.3 CI/CD Integration
-- [ ] GitHub Action for eval suite with regression gate
-- [ ] Scorecard publishing to PR comments
+- [x] GitHub Action for eval suite with regression gate
+- [x] Scorecard publishing to PR comments
 
 ---
 
