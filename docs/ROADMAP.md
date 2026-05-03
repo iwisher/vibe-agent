@@ -64,6 +64,7 @@ This document tracks the progress of Vibe Agent, from its core foundation to fut
 - [x] Memory CLI: `vibe memory status`, `vibe memory wiki list/search/show/create/edit/expire`.
 - [x] `QueryLoopFactory` wires FlashLLM, PageIndex, and TelemetryCollector at startup.
 - [x] `FlashModelConfig` Pydantic model added to `WikiConfig` for proper config validation.
+- [x] **Phase 3 Stabilization**: Resolved CLI static type checking (`mypy`), offloaded RLM dataset JSONL generation to background threads (`asyncio.to_thread`) to preserve event loop responsiveness, and fully stabilized CI static analysis gates.
 
 ---
 
@@ -288,4 +289,4 @@ CLIOnly            CLIOnly             CLI + React Dashboard
 
 ---
 
-*Last updated: 2026-05-02 | Test suite: **948 tests collected, 948 passing***
+*Last updated: 2026-05-03 | Test suite: **948 tests collected, 948 passing***
