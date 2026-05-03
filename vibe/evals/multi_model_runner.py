@@ -192,7 +192,7 @@ class MultiModelRunner:
                 *[self.run_model(p, cases) for p in profiles],
                 return_exceptions=True,
             )
-            model_results = []
+            model_results: list[ModelRunResult] = []
             for r in raw_results:
                 if isinstance(r, Exception):
                     print(f"[benchmark] Model failed: {r}")

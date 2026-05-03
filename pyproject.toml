@@ -27,6 +27,7 @@ dev = [
     "black>=24.0.0",
     "ruff>=0.3.0",
     "mypy>=1.9.0",
+    "types-PyYAML>=6.0.12",
 ]
 memory = [
     "sentence-transformers>=2.7.0",
@@ -53,3 +54,9 @@ target-version = ['py311']
 [tool.ruff]
 line-length = 100
 select = ["E", "F", "I", "W"]
+
+[tool.mypy]
+ignore_missing_imports = true
+
+[tool.setuptools.packages.find]
+include = ["vibe*"]

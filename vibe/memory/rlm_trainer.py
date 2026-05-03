@@ -59,53 +59,59 @@ class RLMTrainer:
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         count = 0
-        with open(output_path, "w", encoding="utf-8") as f:
-            # 1. Export Wiki pages as factual QA
+        lines = []
+        
+        # 1. Export Wiki pages as factual QA
+        try:
+            pages = await wiki.list_pages(status="verified")
+            for page in pages:
+                # Simple QA generation from title to content
+                record = {
+                    "messages": [
+                        {"role": "system", "content": "You are a helpful AI assistant."},
+                        {"role": "user", "content": f"Tell me about {page.title}."},
+                        {"role": "assistant", "content": page.content}
+                    ]
+                }
+                lines.append(json.dumps(record))
+                count += 1
+        except Exception as e:
+            logger.warning(f"Failed to export wiki pages for RLM: {e}")
+
+        # 2. Export successful traces
+        if trace_store:
             try:
-                pages = await wiki.list_pages(status="verified")
-                for page in pages:
-                    # Simple QA generation from title to content
-                    record = {
-                        "messages": [
-                            {"role": "system", "content": "You are a helpful AI assistant."},
-                            {"role": "user", "content": f"Tell me about {page.title}."},
-                            {"role": "assistant", "content": page.content}
-                        ]
-                    }
-                    f.write(json.dumps(record) + "\n")
-                    count += 1
+                sessions = trace_store.get_recent_sessions(limit=100)
+                for s in sessions:
+                    if not s.get("success"):
+                        continue
+
+                    trace = trace_store.get_session_trace(s["id"])
+                    if not trace or "steps" not in trace:
+                        continue
+
+                    # We just extract simple user/assistant turns
+                    messages = [{"role": "system", "content": "You are a helpful AI assistant."}]
+                    valid = False
+
+                    for step in trace["steps"]:
+                        if step["type"] == "user":
+                            messages.append({"role": "user", "content": step.get("text", "")})
+                        elif step["type"] == "assistant":
+                            messages.append({"role": "assistant", "content": step.get("text", "")})
+                            valid = True
+
+                    if valid:
+                        record = {"messages": messages}
+                        lines.append(json.dumps(record))
+                        count += 1
             except Exception as e:
-                logger.warning(f"Failed to export wiki pages for RLM: {e}")
+                logger.warning(f"Failed to export traces for RLM: {e}")
 
-            # 2. Export successful traces
-            if trace_store:
-                try:
-                    sessions = trace_store.get_recent_sessions(limit=100)
-                    for s in sessions:
-                        if not s.get("success"):
-                            continue
-
-                        trace = trace_store.get_session_trace(s["id"])
-                        if not trace or "steps" not in trace:
-                            continue
-
-                        # We just extract simple user/assistant turns
-                        messages = [{"role": "system", "content": "You are a helpful AI assistant."}]
-                        valid = False
-
-                        for step in trace["steps"]:
-                            if step["type"] == "user":
-                                messages.append({"role": "user", "content": step.get("text", "")})
-                            elif step["type"] == "assistant":
-                                messages.append({"role": "assistant", "content": step.get("text", "")})
-                                valid = True
-
-                        if valid:
-                            record = {"messages": messages}
-                            f.write(json.dumps(record) + "\n")
-                            count += 1
-                except Exception as e:
-                    logger.warning(f"Failed to export traces for RLM: {e}")
+        if lines:
+            await asyncio.to_thread(output_path.write_text, "\n".join(lines) + "\n", encoding="utf-8")
+        else:
+            await asyncio.to_thread(output_path.write_text, "", encoding="utf-8")
 
         logger.info(f"Exported {count} records to RLM dataset {output_path}")
         return output_path

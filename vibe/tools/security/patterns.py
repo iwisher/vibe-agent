@@ -3,6 +3,7 @@
 Extracted from hardcoded bash.py into a configurable regex-based engine
 with severity levels and command normalization.
 """
+# ruff: noqa: E501
 
 import re
 import unicodedata

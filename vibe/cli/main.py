@@ -4,6 +4,7 @@ import asyncio
 import readline
 import uuid
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.console import Console
@@ -569,7 +570,7 @@ def wiki_compile(
         api_key=DEFAULT_CONFIG.resolve_api_key(),
         config=DEFAULT_CONFIG,
     )
-    llm_client = factory._create_llm_client()
+    llm_client = factory.create_llm()
 
     compiler = WikiCompiler(
         trace_store=trace_store,

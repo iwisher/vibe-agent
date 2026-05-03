@@ -2,6 +2,7 @@
 
 Redacts sensitive patterns from text before logging or sending to LLM.
 """
+# ruff: noqa: E501
 
 import re
 
