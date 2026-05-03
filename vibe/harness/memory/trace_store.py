@@ -178,9 +178,31 @@ class SQLiteTraceStore(BaseTraceStore):
             pass
         return None
     def _get_embedding(self, text: str) -> Any | None:
-        """Get embedding using shared fastText module (replaces MiniLM)."""
-        from vibe.harness.embeddings import get_embedding
-        return get_embedding(text)
+        """Get embedding using sentence-transformers (MiniLM) as fallback.
+
+        Uses all-MiniLM-L6-v2 (384-dim) when available. If not installed,
+        returns None and vector search falls back to keyword search.
+        """
+        try:
+            from sentence_transformers import SentenceTransformer
+            import numpy as np
+        except ImportError:
+            return None
+
+        # Singleton model — loaded once per process
+        if not hasattr(self, "_st_model"):
+            self._st_model = None
+        if self._st_model is None:
+            try:
+                self._st_model = SentenceTransformer("all-MiniLM-L6-v2")
+            except Exception:
+                return None
+
+        try:
+            vec = self._st_model.encode(text, convert_to_numpy=True)
+            return vec.tolist() if hasattr(vec, "tolist") else list(vec)
+        except Exception:
+            return None
 
     def _should_cleanup(self) -> bool:
         """Check if cleanup should run based on interval."""
