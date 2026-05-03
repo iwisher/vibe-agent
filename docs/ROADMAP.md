@@ -108,6 +108,12 @@ This document tracks the progress of Vibe Agent, from its core foundation to fut
 - [x] Token budget estimation and model tier suggestion
 - [x] Structured ContextPlan consumed by QueryLoop
 
+### 3.6 Bulk Knowledge Ingestion (PDF/MD)
+- [ ] Document parser pipeline supporting `.md` files and `.pdf` extraction (e.g., via `pdfplumber` or `PyMuPDF`)
+- [ ] Semantic chunking strategy for breaking down massive documents
+- [ ] Ingestion worker to pipe chunks through the `KnowledgeExtractor` to generate structured Wiki Pages
+- [ ] CLI command: `vibe memory import <path-to-dir-or-file> --type [pdf|md]`
+
 ---
 
 ## 🔮 Phase 4: Recursive Self-Improvement
