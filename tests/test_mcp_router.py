@@ -1,7 +1,8 @@
 """Tests for MCP Router."""
 import pytest
-from vibe.harness.mcp_router import MCPRouter, RoutingRule, ServerHealth
-from vibe.tools.mcp_bridge import MCPBridge, MCPServerConfig
+
+from vibe.harness.mcp_router import MCPRouter, ServerHealth
+from vibe.tools.mcp_bridge import MCPBridge
 from vibe.tools.tool_system import ToolResult
 
 

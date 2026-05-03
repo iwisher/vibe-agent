@@ -4,14 +4,10 @@ These tests verify that the BashTool fixes for Phase 1 security audit
 are effective against shell injection, whitelist bypass, and path traversal.
 """
 
-import asyncio
-import os
-import signal
 
 import pytest
 
-from vibe.tools.bash import BashTool, BashSandbox
-
+from vibe.tools.bash import BashSandbox, BashTool
 
 # ---------------------------------------------------------------------------
 # Shell injection blocking

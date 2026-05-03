@@ -7,12 +7,12 @@ from pathlib import Path
 import pytest
 
 from vibe.core.config import (
-    VibeConfig,
-    SecurityConfig,
-    FileSafetyConfig,
-    EnvSanitizationConfig,
-    SandboxConfig,
     AuditConfig,
+    EnvSanitizationConfig,
+    FileSafetyConfig,
+    SandboxConfig,
+    SecurityConfig,
+    VibeConfig,
 )
 
 

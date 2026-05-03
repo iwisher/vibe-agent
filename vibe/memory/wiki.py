@@ -16,10 +16,9 @@ import json
 import logging
 import re
 import uuid
-from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, AsyncIterator, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 import yaml
 

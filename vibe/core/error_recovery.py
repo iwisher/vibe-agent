@@ -1,8 +1,7 @@
 import asyncio
 import random
-import time
-from dataclasses import dataclass, field
-from typing import Any, Callable, Coroutine, Type, TypeVar, Union
+from dataclasses import dataclass
+from typing import Any, Callable, Coroutine, Type, TypeVar
 
 import httpx
 
@@ -41,7 +40,7 @@ class ErrorRecovery:
     ) -> T:
         """
         Executes a coroutine with retry logic.
-        
+
         Args:
             coroutine_factory: A callable that returns a coroutine to execute.
             is_retryable: An optional callable that takes an exception and returns
@@ -57,7 +56,7 @@ class ErrorRecovery:
                 raise
             except self.policy.retryable_exceptions as e:
                 last_exception = e
-                
+
                 if attempt == self.policy.max_retries:
                     break
 
@@ -68,7 +67,7 @@ class ErrorRecovery:
                 sleep_time = delay
                 if self.policy.jitter:
                     sleep_time = delay * (0.5 + random.random())
-                
+
                 await asyncio.sleep(min(sleep_time, self.policy.max_delay))
                 delay *= self.policy.backoff_factor
             except Exception as e:

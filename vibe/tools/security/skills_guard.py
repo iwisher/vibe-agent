@@ -7,10 +7,9 @@ Prevents skills from:
 - Executing unapproved sub-agents
 """
 
-import os
 import re
 from dataclasses import dataclass
-from enum import Enum, auto
+from enum import Enum
 from pathlib import Path
 from typing import Optional
 
@@ -208,7 +207,7 @@ class SkillsGuard:
                 "terminal", "shell", "execute", "system", "network",
                 "file_delete", "database_write", "email_send",
             }
-            
+
             for cap in capabilities:
                 if cap.lower() in dangerous_capabilities:
                     return SkillGuardResult(
@@ -242,7 +241,7 @@ class SkillsGuard:
             r"^https?://.*\.internal",
             r"^https?://.*\.local",
         ]
-        
+
         for pattern in internal_patterns:
             if re.search(pattern, url, re.IGNORECASE):
                 return SkillGuardResult(

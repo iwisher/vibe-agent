@@ -1,10 +1,10 @@
 """Tests for ContextCompactor LLM summarization strategy."""
 
-import pytest
 from unittest.mock import MagicMock
 
+import pytest
+
 from vibe.core.context_compactor import (
-    CompactionResult,
     ContextCompactor,
     SummarizationStrategy,
 )

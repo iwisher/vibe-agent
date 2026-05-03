@@ -1,13 +1,12 @@
 """Tests for the dangerous pattern engine."""
 
-import pytest
 
 from vibe.tools.security.patterns import (
-    PatternEngine,
-    PatternSeverity,
-    PatternMatch,
-    normalize_command,
     BUILTIN_PATTERNS,
+    PatternEngine,
+    PatternMatch,
+    PatternSeverity,
+    normalize_command,
 )
 
 

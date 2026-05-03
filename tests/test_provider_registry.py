@@ -5,9 +5,8 @@ from unittest.mock import patch
 
 import pytest
 
-from vibe.adapters.openai import OpenAIAdapter
 from vibe.adapters.anthropic import AnthropicAdapter
-from vibe.core.llm_types import LLMResponse
+from vibe.adapters.openai import OpenAIAdapter
 from vibe.core.model_gateway import LLMClient
 from vibe.core.provider_registry import ProviderProfile, ProviderRegistry
 

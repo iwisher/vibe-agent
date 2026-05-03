@@ -16,7 +16,6 @@ Supports:
 - Conversation branching (fork/merge for parallel tool execution)
 """
 
-import asyncio
 import time
 from dataclasses import dataclass, field
 from enum import Enum, auto

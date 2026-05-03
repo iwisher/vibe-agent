@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-import tempfile
 from pathlib import Path
 
 import pytest
 
-from vibe.memory.shared_db import SharedMemoryDB, MigrationManager, SCHEMA_VERSION
+from vibe.memory.shared_db import SCHEMA_VERSION, SharedMemoryDB
 
 
 @pytest.fixture
@@ -63,7 +62,6 @@ class FakeWikiPage:
     def __init__(self, page_id, content, path=None):
         self.id = page_id
         self.content = content
-        from pathlib import Path
         self.path = path or Path("/tmp/test.md")
 
 
@@ -111,7 +109,7 @@ def test_delete_wiki_page(tmp_db):
     page = FakeWikiPage("page-delete", "Content to be deleted.")
     tmp_db.sync_wiki_page(page)
 
-    results_before = tmp_db.search_wiki("deleted")
+    tmp_db.search_wiki("deleted")
     # Note: may or may not match depending on FTS5 tokenization
 
     tmp_db.delete_wiki_page("page-delete")

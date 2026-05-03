@@ -1,8 +1,6 @@
 """Tests for SkillExecutor."""
 
-import os
 import pytest
-from unittest.mock import patch
 
 from vibe.harness.instructions import Skill
 from vibe.harness.skills.executor import ExecutionResult, SkillExecutor

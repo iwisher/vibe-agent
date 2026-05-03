@@ -10,9 +10,8 @@ import fcntl
 import hashlib
 import json
 import os
-import stat
 import tempfile
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Optional
 

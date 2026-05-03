@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import json
-import tempfile
-from pathlib import Path
 
 import pytest
 
 from vibe.memory.models import IndexNode
 from vibe.memory.pageindex import PageIndex
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

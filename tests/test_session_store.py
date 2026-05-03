@@ -1,6 +1,5 @@
 """Tests for SessionStore checkpoint persistence."""
 
-import json
 import os
 import sqlite3
 import tempfile

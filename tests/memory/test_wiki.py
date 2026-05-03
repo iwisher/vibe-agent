@@ -7,15 +7,12 @@ concurrency stress test (10 parallel writers, 0 corruption).
 from __future__ import annotations
 
 import asyncio
-import tempfile
 from datetime import date, datetime, timedelta
-from pathlib import Path
 
 import pytest
 
 from vibe.memory.models import WikiPage
-from vibe.memory.wiki import LLMWiki, _make_slug, _content_hash
-
+from vibe.memory.wiki import LLMWiki, _content_hash, _make_slug
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -262,7 +259,7 @@ async def test_get_backlinks_basic(tmp_wiki):
     # Page B links to Page Alpha via [[page-alpha]]
     await tmp_wiki.create_page(
         title="Page Beta",
-        content=f"This references [[page-alpha]] for more details.",
+        content="This references [[page-alpha]] for more details.",
         tags=[],
     )
 

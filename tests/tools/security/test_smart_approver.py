@@ -1,12 +1,12 @@
 """Tests for SmartApprover risk assessment."""
 
 import json
-import pytest
+
 from vibe.tools.security.smart_approver import (
-    SmartApprover,
-    RiskLevel,
     ApprovalDecision,
     MockLLMClient,
+    RiskLevel,
+    SmartApprover,
 )
 
 
@@ -106,7 +106,7 @@ class TestSmartApprover:
         approver = SmartApprover()
         result = approver.assess_tool_call("terminal", {"command": "ls"})
         approver.record_assessment(result, "terminal")
-        
+
         summary = approver.get_risk_summary()
         assert summary["total"] == 1
         # Terminal with "ls" is high risk -> reject or warn
@@ -123,12 +123,12 @@ class TestSmartApprover:
     def test_confidence_calculation(self):
         """Confidence should be higher at risk extremes."""
         approver = SmartApprover()
-        
+
         # Critical risk should have high confidence
         critical = approver.assess_tool_call("terminal", {"command": "rm -rf /"})
         assert critical.confidence >= 0.0  # At extreme, confidence formula gives 0.0
-        
-        # Low risk should have high confidence  
+
+        # Low risk should have high confidence
         low = approver.assess_tool_call("read_file", {"path": "/tmp/test.txt"})
         assert low.confidence >= 0.0  # At extreme, confidence formula gives 0.0
 

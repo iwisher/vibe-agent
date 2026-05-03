@@ -2,9 +2,9 @@
 
 from typing import Dict, Type
 
+from vibe.adapters.anthropic import AnthropicAdapter
 from vibe.adapters.base import BaseLLMAdapter
 from vibe.adapters.openai import OpenAIAdapter
-from vibe.adapters.anthropic import AnthropicAdapter
 
 ADAPTER_REGISTRY: Dict[str, Type[BaseLLMAdapter]] = {
     "openai": OpenAIAdapter,

@@ -7,7 +7,7 @@ and detects synced/cloud folders that may leak secrets.
 import os
 import stat
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 

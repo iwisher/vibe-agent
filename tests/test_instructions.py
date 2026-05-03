@@ -1,6 +1,5 @@
 """Tests for vibe.harness.instructions."""
 
-import pytest
 
 from vibe.harness.instructions import InstructionLoader, InstructionSet, Skill
 

@@ -5,19 +5,25 @@ import copy
 import time
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import AsyncIterator, Callable, Any
+from typing import Any, AsyncIterator, Callable
 
-from vibe.core.model_gateway import LLMClient, LLMResponse
 from vibe.core.context_compactor import ContextCompactor
-from vibe.core.coordinators import CompactionCoordinator, FeedbackCoordinator, SecurityCoordinator, ToolExecutor
+from vibe.core.coordinators import (
+    CompactionCoordinator,
+    FeedbackCoordinator,
+    SecurityCoordinator,
+    ToolExecutor,
+)
 from vibe.core.error_recovery import ErrorRecovery, RetryPolicy
-from vibe.harness.constraints import HookPipeline, HookOutcome
+from vibe.core.model_gateway import LLMClient, LLMResponse
+from vibe.harness.constraints import HookPipeline
 from vibe.harness.feedback import FeedbackEngine
 from vibe.harness.instructions import InstructionSet
-from vibe.harness.planner import HybridPlanner as ContextPlanner, PlanRequest, PlanResult
+from vibe.harness.planner import HybridPlanner as ContextPlanner
+from vibe.harness.planner import PlanRequest, PlanResult
+from vibe.tools._utils import extract_tool_call_arguments, extract_tool_call_name
 from vibe.tools.mcp_bridge import MCPBridge
-from vibe.tools.tool_system import ToolSystem, ToolResult
-from vibe.tools._utils import extract_tool_call_name, extract_tool_call_arguments
+from vibe.tools.tool_system import ToolResult, ToolSystem
 
 
 class QueryState(Enum):
@@ -688,7 +694,7 @@ class QueryLoop:
 
             analyzer = RLMThresholdAnalyzer(self._telemetry, self._config_memory.rlm)
             trainer = RLMTrainer()
-            
+
             decision = await analyzer.analyze_and_train(
                 wiki=self.wiki,
                 trace_store=self._trace_store,

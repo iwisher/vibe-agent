@@ -15,10 +15,10 @@ import logging
 import re
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from vibe.memory.models import IndexNode
-from vibe.memory.vector_index import VectorIndex, KeywordIndex
+from vibe.memory.vector_index import KeywordIndex, VectorIndex
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ class PageIndex:
         # Root structure
         self._root: IndexNode | None = None
         self._loaded = False
-        
+
     def set_vector_index(self, vector_index: VectorIndex) -> None:
         """Set a specific VectorIndex implementation."""
         self.vector_index = vector_index
@@ -252,7 +252,7 @@ Only return the JSON, no other text."""
     def _vector_route(self, query: str, root: IndexNode) -> list[IndexNode]:
         """Vector-based routing fallback (or keyword if using KeywordIndex)."""
         leaf_nodes: list[IndexNode] = []
-        
+
         def _traverse(node: IndexNode) -> None:
             if node.file_path:
                 leaf_nodes.append(node)
@@ -262,7 +262,7 @@ Only return the JSON, no other text."""
         _traverse(root)
         if not leaf_nodes:
             return []
-            
+
         return self.vector_index.search(query, leaf_nodes, top_k=5)
 
     async def _async_vector_route(self, query: str, root: IndexNode) -> list[IndexNode]:
@@ -285,7 +285,7 @@ Only return the JSON, no other text."""
         # In Phase 1a: synchronous full rebuild
         # Get all pages synchronously (run coroutine if needed)
         try:
-            loop = asyncio.get_running_loop()
+            asyncio.get_running_loop()
             # We're inside an async context — use run_in_executor for sync
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor() as pool:
@@ -309,7 +309,7 @@ Only return the JSON, no other text."""
         self._root = root
         self._partition_if_needed(root)
         self._save()
-        
+
         # Re-encode nodes for the embedding cache
         leaf_nodes = [n for n in root.sub_nodes if n.file_path is not None]
         if leaf_nodes and hasattr(self.vector_index, "encode"):
@@ -319,7 +319,7 @@ Only return the JSON, no other text."""
                 self.vector_index.search("dummy", leaf_nodes, top_k=1)
             except Exception as e:
                 logger.debug("Failed to re-encode index nodes: %s", e)
-                
+
         logger.info("PageIndex rebuilt with %d pages", len(pages))
 
     # ------------------------------------------------------------------

@@ -1,11 +1,13 @@
 """Test skill installer."""
 import asyncio
-import pytest
 import tarfile
 import tempfile
 from pathlib import Path
-from vibe.harness.skills.installer import SkillInstaller, InstallResult
+
+import pytest
+
 from vibe.harness.skills.approval import AutoApproveGate
+from vibe.harness.skills.installer import SkillInstaller
 
 SAMPLE_SKILL_DIR = """+++
 vibe_skill_version = "2.0.0"
@@ -78,7 +80,7 @@ def test_install_git_clone_timeout():
 
 def test_install_rejects_malicious_skill_id():
     """Skill IDs with path traversal should be rejected by Pydantic."""
-    from vibe.harness.skills.models import Skill, SkillTrigger, SkillStep
+    from vibe.harness.skills.models import Skill, SkillStep, SkillTrigger
     with pytest.raises(ValueError):
         Skill(
             vibe_skill_version="2.0.0",

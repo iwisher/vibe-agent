@@ -7,14 +7,11 @@ flash client unavailable → normal behavior.
 
 from __future__ import annotations
 
-import tempfile
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from vibe.memory.models import WikiPage
 from vibe.memory.wiki import LLMWiki
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -50,7 +47,7 @@ async def test_update_page_with_contradiction_drops_to_draft(tmp_wiki):
         title="Page A", content="Original fact: X is true.", tags=["test"]
     )
     # Create page B that links to page A
-    page_b = await tmp_wiki.create_page(
+    await tmp_wiki.create_page(
         title="Page B", content="See [[page-a]] for details.", tags=["test"]
     )
 
@@ -72,8 +69,8 @@ async def test_update_page_without_contradiction_promotes_to_verified(tmp_wiki):
     tmp_wiki.set_flash_client(flash)
 
     page = await tmp_wiki.create_page(
-        title="Consistent Page", 
-        content="Fact: Y is true.", 
+        title="Consistent Page",
+        content="Fact: Y is true.",
         tags=["test"],
         citations=[{"session": "sess-001", "message_index": 0}]
     )

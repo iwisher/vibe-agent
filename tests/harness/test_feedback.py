@@ -1,16 +1,16 @@
 """Tests for structured FeedbackEngine."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
+from vibe.core.coordinators import FeedbackCoordinator
 from vibe.harness.feedback import (
-    BatchFeedbackResult,
     FeedbackEngine,
     FeedbackResult,
     FeedbackSchema,
     FeedbackStatus,
 )
-from vibe.core.coordinators import FeedbackCoordinator
 
 
 class MockLLMClient:

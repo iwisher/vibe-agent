@@ -4,10 +4,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from vibe.core.query_loop import QueryLoop, QueryResult, QueryState, Message
-from vibe.core.model_gateway import LLMClient, LLMResponse
-from vibe.harness.memory.eval_store import EvalCase, EvalResult
+from vibe.core.model_gateway import LLMClient
+from vibe.core.query_loop import Message, QueryLoop, QueryResult, QueryState
 from vibe.evals.runner import EvalRunner
+from vibe.harness.memory.eval_store import EvalCase, EvalResult
 from vibe.tools.tool_system import ToolSystem
 
 

@@ -70,7 +70,7 @@ class SkillExecutor:
         """Lazy-load Jinja2 environment."""
         if self._jinja_env is None:
             try:
-                from jinja2 import Environment, BaseLoader
+                from jinja2 import BaseLoader, Environment
                 self._jinja_env = Environment(loader=BaseLoader())
             except ImportError:
                 self._jinja_env = False

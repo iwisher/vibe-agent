@@ -4,10 +4,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from vibe.core.query_loop import QueryLoop, QueryState
 from vibe.core.model_gateway import LLMClient, LLMResponse
-from vibe.harness.feedback import FeedbackEngine, FeedbackResult
-from vibe.tools.tool_system import ToolSystem, Tool, ToolResult
+from vibe.core.query_loop import QueryLoop, QueryState
+from vibe.harness.feedback import FeedbackEngine
+from vibe.tools.tool_system import Tool, ToolResult, ToolSystem
 
 
 class DummyTool(Tool):

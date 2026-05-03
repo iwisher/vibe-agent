@@ -1,6 +1,5 @@
 """Tests for OpenAI-compatible adapter."""
 
-import pytest
 from vibe.adapters.openai import OpenAIAdapter
 from vibe.core.llm_types import LLMResponse
 

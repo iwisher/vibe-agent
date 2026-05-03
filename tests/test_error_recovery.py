@@ -1,6 +1,5 @@
 """Tests for vibe.core.error_recovery."""
 
-import asyncio
 
 import pytest
 

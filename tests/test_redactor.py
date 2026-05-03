@@ -1,11 +1,10 @@
 """Tests for SecretRedactor."""
 
-import pytest
 from vibe.harness.security.redactor import (
-    SecretRedactor,
     RedactionPattern,
-    redact,
+    SecretRedactor,
     get_default_redactor,
+    redact,
 )
 
 

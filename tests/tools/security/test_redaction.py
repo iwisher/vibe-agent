@@ -1,13 +1,12 @@
 """Tests for secret redaction."""
 
-import pytest
 
 from vibe.tools.security.redaction import (
+    REDACTED,
+    redact_all,
     redact_sensitive_text,
     redact_url_query_params,
     redact_url_userinfo,
-    redact_all,
-    REDACTED,
 )
 
 

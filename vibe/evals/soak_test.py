@@ -9,24 +9,14 @@ import asyncio
 import json
 import signal
 import statistics
-import sys
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
-from vibe.core.model_gateway import LLMClient
-from vibe.core.query_loop import QueryLoop
-from vibe.core.context_compactor import ContextCompactor
-from vibe.core.error_recovery import ErrorRecovery, RetryPolicy
-from vibe.harness.constraints import HookPipeline
-from vibe.harness.memory.eval_store import EvalStore, EvalCase
-from vibe.evals.runner import EvalRunner
 from vibe.evals.observability import Observability
-from vibe.tools.tool_system import ToolSystem
-from vibe.tools.bash import BashTool, BashSandbox
-from vibe.tools.file import ReadFileTool, WriteFileTool
+from vibe.evals.runner import EvalRunner
+from vibe.harness.memory.eval_store import EvalCase, EvalStore
 
 
 @dataclass
@@ -115,7 +105,7 @@ class SoakTestRunner:
         end_time = start_time + self.duration_seconds
 
         print(f"\n{'═' * 70}")
-        print(f"  SOAK TEST STARTED")
+        print("  SOAK TEST STARTED")
         print(f"{'═' * 70}")
         print(f"  Model: {self.model}")
         print(f"  Base URL: {self.base_url}")

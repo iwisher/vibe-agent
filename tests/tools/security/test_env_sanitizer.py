@@ -1,15 +1,11 @@
 """Tests for environment sanitization."""
 
 import os
-from unittest.mock import patch
-
-import pytest
 
 from vibe.tools.security.env_sanitizer import (
+    MAX_ENV_VALUE_SIZE,
     EnvSanitizer,
     sanitize_env,
-    DANGEROUS_ENV_PREFIXES,
-    MAX_ENV_VALUE_SIZE,
 )
 
 

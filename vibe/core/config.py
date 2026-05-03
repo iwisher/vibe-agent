@@ -21,8 +21,6 @@ Helper functions:
 from __future__ import annotations
 
 import os
-import re
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
@@ -32,9 +30,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # ---------------------------------------------------------------------------
 # Re-exported from provider_registry for convenience
 # ---------------------------------------------------------------------------
-
 from vibe.core.provider_registry import ProviderProfile, ProviderRegistry  # noqa: F401
-
 
 # ---------------------------------------------------------------------------
 # Parse helpers (legacy env-var API)
@@ -433,7 +429,7 @@ class RLMConfig(BaseModel):
     trigger_window_sessions: int = Field(default=50, ge=5, le=500)
     min_sessions_before_trigger: int = Field(default=10, ge=1, le=100)
     rlm_model_path: Optional[str] = None
-    
+
     auto_train: bool = False
     base_model: str = "qwen3:1.7b"
     lora_r: int = Field(default=8, ge=1, le=256)

@@ -10,8 +10,8 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 
 from vibe.core.query_loop import QueryLoop, QueryResult
-from vibe.harness.memory.eval_store import EvalCase, EvalResult, EvalStore
 from vibe.evals.observability import Observability
+from vibe.harness.memory.eval_store import EvalCase, EvalResult, EvalStore
 from vibe.tools._utils import extract_tool_call_name
 
 # Type alias for QueryLoop factory
@@ -124,7 +124,7 @@ class EvalRunner:
                 total_tokens=0,
             )
 
-        final = results[-1]
+        results[-1]
         diff: dict[str, Any] = {}
         passed = True
         expected = case.expected or {}

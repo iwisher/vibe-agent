@@ -2,9 +2,9 @@
 
 import pytest
 
-from vibe.tools.tool_system import ToolSystem, Tool, ToolResult
-from vibe.tools.bash import BashTool, BashSandbox
+from vibe.tools.bash import BashSandbox, BashTool
 from vibe.tools.file import ReadFileTool, WriteFileTool
+from vibe.tools.tool_system import Tool, ToolResult, ToolSystem
 
 
 @pytest.fixture

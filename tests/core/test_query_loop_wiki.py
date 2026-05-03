@@ -8,13 +8,11 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from vibe.core.query_loop import Message, QueryLoop, QueryState
-
+from vibe.core.query_loop import QueryLoop
 
 # ---------------------------------------------------------------------------
 # Fixtures

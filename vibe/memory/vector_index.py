@@ -8,9 +8,8 @@ Provides a protocol for vector-based semantic search with two implementations:
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
-from typing import Any, Protocol, Sequence
+from typing import Any, Protocol
 
 import numpy as np
 
@@ -53,7 +52,7 @@ class KeywordIndex:
         for node in nodes:
             if not node.file_path:
                 continue
-            
+
             score = 0.0
             text = f"{node.title} {node.description} {' '.join(node.tags)}".lower()
             for word in q:
@@ -96,39 +95,39 @@ class SentenceTransformerIndex:
                 self.cache_path = self.cache_path.with_suffix(".npz")
         else:
             self.cache_path = None
-        
+
         self._model: Any = None
-        
+
         # map node_id -> embedding (np.ndarray)
         self._cache: dict[str, np.ndarray] = {}
         self._cache_loaded = False
-        
+
     def _load_model(self) -> Any:
         if self._model is not None:
             return self._model
-            
+
         try:
-            from sentence_transformers import SentenceTransformer
             import torch
-            
+            from sentence_transformers import SentenceTransformer
+
             # Simple device selection
             device = "cpu"
             if torch.cuda.is_available():
                 device = "cuda"
-            elif torch.backends.mps.is_available():
+            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
                 device = "mps"
-                
+
             self._model = SentenceTransformer(self.model_name, device=device)
             logger.debug(f"Loaded SentenceTransformer {self.model_name} on {device}")
             return self._model
         except ImportError:
             logger.error("sentence-transformers is not installed. Run: pip install vibe-agent[memory]")
             raise
-            
+
     def _load_cache(self) -> None:
         if self._cache_loaded or not self.cache_path:
             return
-            
+
         if self.cache_path.exists():
             try:
                 # Load dictionary of arrays using np.savez format (no pickle)
@@ -137,14 +136,14 @@ class SentenceTransformerIndex:
                     logger.debug(f"Loaded {len(self._cache)} embeddings from cache.")
             except Exception as e:
                 logger.warning(f"Failed to load embedding cache from {self.cache_path}: {e}")
-                
+
         self._cache_loaded = True
-        
+
     def save_cache(self) -> None:
         """Save the current embedding cache to disk."""
         if not self.cache_path or not self._cache:
             return
-            
+
         try:
             self.cache_path.parent.mkdir(parents=True, exist_ok=True)
             np.savez(self.cache_path, **self._cache)
@@ -154,7 +153,7 @@ class SentenceTransformerIndex:
     def encode(self, texts: list[str]) -> np.ndarray:
         if not texts:
             return np.array([])
-            
+
         model = self._load_model()
         return model.encode(texts, convert_to_numpy=True)
 
@@ -167,52 +166,52 @@ class SentenceTransformerIndex:
         """Search using cosine similarity on node embeddings."""
         if not nodes:
             return []
-            
+
         self._load_cache()
         model = self._load_model()
-        
+
         # 1. Encode the query
         query_emb = model.encode(query, convert_to_numpy=True)
         # normalize query
         query_norm = np.linalg.norm(query_emb)
         if query_norm > 0:
             query_emb = query_emb / query_norm
-            
+
         # 2. Gather embeddings for all nodes, encoding if missing
         missing_nodes = []
         missing_texts = []
-        
+
         for node in nodes:
             if not node.file_path:
                 continue
             if node.node_id not in self._cache:
                 missing_nodes.append(node)
                 missing_texts.append(self._get_node_text(node))
-                
+
         if missing_nodes:
             new_embs = model.encode(missing_texts, convert_to_numpy=True)
             for node, emb in zip(missing_nodes, new_embs):
                 self._cache[node.node_id] = emb
-            
+
             # Save cache if we computed new embeddings
             self.save_cache()
-            
+
         # 3. Compute similarities
         scored_nodes = []
         for node in nodes:
             if not node.file_path:
                 continue
-                
+
             emb = self._cache.get(node.node_id)
             if emb is None:
                 continue
-                
+
             emb_norm = np.linalg.norm(emb)
             if emb_norm > 0:
                 emb = emb / emb_norm
-                
+
             score = float(np.dot(query_emb, emb))
-            
+
             if score > 0.65:  # Minimum similarity threshold (MiniLM)
                 node_copy = IndexNode(
                     node_id=node.node_id,
@@ -223,7 +222,7 @@ class SentenceTransformerIndex:
                     confidence=min(1.0, score),
                 )
                 scored_nodes.append((score, node_copy))
-                
+
         # 4. Sort and return top_k
         scored_nodes.sort(key=lambda x: x[0], reverse=True)
         return [n for _, n in scored_nodes[:top_k]]

@@ -10,15 +10,16 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from vibe.cli.skill_commands import app as skill_app
 from vibe.core.config import VibeConfig
+from vibe.core.logger import setup_session_logger
 from vibe.core.query_loop import QueryLoop
 from vibe.core.query_loop_factory import QueryLoopFactory
-from vibe.core.logger import setup_session_logger
 from vibe.evals.model_registry import ModelRegistry
 from vibe.evals.runner import EvalRunner
 from vibe.harness.memory.eval_store import EvalStore
 from vibe.harness.memory.trace_store import TraceStore
-from vibe.cli.skill_commands import app as skill_app
+
 app = typer.Typer(help="Vibe Agent — an open agent harness platform")
 eval_app = typer.Typer(help="Run and manage evals")
 app.add_typer(eval_app, name="eval")
@@ -524,7 +525,6 @@ def wiki_edit(
 @wiki_index_app.command("rebuild")
 def wiki_index_rebuild():
     """Rebuild the wiki page index (full rebuild)."""
-    import asyncio
     from vibe.memory.pageindex import PageIndex
     wiki = _get_wiki()
     pageindex = PageIndex(index_path="~/.vibe/memory/index.json")
@@ -555,9 +555,10 @@ def wiki_compile(
 ):
     """Compile recent trace sessions into pending wiki pages for review."""
     import asyncio
-    from vibe.memory.compiler import WikiCompiler
-    from vibe.harness.memory.trace_store import TraceStore
+
     from vibe.core.query_loop_factory import QueryLoopFactory
+    from vibe.harness.memory.trace_store import TraceStore
+    from vibe.memory.compiler import WikiCompiler
 
     wiki = _get_wiki()
     trace_store = TraceStore()
@@ -581,7 +582,7 @@ def wiki_compile(
         novelty_threshold=novelty,
         confidence_threshold=confidence,
     ))
-    console.print(f"[green]✓[/green] Compilation complete:")
+    console.print("[green]✓[/green] Compilation complete:")
     console.print(f"  Sessions scanned: {summary.sessions_scanned}")
     console.print(f"  Items extracted: {summary.items_extracted}")
     console.print(f"  Items approved: {summary.items_approved}")
@@ -597,8 +598,8 @@ def wiki_review(
 ):
     """Review pending wiki pages. Approve, reject, or list them."""
     import asyncio
+
     from vibe.memory.compiler import WikiCompiler
-    from vibe.core.query_loop_factory import QueryLoopFactory
 
     wiki = _get_wiki()
     compiler = WikiCompiler(
@@ -763,8 +764,8 @@ def session_resume(
     debug: bool = typer.Option(False, "--debug", "-d", help="Print request URL and redacted headers to stderr"),
 ):
     """Resume an incomplete session from a checkpoint."""
-    from vibe.harness.memory.session_store import SessionStore
     from vibe.core.query_loop import QueryLoop
+    from vibe.harness.memory.session_store import SessionStore
 
     working_dir = str(Path(working_dir).expanduser().resolve())
     store = SessionStore()

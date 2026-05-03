@@ -2,9 +2,6 @@
 
 import json
 import threading
-from pathlib import Path
-
-import pytest
 
 from vibe.tools.security.audit import (
     AuditEvent,
@@ -73,7 +70,7 @@ class TestSecurityAuditLogger:
 
     def test_logger_creates_file(self, tmp_path):
         log_file = tmp_path / "security.log"
-        logger = SecurityAuditLogger(log_path=str(log_file))
+        SecurityAuditLogger(log_path=str(log_file))
         assert log_file.exists()
 
     def test_log_command_blocked(self, tmp_path):

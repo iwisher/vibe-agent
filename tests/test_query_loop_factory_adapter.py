@@ -2,10 +2,10 @@
 
 import pytest
 
+from vibe.core.config import VibeConfig
+from vibe.core.provider_registry import ProviderProfile
 from vibe.core.query_loop_factory import QueryLoopFactory
 from vibe.evals.model_registry import ModelProfile, ModelRegistry
-from vibe.core.provider_registry import ProviderProfile, ProviderRegistry
-from vibe.core.config import VibeConfig
 
 
 class TestQueryLoopFactoryAdapter:

@@ -6,15 +6,13 @@ Covers:
 - MCPServerConfig mutable default isolation
 """
 
-import os
 from pathlib import Path
 
 import pytest
 
 from vibe.tools.file import ReadFileTool, WriteFileTool
-from vibe.tools.skill_manage import SkillManageTool
 from vibe.tools.mcp_bridge import MCPServerConfig
-
+from vibe.tools.skill_manage import SkillManageTool
 
 # ---------------------------------------------------------------------------
 # File tool symlink escape
@@ -162,8 +160,8 @@ def test_mcp_001_mutable_defaults_isolated():
 
 # ─── 5-Layer SecurityCoordinator tests ───
 
-from vibe.core.coordinators import SecurityCoordinator, SecurityCheckResult
 from vibe.core.config import SecurityConfig
+from vibe.core.coordinators import SecurityCoordinator
 
 
 def test_security_layer1_pattern_blocks_critical():
@@ -293,7 +291,8 @@ def test_security_disabled_passes_all():
 async def test_query_loop_security_blocks_destructive_tool():
     """QueryLoop with security should block destructive tool calls."""
     from unittest.mock import AsyncMock, MagicMock
-    from vibe.core.query_loop import QueryLoop, QueryState
+
+    from vibe.core.query_loop import QueryLoop
     from vibe.tools.tool_system import ToolSystem
 
     tool_system = ToolSystem()

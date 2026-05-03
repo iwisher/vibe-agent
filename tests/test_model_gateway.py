@@ -1,12 +1,11 @@
 """Tests for vibe.core.model_gateway."""
 
-import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
-from vibe.core.model_gateway import LLMClient, LLMResponse, ErrorType
+from vibe.core.model_gateway import ErrorType, LLMClient
 
 
 @pytest.fixture

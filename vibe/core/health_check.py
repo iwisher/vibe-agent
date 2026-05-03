@@ -4,13 +4,12 @@ Uses provider adapters to send correctly-formatted probe requests,
 supporting both OpenAI-compatible and Anthropic-native endpoints.
 """
 
-from typing import Any
 
 import httpx
 
 from vibe.core.config import VibeConfig
 from vibe.core.provider_registry import ProviderRegistry
-from vibe.evals.model_registry import ModelRegistry, ModelProfile
+from vibe.evals.model_registry import ModelRegistry
 
 
 class ModelHealthChecker:
@@ -165,7 +164,6 @@ class ModelHealthChecker:
         """
         chain = config.get_fallback_chain()
         registry = registry or ModelRegistry()
-        provider_registry = self.provider_registry or config.providers
 
         for model_name in chain:
             profile = registry.get(model_name)

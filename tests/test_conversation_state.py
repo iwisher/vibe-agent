@@ -1,5 +1,6 @@
 """Tests for Conversation State Machine."""
 import pytest
+
 from vibe.harness.conversation_state import (
     ConversationState,
     ConversationStateMachine,
@@ -192,8 +193,8 @@ class TestConversationStateMachine:
     def test_parallel_branching(self, sm):
         """Test parallel execution branches."""
         sm.transition(ConversationState.PLANNING)
-        branch1 = sm.create_branch("branch1")
-        branch2 = sm.create_branch("branch2")
+        sm.create_branch("branch1")
+        sm.create_branch("branch2")
 
     def test_parallel_branching(self, sm):
         """Test parallel execution branches."""

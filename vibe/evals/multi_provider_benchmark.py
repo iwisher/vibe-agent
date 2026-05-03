@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from vibe.core.config import VibeConfig
 from vibe.core.query_loop_factory import QueryLoopFactory
-from vibe.evals.model_registry import ModelProfile, ModelRegistry
+from vibe.evals.model_registry import ModelRegistry
 from vibe.evals.runner import EvalRunner
 from vibe.harness.memory.eval_store import EvalCase, EvalResult
 

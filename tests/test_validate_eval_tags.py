@@ -7,7 +7,6 @@ from pathlib import Path
 
 import yaml
 
-
 VALID_EVAL = {
     "id": "test-001",
     "tags": ["test"],

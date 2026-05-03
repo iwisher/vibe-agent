@@ -71,7 +71,7 @@ class Span:
 
 class Observability:
     """Central observability collector for eval runs.
-    
+
     NOT a singleton — create separate instances for parallel runs.
     Use get_default() for the global default instance.
     """

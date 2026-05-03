@@ -4,8 +4,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from vibe.core.query_loop import QueryLoop
 from vibe.core.model_gateway import LLMClient, LLMResponse
+from vibe.core.query_loop import QueryLoop
 from vibe.tools.tool_system import ToolSystem
 
 

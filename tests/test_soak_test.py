@@ -2,12 +2,11 @@
 
 import json
 from datetime import datetime
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from vibe.evals.soak_test import SoakSnapshot, SoakReport, SoakTestRunner, print_report
+from vibe.evals.soak_test import SoakReport, SoakSnapshot, SoakTestRunner, print_report
 
 
 class TestSoakSnapshot:
@@ -519,7 +518,7 @@ class TestGenerateReport:
             with patch("vibe.evals.soak_test.datetime") as mock_dt:
                 mock_dt.utcnow.return_value = datetime(2024, 1, 1, 12, 0, 0)
                 mock_dt.strftime = datetime.strftime
-                report = runner._generate_report(start_time=1000.0, total_iterations=1)
+                runner._generate_report(start_time=1000.0, total_iterations=1)
 
         report_files = list(tmp_path.glob("soak_report_test-model_*.json"))
         summary_files = list(tmp_path.glob("soak_summary_test-model_*.md"))

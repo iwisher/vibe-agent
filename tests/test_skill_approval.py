@@ -1,6 +1,5 @@
 """Test approval gate."""
-import pytest
-from vibe.harness.skills.approval import CLIApprovalGate, AutoApproveGate, AutoRejectGate
+from vibe.harness.skills.approval import AutoApproveGate, AutoRejectGate, CLIApprovalGate
 
 
 def test_cli_gate_approves():

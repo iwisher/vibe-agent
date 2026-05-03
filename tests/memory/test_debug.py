@@ -1,7 +1,10 @@
-import asyncio, json
+import asyncio
+import json
 from unittest.mock import AsyncMock, MagicMock
+
+from tests.memory.test_extraction import FakeLLMResponse, FakeMessage
 from vibe.memory.extraction import KnowledgeExtractor
-from tests.memory.test_extraction import fake_llm, FakeLLMResponse, FakeMessage
+
 
 async def debug():
     client = MagicMock()
@@ -20,7 +23,7 @@ async def debug():
     try:
         items = await extractor.extract_from_session(messages, "sess")
         print("Success:", items)
-    except Exception as e:
+    except Exception:
         import traceback
         traceback.print_exc()
 

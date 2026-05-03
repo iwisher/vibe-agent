@@ -12,11 +12,11 @@ from vibe.memory.extraction import KnowledgeExtractor
 from vibe.memory.flash_client import FlashLLMClient
 from vibe.memory.models import IndexNode, WikiPage
 from vibe.memory.pageindex import PageIndex
-from vibe.memory.vector_index import VectorIndex
 from vibe.memory.rate_limiter import TokenBucket
 from vibe.memory.rlm_analyzer import RLMThresholdAnalyzer
 from vibe.memory.shared_db import SharedMemoryDB
 from vibe.memory.telemetry import TelemetryCollector
+from vibe.memory.vector_index import VectorIndex
 from vibe.memory.wiki import LLMWiki
 
 __all__ = [

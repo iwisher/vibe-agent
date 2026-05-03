@@ -2,12 +2,10 @@
 
 import os
 import tempfile
-from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from vibe.harness.memory.trace_store import (
-    BaseTraceStore,
     JSONTraceStore,
     MemoryTraceStore,
     SQLiteTraceStore,
@@ -118,20 +116,20 @@ class TestSQLiteTraceStore:
         store = SQLiteTraceStore(db_path=path, max_entries=100, retention_days=30)
         # Force init by calling count_sessions (which triggers _init_db)
         store.count_sessions()
-        
+
         key = "sk-" + "a" * 48
         messages = [
             {"role": "user", "content": f"My key is {key}"},
             {"role": "assistant", "content": "Done"},
         ]
         store.log_session("session-1", messages, [], success=True, model="test")
-        
+
         # Query messages directly from SQLite to verify redaction
         import sqlite3
         with sqlite3.connect(path) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute("SELECT content FROM messages WHERE session_id = ?", ("session-1",)).fetchall()
-        
+
         assert len(rows) == 2
         stored_content = rows[0]["content"]
         assert key not in stored_content

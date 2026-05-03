@@ -8,7 +8,7 @@ Routes tool calls to the appropriate MCP server based on:
 
 import asyncio
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from vibe.tools.mcp_bridge import MCPBridge, MCPServerConfig

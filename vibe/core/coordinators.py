@@ -15,12 +15,11 @@ from pathlib import Path
 from typing import Any, Callable
 
 from vibe.core.context_compactor import CompactionResult, ContextCompactor
-from vibe.core.model_gateway import LLMResponse
 from vibe.harness.constraints import HookPipeline
 from vibe.harness.feedback import FeedbackEngine, FeedbackStatus
+from vibe.tools._utils import extract_tool_call_arguments, extract_tool_call_name
 from vibe.tools.mcp_bridge import MCPBridge
-from vibe.tools.tool_system import ToolSystem, ToolResult
-from vibe.tools._utils import extract_tool_call_name, extract_tool_call_arguments
+from vibe.tools.tool_system import ToolResult, ToolSystem
 
 
 @dataclass
@@ -213,7 +212,7 @@ class SecurityCoordinator:
         # Layer 3: Human approval gates
         approval_mode = getattr(self.config, "approval_mode", "smart")
         mode_map = {"manual": "interactive", "smart": "interactive", "auto": "auto", "strict": "strict"}
-        from vibe.tools.security.human_approval import HumanApprover, ApprovalMode
+        from vibe.tools.security.human_approval import ApprovalMode, HumanApprover
         mapped_mode = mode_map.get(approval_mode, "interactive")
         self._human_approver = HumanApprover(
             mode=ApprovalMode(mapped_mode),

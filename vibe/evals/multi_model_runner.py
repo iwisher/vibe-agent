@@ -15,10 +15,10 @@ from typing import Any
 
 from vibe.core.query_loop import QueryLoop
 from vibe.core.query_loop_factory import QueryLoopFactory
-from vibe.harness.memory.eval_store import EvalStore, EvalCase, EvalResult
-from vibe.evals.runner import EvalRunner
-from vibe.evals.model_registry import ModelRegistry, ModelProfile
+from vibe.evals.model_registry import ModelProfile, ModelRegistry
 from vibe.evals.observability import Observability
+from vibe.evals.runner import EvalRunner
+from vibe.harness.memory.eval_store import EvalCase, EvalResult, EvalStore
 
 
 @dataclass
@@ -179,7 +179,7 @@ class MultiModelRunner:
             raise ValueError("No valid models to run")
 
         print(f"\n{'═' * 70}")
-        print(f"  MULTI-MODEL BENCHMARK")
+        print("  MULTI-MODEL BENCHMARK")
         print(f"  Models: {', '.join(p.name for p in profiles)}")
         print(f"  Cases: {len(cases)}")
         print(f"  Parallel: {parallel}")

@@ -1,6 +1,5 @@
 """Factory for creating wired QueryLoop instances."""
 
-from pathlib import Path
 from typing import Any
 
 from vibe.core.context_compactor import ContextCompactor
@@ -213,11 +212,11 @@ class QueryLoopFactory:
         if a flash model is configured.
         """
         try:
-            from vibe.memory.wiki import LLMWiki
+            from vibe.memory.flash_client import FlashLLMClient
             from vibe.memory.pageindex import PageIndex
             from vibe.memory.shared_db import SharedMemoryDB
             from vibe.memory.telemetry import TelemetryCollector
-            from vibe.memory.flash_client import FlashLLMClient
+            from vibe.memory.wiki import LLMWiki
 
             wiki_cfg = getattr(mem_cfg, "wiki", None)
             idx_cfg = getattr(mem_cfg, "pageindex", None)
@@ -235,10 +234,11 @@ class QueryLoopFactory:
                 routing_timeout_seconds=getattr(idx_cfg, "routing_timeout_seconds", 2.0) if idx_cfg else 2.0,
             )
             telemetry = TelemetryCollector(db=db)
-            
+
             if idx_cfg and getattr(idx_cfg, "vector_search_enabled", False):
-                from vibe.memory.vector_index import get_vector_index
                 from pathlib import Path
+
+                from vibe.memory.vector_index import get_vector_index
                 model_name = getattr(idx_cfg, "embedding_model", "all-MiniLM-L6-v2")
                 cache_path = Path(str(index_path)).with_suffix(".npy")
                 pageindex.set_vector_index(get_vector_index(model_name, cache_path))

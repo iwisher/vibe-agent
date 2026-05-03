@@ -6,17 +6,14 @@ Tests: factory wiring, wiki/pageindex params, close() lifecycle, telemetry.
 from __future__ import annotations
 
 import asyncio
-import tempfile
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from vibe.memory.wiki import LLMWiki
 from vibe.memory.pageindex import PageIndex
 from vibe.memory.shared_db import SharedMemoryDB
 from vibe.memory.telemetry import TelemetryCollector
-
+from vibe.memory.wiki import LLMWiki
 
 # ---------------------------------------------------------------------------
 # Wiki + PageIndex end-to-end workflow
@@ -59,7 +56,7 @@ async def test_pageindex_routes_after_rebuild(tmp_path):
     idx.rebuild(wiki, incremental=False)
 
     # Route a query
-    results = await idx.route("database performance")
+    await idx.route("database performance")
     # Should find at least the database page (keyword routing)
     db.close()
     await wiki.close()
@@ -102,9 +99,7 @@ async def test_telemetry_recorded_on_events(tmp_path):
 
 def test_query_loop_accepts_wiki_pageindex():
     """QueryLoop should accept wiki/pageindex params without error."""
-    from unittest.mock import MagicMock
     from vibe.core.query_loop import QueryLoop
-    from vibe.tools.tool_system import ToolSystem
 
     llm_mock = MagicMock()
     llm_mock.model = "test-model"
@@ -132,7 +127,6 @@ def test_query_loop_accepts_wiki_pageindex():
 @pytest.mark.asyncio
 async def test_query_loop_close_cancels_wiki_task():
     """close() should cancel any pending _wiki_extract_task."""
-    from unittest.mock import MagicMock
     from vibe.core.query_loop import QueryLoop
 
     llm_mock = MagicMock()
@@ -171,8 +165,8 @@ async def test_query_loop_close_cancels_wiki_task():
 
 def test_factory_wires_trace_store_before_tripartite(tmp_path):
     """trace_store must be wired before wiki/pageindex in factory.create()."""
+    from vibe.core.config import TripartiteMemoryConfig, VibeConfig
     from vibe.core.query_loop_factory import QueryLoopFactory
-    from vibe.core.config import VibeConfig, TripartiteMemoryConfig
 
     config = VibeConfig()
     # Enable tripartite memory
@@ -187,7 +181,7 @@ def test_factory_wires_trace_store_before_tripartite(tmp_path):
     )
 
     # _create_trace_store should return None when trace_store not fully configured
-    trace_store = factory._create_trace_store()
+    factory._create_trace_store()
     # May or may not return a store depending on env — either is fine
     # The important thing is the method exists and doesn't crash
     assert True  # Just checking no exception
@@ -195,8 +189,8 @@ def test_factory_wires_trace_store_before_tripartite(tmp_path):
 
 def test_factory_tripartite_enabled_creates_wiki(tmp_path):
     """When tripartite enabled, _create_tripartite should return non-None objects."""
+    from vibe.core.config import PageIndexConfig, TripartiteMemoryConfig, WikiConfig
     from vibe.core.query_loop_factory import QueryLoopFactory
-    from vibe.core.config import VibeConfig, TripartiteMemoryConfig, WikiConfig, PageIndexConfig
 
     mem_cfg = TripartiteMemoryConfig(
         enabled=True,
@@ -222,7 +216,6 @@ def test_factory_tripartite_enabled_creates_wiki(tmp_path):
 def test_factory_tripartite_disabled_no_wiki():
     """When tripartite disabled, create() should NOT include wiki/pageindex."""
     from vibe.core.query_loop_factory import QueryLoopFactory
-    from vibe.core.config import VibeConfig
 
     factory = QueryLoopFactory(
         base_url="http://localhost:11434/v1",

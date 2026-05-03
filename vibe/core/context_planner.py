@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any
 
-from vibe.harness.planner import HybridPlanner, PlanRequest, PlanResult
+from vibe.harness.planner import HybridPlanner, PlanRequest
 
 
 class IntentType(Enum):

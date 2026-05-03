@@ -11,8 +11,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from vibe.memory.rlm_analyzer import RLMThresholdAnalyzer, RLMTriggerDecision
-
+from vibe.memory.rlm_analyzer import RLMThresholdAnalyzer
 
 # ---------------------------------------------------------------------------
 # Fixtures

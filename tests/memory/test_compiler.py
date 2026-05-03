@@ -2,16 +2,14 @@
 
 import json
 import sqlite3
-import tempfile
 from datetime import datetime, timezone
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from vibe.memory.compiler import CompilationSummary, WikiCompiler
-from vibe.memory.wiki import LLMWiki
 from vibe.harness.memory.trace_store import TraceStore
+from vibe.memory.compiler import WikiCompiler
+from vibe.memory.wiki import LLMWiki
 
 
 @pytest.fixture
@@ -99,8 +97,8 @@ async def test_compiler_deduplicates_by_slug(tmp_trace_store, tmp_wiki, mock_llm
     )
 
     # Run twice with same session data
-    summary1 = await compiler.compile_recent(hours=24)
-    summary2 = await compiler.compile_recent(hours=24)
+    await compiler.compile_recent(hours=24)
+    await compiler.compile_recent(hours=24)
 
     # Should merge, not create duplicate titles
     pending = await compiler.list_pending()

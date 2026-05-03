@@ -6,13 +6,12 @@ Provides state capture and restoration for:
 - Working directory
 """
 
-import json
 import os
 import shutil
 import tempfile
-from dataclasses import dataclass, asdict
-from datetime import datetime, timedelta
-from enum import Enum, auto
+from dataclasses import dataclass
+from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from typing import Optional
 
@@ -90,10 +89,10 @@ class CheckpointManager:
             ttl_seconds: How long to keep this checkpoint (None = permanent)
         """
         checkpoint_id = f"cp_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
-        
+
         # Use provided TTL or default (None = permanent)
         effective_ttl = ttl_seconds if ttl_seconds is not None else self._default_ttl
-        
+
         # Capture file states
         file_states = []
         if files:
@@ -121,16 +120,16 @@ class CheckpointManager:
 
         self._checkpoints.append(checkpoint)
         self._checkpoint_index[checkpoint_id] = checkpoint
-        
+
         # Clean up expired checkpoints
         self._cleanup_expired()
-        
+
         return checkpoint
 
     def _capture_file_state(self, file_path: str) -> FileState:
         """Capture current state of a file."""
         path = Path(file_path)
-        
+
         if not path.exists():
             return FileState(
                 path=file_path,
@@ -143,7 +142,7 @@ class CheckpointManager:
         # Create backup
         backup_name = f"{path.name}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
         backup_path = self._backup_dir / backup_name
-        
+
         if path.is_file():
             shutil.copy2(path, backup_path)
             content = path.read_text() if path.stat().st_size < 1024 * 1024 else None  # Only capture small files
@@ -163,12 +162,11 @@ class CheckpointManager:
     def _capture_env_state(self, env_vars: list[str]) -> EnvState:
         """Capture current state of environment variables."""
         added = {}
-        modified = {}
-        
+
         for var in env_vars:
             if var in os.environ:
                 added[var] = os.environ[var]
-        
+
         return EnvState(added=added, modified={}, removed=[])
 
     def rollback(self, checkpoint_id: str) -> bool:
@@ -197,7 +195,7 @@ class CheckpointManager:
     def _restore_file_state(self, file_state: FileState) -> None:
         """Restore a file to its checkpointed state."""
         path = Path(file_state.path)
-        
+
         if not file_state.exists:
             # File didn't exist at checkpoint, remove it if it exists now
             if path.exists():
@@ -215,13 +213,13 @@ class CheckpointManager:
                     path.unlink()
                 elif path.is_dir():
                     shutil.rmtree(path)
-            
+
             backup = Path(file_state.backup_path)
             if backup.is_file():
                 shutil.copy2(backup, path)
             elif backup.is_dir():
                 shutil.copytree(backup, path)
-            
+
             # Restore permissions
             if file_state.permissions:
                 os.chmod(path, file_state.permissions)
@@ -237,11 +235,11 @@ class CheckpointManager:
         for var in env_state.added:
             if var in os.environ:
                 del os.environ[var]
-        
+
         # Restore modified vars
         for var, (old_val, _) in env_state.modified.items():
             os.environ[var] = old_val
-        
+
         # Restore removed vars
         for var in env_state.removed:
             # We don't know the old value, so we can't restore
@@ -281,13 +279,13 @@ class CheckpointManager:
         """Remove expired checkpoints."""
         now = datetime.now()
         expired = []
-        
+
         for cp in self._checkpoints:
             if cp.ttl_seconds is not None:
                 created = datetime.fromisoformat(cp.timestamp)
                 if (now - created).total_seconds() > cp.ttl_seconds:
                     expired.append(cp.id)
-        
+
         for cp_id in expired:
             self.delete(cp_id)
 
@@ -295,7 +293,7 @@ class CheckpointManager:
         """Clear all checkpoints and backups."""
         for cp in list(self._checkpoints):
             self.delete(cp.id)
-        
+
         # Clean up any remaining files in backup dir
         if self._backup_dir.exists():
             for item in self._backup_dir.iterdir():
@@ -318,7 +316,7 @@ class CheckpointManager:
                         total_size += sum(
                             f.stat().st_size for f in path.rglob("*") if f.is_file()
                         )
-        
+
         return {
             "count": len(self._checkpoints),
             "total_backup_size": total_size,

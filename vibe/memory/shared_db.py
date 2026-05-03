@@ -16,7 +16,7 @@ import logging
 import sqlite3
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Iterator, Optional
+from typing import TYPE_CHECKING, Iterator
 
 if TYPE_CHECKING:
     from vibe.memory.models import WikiPage

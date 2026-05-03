@@ -1,6 +1,5 @@
 """Tests for TraceStore."""
 
-from pathlib import Path
 
 import pytest
 

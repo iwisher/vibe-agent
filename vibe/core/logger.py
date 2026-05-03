@@ -1,8 +1,6 @@
 """Session logging utility for Vibe Agent."""
 
 import logging
-import os
-import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
@@ -29,10 +27,10 @@ class SessionLogger:
         log_dir.mkdir(parents=True, exist_ok=True)
 
         self.log_file = log_dir / f"session_{self.session_id}.log"
-        
+
         self._logger = logging.getLogger(f"vibe.session.{self.session_id}")
         self._logger.setLevel(logging.DEBUG)
-        
+
         # Avoid propagation to root logger to prevent duplicate terminal output
         self._logger.propagate = False
 
@@ -48,7 +46,7 @@ class SessionLogger:
         """Log a message if logging is enabled."""
         if not self._logger:
             return
-        
+
         # Check file size before logging
         if self.log_file and self.log_file.exists():
             size_mb = self.log_file.stat().st_size / (1024 * 1024)
@@ -78,7 +76,7 @@ class SessionLogger:
             return
 
         cutoff = datetime.now(timezone.utc) - timedelta(days=self.config.retention_days)
-        
+
         for log_file in log_dir.glob("session_*.log"):
             try:
                 mtime = datetime.fromtimestamp(log_file.stat().st_mtime, tz=timezone.utc)

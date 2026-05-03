@@ -1,15 +1,12 @@
 """Tests for EvalRunner."""
 
-import tempfile
-from pathlib import Path
-from typing import AsyncIterator
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from vibe.core.query_loop import QueryResult, QueryState
 from vibe.evals.runner import EvalRunner
-from vibe.harness.memory.eval_store import EvalCase, EvalResult, EvalStore
+from vibe.harness.memory.eval_store import EvalCase, EvalStore
 
 
 async def _async_gen(items):

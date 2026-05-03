@@ -1,12 +1,11 @@
 """Tests for vibe.core.health_check."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import httpx
-import pytest
 
-from vibe.core.health_check import ModelHealthChecker
 from vibe.core.config import VibeConfig
+from vibe.core.health_check import ModelHealthChecker
 
 
 class TestCheckAvailable:

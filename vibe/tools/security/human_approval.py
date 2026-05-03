@@ -6,11 +6,10 @@ Choices: once | session | always | deny | view
 Fail-closed: timeout -> deny (not allow).
 """
 
-import os
 import sys
 import threading
 from dataclasses import dataclass
-from enum import Enum, auto
+from enum import Enum
 from typing import Optional
 
 
@@ -104,7 +103,7 @@ class HumanApprover:
     ) -> ApprovalResult:
         """Show interactive prompt with timeout."""
         print(f"\n{'=' * 60}")
-        print(f"SECURITY WARNING: Flagged command detected")
+        print("SECURITY WARNING: Flagged command detected")
         print(f"Severity: {severity.upper()}")
         if description:
             print(f"Reason: {description}")
@@ -148,10 +147,10 @@ class HumanApprover:
         thread = threading.Thread(target=read_input, daemon=True)
         thread.start()
         event.wait(timeout=self.timeout_seconds)
-        
+
         # Signal the thread to stop if still running
         stop_event.set()
-        
+
         # Give daemon thread a moment to exit
         thread.join(timeout=0.5)
 

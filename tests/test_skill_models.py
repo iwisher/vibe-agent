@@ -1,5 +1,6 @@
 """Test skill pydantic models."""
 import pytest
+
 from vibe.harness.skills.models import Skill, SkillStep, SkillTrigger, SkillVerification
 
 

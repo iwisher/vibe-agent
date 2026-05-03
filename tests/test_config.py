@@ -1,16 +1,11 @@
 """Tests for vibe.core.config."""
 
 import os
-from pathlib import Path
 
 import pytest
-import yaml
 
 from vibe.core.config import (
     VibeConfig,
-    LLMConfig,
-    FallbackConfig,
-    EvalConfig,
     _parse_bool,
     _parse_float,
     _parse_int,

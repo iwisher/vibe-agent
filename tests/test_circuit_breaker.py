@@ -2,9 +2,7 @@
 
 import time
 
-import pytest
-
-from vibe.core.model_gateway import CircuitBreaker, CircuitBreakerState
+from vibe.core.model_gateway import CircuitBreaker
 
 
 def test_cb_001_starts_closed():

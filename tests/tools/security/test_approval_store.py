@@ -1,12 +1,10 @@
 """Tests for the durable approval store."""
 
-import os
 import stat
-from pathlib import Path
 
 import pytest
 
-from vibe.tools.security.approval_store import ApprovalStore, ApprovalEntry
+from vibe.tools.security.approval_store import ApprovalEntry, ApprovalStore
 
 
 class TestApprovalStore:
@@ -15,7 +13,7 @@ class TestApprovalStore:
     def test_create_store(self, tmp_path):
         """Store creates file with correct permissions."""
         store_path = tmp_path / "approvals.json"
-        store = ApprovalStore(store_path=store_path)
+        ApprovalStore(store_path=store_path)
         assert store_path.exists()
         mode = store_path.stat().st_mode
         assert stat.S_IMODE(mode) == 0o600
@@ -23,7 +21,7 @@ class TestApprovalStore:
     def test_create_parent_dir(self, tmp_path):
         """Parent directory created with 0o700."""
         store_path = tmp_path / "subdir" / "approvals.json"
-        store = ApprovalStore(store_path=store_path)
+        ApprovalStore(store_path=store_path)
         assert store_path.parent.exists()
         mode = store_path.parent.stat().st_mode
         assert stat.S_IMODE(mode) == 0o700

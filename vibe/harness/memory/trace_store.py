@@ -14,12 +14,11 @@ Features:
 
 import json
 import os
-import pickle
 import sqlite3
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 try:
     import numpy as np
@@ -184,8 +183,8 @@ class SQLiteTraceStore(BaseTraceStore):
         returns None and vector search falls back to keyword search.
         """
         try:
-            from sentence_transformers import SentenceTransformer
             import numpy as np
+            from sentence_transformers import SentenceTransformer
         except ImportError:
             return None
 

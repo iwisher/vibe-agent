@@ -4,7 +4,6 @@ Blocks access to internal IPs, metadata endpoints, and private networks.
 """
 
 import ipaddress
-import re
 from urllib.parse import urlparse
 
 # Blocked hostnames (from Hermes)

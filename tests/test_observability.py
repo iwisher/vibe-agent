@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from vibe.evals.observability import Observability, MetricType
+from vibe.evals.observability import Observability
 from vibe.harness.memory.eval_store import EvalCase
 
 
@@ -69,7 +69,7 @@ async def test_observability_spans_created():
         expected={"response_contains": "hello"},
     )
 
-    result = await runner.run_case(case)
+    await runner.run_case(case)
 
     # Should have created spans
     span_names = [s.name for s in obs._spans]

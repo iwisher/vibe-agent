@@ -1,0 +1,3 @@
+2026-05-03 12:17:59,583 [INFO] vibe.session.8d89de31: Starting session 8d89de31 in /Users/rsong/DevSpace/vibe-agent
+2026-05-03 12:18:07,505 [DEBUG] vibe.session.8d89de31: LLM Request: model=qwen3.5-plus url=http://ai-api.applesay.cn/v1/chat/completions messages=1
+2026-05-03 12:18:12,176 [DEBUG] vibe.session.8d89de31: LLM Success Response: Hello! How can I help you today?...

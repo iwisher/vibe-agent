@@ -4,10 +4,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from vibe.core.query_loop import QueryLoop, QueryState, QueryResult
 from vibe.core.model_gateway import LLMClient, LLMResponse
+from vibe.core.query_loop import QueryLoop, QueryState
 from vibe.harness.constraints import HookPipeline, permission_gate_hook, policy_hook
-from vibe.tools.tool_system import ToolSystem, Tool, ToolResult
+from vibe.tools.tool_system import Tool, ToolResult, ToolSystem
 
 
 class DummyTool(Tool):
@@ -100,7 +100,7 @@ async def test_hook_pipeline_veto(mock_llm, tool_system):
 
 @pytest.mark.asyncio
 async def test_hook_pipeline_policy_block(mock_llm, tool_system):
-    from vibe.tools.bash import BashTool, BashSandbox
+    from vibe.tools.bash import BashSandbox, BashTool
     bash_tool = BashTool(BashSandbox(dangerous_patterns=[]))
     tool_system.register_tool(bash_tool)
     mock_llm.complete.side_effect = [

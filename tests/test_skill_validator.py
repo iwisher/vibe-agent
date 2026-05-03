@@ -1,7 +1,7 @@
 """Test skill validator."""
-import pytest
 import tempfile
 from pathlib import Path
+
 from vibe.harness.skills.parser import SkillParser
 from vibe.harness.skills.validator import SkillValidator
 

@@ -1,9 +1,7 @@
 """Tests for ContextCompactor."""
 
-import pytest
 
-from vibe.core.context_compactor import ContextCompactor, CompactionResult
-
+from vibe.core.context_compactor import CompactionResult, ContextCompactor
 
 # ─── compactor_001: Trigger at threshold ───
 

@@ -1,9 +1,10 @@
 """Tests for QueryLoop trace store integration."""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from vibe.core.query_loop import QueryLoop, QueryState
+import pytest
+
+from vibe.core.query_loop import QueryLoop
 from vibe.harness.memory.trace_store import MemoryTraceStore
 
 
@@ -132,8 +133,9 @@ class TestJSONTraceStoreAtomic:
 
     def test_atomic_write_uses_temp_file(self, tmp_path):
         """JSONTraceStore should write to temp file then rename."""
-        from vibe.harness.memory.trace_store import JSONTraceStore
         import os
+
+        from vibe.harness.memory.trace_store import JSONTraceStore
 
         file_path = str(tmp_path / "traces.json")
         store = JSONTraceStore(file_path=file_path)

@@ -4,10 +4,9 @@ import asyncio
 import time
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from vibe.core.query_loop import QueryLoop, QueryResult
-from vibe.evals.runner import EvalRunner, QueryLoopFactory
+from vibe.evals.runner import EvalRunner
 from vibe.harness.memory.eval_store import EvalCase, EvalResult
 
 
@@ -169,7 +168,6 @@ class TestRunAll:
         ]
 
         passed_loops = []
-        original_run_case = runner.run_case
 
         async def mock_run_case(case, query_loop=None):
             passed_loops.append(query_loop)

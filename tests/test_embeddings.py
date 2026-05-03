@@ -1,11 +1,12 @@
 """Tests for shared embedding module."""
 
 import pytest
+
 from vibe.harness.embeddings import (
-    get_embedding,
-    cosine_similarity,
-    clear_cache,
     cache_size,
+    clear_cache,
+    cosine_similarity,
+    get_embedding,
     load_model,
 )
 

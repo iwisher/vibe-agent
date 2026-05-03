@@ -1,16 +1,14 @@
 """Tests for the file safety module."""
 
 import os
-import stat
-from pathlib import Path
 
 import pytest
 
 from vibe.tools.security.file_safety import (
-    FileSafetyGuard,
     FileSafetyError,
-    check_write_allowed,
+    FileSafetyGuard,
     check_read_allowed,
+    check_write_allowed,
 )
 
 

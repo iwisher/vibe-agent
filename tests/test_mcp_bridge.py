@@ -1,8 +1,6 @@
 """Tests for MCPBridge."""
 
-import asyncio
-import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -60,7 +58,6 @@ async def test_mcp_bridge_http_success():
             return Resp()
 
     import types
-    from unittest.mock import patch
 
     fake_httpx = types.SimpleNamespace(AsyncClient=FakeClient)
     with patch("vibe.tools.mcp_bridge.httpx", fake_httpx):

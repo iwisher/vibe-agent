@@ -1,9 +1,8 @@
 """Smart Approver - LLM-based risk assessment for tool calls."""
 
 import json
-import os
 from dataclasses import dataclass
-from enum import Enum, auto
+from enum import Enum
 from typing import Optional
 
 
@@ -53,17 +52,17 @@ class SmartApprover:
         """Assess risk of a tool call using LLM or heuristics."""
         # First: quick heuristic check
         heuristic_risk = self._heuristic_risk_assessment(tool_name, tool_args)
-        
+
         if heuristic_risk.risk_level == RiskLevel.CRITICAL:
             return heuristic_risk
-        
+
         if heuristic_risk.risk_level == RiskLevel.LOW and self.auto_mode:
             return heuristic_risk
-        
+
         # If LLM client available, use it for deeper analysis
         if self.llm_client:
             return self._llm_risk_assessment(tool_name, tool_args, context)
-        
+
         return heuristic_risk
 
     def _heuristic_risk_assessment(
@@ -82,7 +81,7 @@ class SmartApprover:
             "network_request", "curl", "wget",
             "database_write", "db_execute",
         }
-        
+
         # Medium-risk tools
         medium_risk_tools = {
             "file_write", "write_file", "patch",
@@ -100,7 +99,7 @@ class SmartApprover:
 
         # Check arguments for dangerous patterns
         args_str = json.dumps(tool_args).lower()
-        
+
         dangerous_patterns = [
             ("rm -rf", 0.9, "Destructive deletion pattern"),
             ("sudo", 0.6, "Privilege escalation"),
@@ -171,7 +170,7 @@ Respond in JSON format:
         try:
             response = self.llm_client.complete(prompt)
             parsed = json.loads(response)
-            
+
             risk_level = RiskLevel(parsed.get("risk_level", "medium").lower())
             reasoning = parsed.get("reasoning", "LLM assessment completed")
             suggestions = parsed.get("suggested_modifications")
@@ -191,7 +190,7 @@ Respond in JSON format:
                 confidence=0.8,
                 suggested_modifications=suggestions,
             )
-        except Exception as e:
+        except Exception:
             # Fallback to heuristics on LLM failure
             return self._heuristic_risk_assessment(tool_name, tool_args)
 
@@ -225,13 +224,13 @@ Respond in JSON format:
 
 class MockLLMClient:
     """Mock LLM client for testing."""
-    
+
     def __init__(self, response: Optional[str] = None):
         self.response = response or json.dumps({
             "risk_level": "medium",
             "reasoning": "Mock assessment",
             "suggested_modifications": None,
         })
-    
+
     def complete(self, prompt: str) -> str:
         return self.response

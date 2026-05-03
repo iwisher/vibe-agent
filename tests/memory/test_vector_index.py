@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 
 from vibe.memory.models import IndexNode
-from vibe.memory.vector_index import KeywordIndex, SentenceTransformerIndex, get_vector_index
 from vibe.memory.pageindex import PageIndex
+from vibe.memory.vector_index import KeywordIndex, SentenceTransformerIndex, get_vector_index
 
 
 def make_node(node_id: str, title: str, desc: str, tags: list[str]) -> IndexNode:
@@ -27,7 +27,7 @@ def test_keyword_index():
     res = idx.search("database forms", nodes)
     assert len(res) == 2
     # Both should match since 'database' hits n1 and 'forms' hits n2
-    
+
     res = idx.search("scaling", nodes)
     assert len(res) == 1
     assert res[0].node_id == "n1"
@@ -88,36 +88,36 @@ def test_get_vector_index_fallback():
 
 def test_sentence_transformer_index_mocked(tmp_path, monkeypatch):
     """Test ST index with mocked encoding to avoid heavy ML deps."""
-    
+
     class MockModel:
         def __init__(self, *args, **kwargs):
             pass
-            
+
         def encode(self, texts, convert_to_numpy=True):
             if isinstance(texts, str):
                 return np.random.randn(384).astype(np.float32)
             # Just return random vectors
             return np.random.randn(len(texts), 384).astype(np.float32)
-            
+
     monkeypatch.setattr("vibe.memory.vector_index.SentenceTransformerIndex._load_model", lambda self: MockModel())
-    
+
     cache_file = tmp_path / "cache.npy"
     idx = SentenceTransformerIndex(cache_path=cache_file)
-    
+
     nodes = [make_node("n1", "A", "B", ["c"])]
     res = idx.search("query", nodes)
-    
+
     assert len(res) <= 1
-    
+
     idx.save_cache()
     # Cache is saved as .npz (np.savez format), not .npy
     cache_file_npz = tmp_path / "cache.npz"
     assert cache_file_npz.exists()
-    
+
     # Reload from cache
     idx2 = SentenceTransformerIndex(cache_path=cache_file_npz)
     monkeypatch.setattr("vibe.memory.vector_index.SentenceTransformerIndex._load_model", lambda self: MockModel())
-    
+
     idx2._load_cache()
     assert "n1" in idx2._cache
 
@@ -127,16 +127,48 @@ async def test_pageindex_uses_vector_index(tmp_path):
     idx = PageIndex(index_path=tmp_path / "idx.json", llm_client=None)
     idx.load()
     idx.add_node("root_01", "Database", "stuff", tags=["database"], file_path="/db")
-    
+
     # Keyword index
     res = await idx.route("database")
     assert len(res) == 1
-    
+
     # Now set a custom mock vector index
     class MockVI:
         def search(self, query, nodes, top_k):
             return nodes
-    
+
     idx.set_vector_index(MockVI())
     res2 = await idx.route("database")
     assert len(res2) == 1
+
+
+def test_sentence_transformer_index_mps_fallback(monkeypatch):
+    """Test that MPS fallback is handled safely without hasattr crashing."""
+    import sys
+    from unittest.mock import MagicMock
+    
+    mock_torch = MagicMock()
+    mock_torch.cuda.is_available.return_value = False
+    
+    # Mock torch without backends.mps
+    class MockBackends:
+        pass
+    
+    mock_torch.backends = MockBackends()
+    
+    monkeypatch.setitem(sys.modules, "torch", mock_torch)
+    
+    class MockSentenceTransformer:
+        def __init__(self, model_name, device):
+            self.device = device
+
+    monkeypatch.setitem(
+        sys.modules, 
+        "sentence_transformers", 
+        MagicMock(SentenceTransformer=MockSentenceTransformer)
+    )
+
+    idx = SentenceTransformerIndex()
+    model = idx._load_model()
+    # Since mock_torch.backends has no mps attribute, device should fallback to cpu
+    assert model.device == "cpu"

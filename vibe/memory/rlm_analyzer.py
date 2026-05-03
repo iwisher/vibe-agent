@@ -104,24 +104,24 @@ class RLMThresholdAnalyzer:
         via the RLMTrainer without blocking.
         """
         decision = await self.analyze()
-        
+
         if decision.should_trigger:
             auto_train = getattr(rlm_config, "auto_train", False)
             if auto_train:
                 from vibe.memory.rlm_trainer import RLMTrainingConfig
-                
+
                 logger.info(f"RLM Training triggered. Reason: {decision.reason}")
-                
+
                 try:
                     import tempfile
                     from pathlib import Path
-                    
+
                     # Create a training config from rlm_config
                     dataset_path = Path(tempfile.gettempdir()) / "vibe_rlm_dataset.jsonl"
                     output_path = getattr(rlm_config, "rlm_model_path", None)
                     if not output_path:
                         output_path = str(Path.home() / ".vibe" / "models" / "rlm-adapter")
-                        
+
                     train_config = RLMTrainingConfig(
                         base_model=getattr(rlm_config, "base_model", "qwen3:1.7b"),
                         output_path=output_path,
@@ -131,19 +131,19 @@ class RLMThresholdAnalyzer:
                         training_device=getattr(rlm_config, "training_device", "auto"),
                         ollama_register=getattr(rlm_config, "ollama_register", True),
                     )
-                    
+
                     async def _background_train():
                         await rlm_trainer.prepare_dataset(wiki, trace_store, dataset_path)
                         await rlm_trainer.train(train_config)
-                        
+
                     import asyncio
                     asyncio.create_task(_background_train())
-                    
+
                 except Exception as e:
                     logger.error(f"Failed to launch RLM training: {e}")
             else:
                 logger.info(f"RLM Training triggered (log only, auto_train=False). Reason: {decision.reason}")
-                
+
         return decision
 
     async def _query_session_stats(self, window: int) -> dict:

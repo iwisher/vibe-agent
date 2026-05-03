@@ -5,7 +5,6 @@ from pathlib import Path
 
 from .models import Skill
 
-
 # Pre-compiled patterns for performance
 _FS_DANGEROUS_PATTERNS = [
     (re.compile(r"rm\s+-rf\s+/+", re.IGNORECASE), "filesystem destruction: rm -rf /"),

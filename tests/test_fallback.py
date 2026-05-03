@@ -1,11 +1,10 @@
 """Tests for LLMClient auto-fallback behavior."""
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
-import httpx
 import pytest
 
-from vibe.core.model_gateway import LLMClient, LLMResponse, ErrorType
+from vibe.core.model_gateway import ErrorType, LLMClient, LLMResponse
 
 
 class TestLLMClientFallback:

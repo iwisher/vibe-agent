@@ -1,5 +1,6 @@
 """Test skill parser."""
 import pytest
+
 from vibe.harness.skills.parser import SkillParser
 
 SAMPLE_SKILL = """+++

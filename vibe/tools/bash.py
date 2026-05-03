@@ -5,13 +5,11 @@ import os
 import re
 import shlex
 import signal
-import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from .tool_system import Tool, ToolResult
-
 
 # Dangerous pattern denylist (regex-based to catch obfuscation and variants)
 # NOTE: This is a SECONDARY defense layer. The PRIMARY defense is:

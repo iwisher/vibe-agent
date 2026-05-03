@@ -1,13 +1,10 @@
 """Tests for the human approval system."""
 
-import pytest
-from unittest.mock import patch
 
 from vibe.tools.security.human_approval import (
-    HumanApprover,
-    ApprovalMode,
     ApprovalChoice,
-    ApprovalResult,
+    ApprovalMode,
+    HumanApprover,
 )
 
 

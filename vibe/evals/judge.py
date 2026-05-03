@@ -12,7 +12,7 @@ self-grading bias. It returns structured scores with explanations.
 """
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Optional
 
 from vibe.core.model_gateway import LLMClient
@@ -173,7 +173,7 @@ Be strict but fair. Focus on whether the agent actually solved the user's proble
             scores, explanations = self._parse_judge_response(raw)
 
             # Calculate weighted overall score (0-100)
-            total_weight = sum(r.weight for r in self.rubrics)
+            sum(r.weight for r in self.rubrics)
             weighted_sum = sum(
                 scores.get(r.name, 0) * r.weight
                 for r in self.rubrics

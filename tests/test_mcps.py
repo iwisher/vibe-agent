@@ -1,13 +1,10 @@
 """Tests for MCPBridge."""
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from vibe.tools.mcp_bridge import MCPBridge
-from vibe.tools.tool_system import ToolResult
-
 
 # ─── mcp_001: Discovery ───
 

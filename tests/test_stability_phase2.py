@@ -1,6 +1,5 @@
 """Phase 2 stability tests: resource lifecycle, state machine, schema migration."""
 
-import asyncio
 import sqlite3
 import tempfile
 from pathlib import Path
@@ -8,11 +7,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from vibe.core.model_gateway import LLMClient, LLMResponse, CircuitBreaker
+from vibe.core.model_gateway import LLMClient, LLMResponse
 from vibe.core.query_loop import QueryLoop, QueryState
-from vibe.harness.memory.eval_store import EvalStore, EvalResult
+from vibe.harness.memory.eval_store import EvalResult, EvalStore
 from vibe.tools.tool_system import ToolSystem
-
 
 # ─── QueryLoop State Machine ───
 
@@ -89,7 +87,7 @@ class TestEvalStoreSchemaMigration:
         """Fresh database should include total_tokens and latency_seconds columns."""
         with tempfile.TemporaryDirectory() as tmp:
             db_path = Path(tmp) / "evals.db"
-            store = EvalStore(db_path=str(db_path))
+            EvalStore(db_path=str(db_path))
 
             with sqlite3.connect(db_path) as conn:
                 cols = {row[1] for row in conn.execute("PRAGMA table_info(eval_results)")}
@@ -107,7 +105,7 @@ class TestEvalStoreSchemaMigration:
                     "CREATE TABLE eval_results (id INTEGER PRIMARY KEY, eval_id TEXT, passed INTEGER, diff TEXT, timestamp TEXT)"
                 )
 
-            store = EvalStore(db_path=str(db_path))
+            EvalStore(db_path=str(db_path))
 
             with sqlite3.connect(db_path) as conn:
                 cols = {row[1] for row in conn.execute("PRAGMA table_info(eval_results)")}

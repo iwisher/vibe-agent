@@ -86,8 +86,9 @@ def test_planner_reasoning_when_empty():
 
 
 def test_planner_uses_trace_store_memory():
-    from vibe.harness.memory.trace_store import TraceStore
     import tempfile
+
+    from vibe.harness.memory.trace_store import TraceStore
 
     with tempfile.TemporaryDirectory() as tmp:
         db_path = f"{tmp}/traces.db"

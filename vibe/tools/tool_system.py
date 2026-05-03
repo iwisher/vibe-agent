@@ -1,8 +1,7 @@
-import asyncio
-import json
 import abc
 from dataclasses import dataclass
-from typing import Any, Union
+from typing import Any
+
 
 class ToolError(Exception):
     """Base exception for tool execution errors."""
@@ -57,7 +56,7 @@ class ToolSystem:
         tool = self._tools.get(tool_name)
         if not tool:
             return ToolResult(success=False, content=None, error=f"Tool '{tool_name}' not found")
-        
+
         try:
             return await tool.execute(**kwargs)
         except Exception as e:

@@ -1,13 +1,12 @@
 """Tests for the enhanced hook pipeline (Phase 1)."""
 
-import pytest
 
 from vibe.harness.constraints import (
     HookContext,
     HookOutcome,
     HookPipeline,
-    HookStage,
     HookSeverity,
+    HookStage,
     permission_gate_hook,
     policy_hook,
 )
@@ -300,7 +299,7 @@ class TestPolicyHook:
 
     def test_allows_scattered_rm_rf(self):
         """Scattered words should NOT match: rm file && echo -rf / is safe.
-        
+
         NOTE: Currently the policy_hook finds words in sequence anywhere in the
         command. This is a known limitation - words don't need to be adjacent.
         For stricter matching, use regex patterns instead of multi-word strings.

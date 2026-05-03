@@ -4,9 +4,7 @@ import json
 import tempfile
 from pathlib import Path
 
-import pytest
-
-from vibe.evals.regression import RegressionGate, RegressionThreshold, RegressionReport
+from vibe.evals.regression import RegressionGate, RegressionThreshold
 from vibe.harness.memory.eval_store import EvalResult
 
 

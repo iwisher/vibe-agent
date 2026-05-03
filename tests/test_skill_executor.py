@@ -1,7 +1,8 @@
 """Test skill executor."""
 import pytest
-from vibe.harness.skills.executor import SkillExecutor
+
 from vibe.harness.instructions import Skill
+from vibe.harness.skills.executor import SkillExecutor
 
 
 @pytest.fixture

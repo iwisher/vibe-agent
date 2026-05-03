@@ -6,7 +6,6 @@ token estimates, and provider cost tiers. Tracks cumulative spend per session.
 
 from __future__ import annotations
 
-import json
 import os
 import sqlite3
 from dataclasses import dataclass, field
@@ -15,7 +14,6 @@ from pathlib import Path
 from typing import Any
 
 from vibe.core.provider_registry import ProviderProfile, ProviderRegistry
-
 
 # ---------------------------------------------------------------------------
 # Cost tiers (relative cost units per 1K tokens)

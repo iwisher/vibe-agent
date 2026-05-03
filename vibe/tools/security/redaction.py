@@ -4,7 +4,6 @@ Redacts sensitive patterns from text before logging or sending to LLM.
 """
 
 import re
-from typing import Optional
 
 # Secret patterns (40+ regex patterns)
 SECRET_PATTERNS: list[tuple[str, re.Pattern]] = [
@@ -65,15 +64,15 @@ def redact_url_query_params(url: str, replacement: str = REDACTED) -> str:
     # Pattern: ?key=value or &key=value
     sensitive_keys = {"access_token", "token", "code", "api_key", "apikey",
                       "key", "secret", "password", "client_secret"}
-    
+
     def replace_param(match):
         prefix = match.group(1)  # ? or &
         key = match.group(2)     # parameter name
-        value = match.group(3)   # parameter value
+        match.group(3)   # parameter value
         if key.lower() in sensitive_keys:
             return f"{prefix}{key}={replacement}"
         return match.group(0)
-    
+
     # Match query parameters: ?key=value or &key=value
     pattern = re.compile(r'([?&])([^=]+)=([^&\s]+)')
     return pattern.sub(replace_param, url)

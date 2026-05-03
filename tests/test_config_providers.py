@@ -1,13 +1,11 @@
 """Tests for VibeConfig provider parsing."""
 
-import os
 from pathlib import Path
 
 import pytest
 import yaml
 
-from vibe.core.config import VibeConfig, _parse_providers, LLMConfig
-from vibe.core.provider_registry import ProviderRegistry
+from vibe.core.config import LLMConfig, VibeConfig, _parse_providers
 
 
 class TestParseProviders:

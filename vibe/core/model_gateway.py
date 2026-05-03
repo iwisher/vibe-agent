@@ -312,7 +312,7 @@ class LLMClient:
                     self.logger.error(f"LLM Error Response: {res.error}")
                 else:
                     self.logger.debug(f"LLM Success Response: {res.content[:200]}...")
-            
+
             return res
 
         try:

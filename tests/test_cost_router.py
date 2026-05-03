@@ -9,11 +9,9 @@ from vibe.core.cost_router import (
     ComplexityScorer,
     CostRouter,
     CostRouterConfig,
-    RoutingDecision,
     SpendTracker,
 )
 from vibe.core.provider_registry import ProviderProfile, ProviderRegistry
-
 
 # ---------------------------------------------------------------------------
 # Fixtures

@@ -1,7 +1,6 @@
 """Constraint hooks and pipeline for the harness."""
 
 import os
-import re
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any, Callable
@@ -172,17 +171,17 @@ def policy_hook(
     blocked_commands: list[str] | None = None,
 ) -> ConstraintHook:
     """Blocks specific bash commands or tool arguments.
-    
+
     Handles shell metacharacters and enforces proper word boundaries.
     """
     blocked = set(blocked_commands or ["curl | bash", "rm -rf /", "sudo", "su -"])
-    
+
     # Characters that act as word boundaries in shell commands
     _BOUNDARY_CHARS = set(" \t\n;|&()<>\"'`$!#*?[]{}=+-%~\\")
 
     def _find_whole_word(text: str, word: str, start: int = 0) -> int:
         """Find whole word occurrence. Returns position or -1.
-        
+
         A whole word must not have alphanumeric/_ on either side.
         """
         pos = start
@@ -190,16 +189,16 @@ def policy_hook(
             idx = text.lower().find(word.lower(), pos)
             if idx == -1:
                 return -1
-            
+
             # Check left boundary
             left_ok = idx == 0 or text[idx - 1] in _BOUNDARY_CHARS
-            # Check right boundary  
+            # Check right boundary
             right_ok = idx + len(word) >= len(text) or text[idx + len(word)] in _BOUNDARY_CHARS
-            
+
             if left_ok and right_ok:
                 return idx
             pos = idx + 1
-    
+
     def hook(context: HookContext) -> HookOutcome:
         if context.tool_name == "bash":
             command = context.arguments.get("command", "")
@@ -238,19 +237,19 @@ def policy_hook(
 
 def path_traversal_hook(allowed_paths: list[str] | None = None) -> ConstraintHook:
     """Blocks path traversal attempts in file operations.
-    
+
     Integrates with security module to prevent directory escape attacks.
     """
     allowed = allowed_paths or ["."]
-    
+
     def hook(context: HookContext) -> HookOutcome:
         if context.tool_name not in ("read_file", "write_file", "file_exists"):
             return HookOutcome(allow=True, reason="ok", severity=HookSeverity.ALLOW)
-        
+
         path_arg = context.arguments.get("path", "")
         if not path_arg:
             return HookOutcome(allow=True, reason="ok", severity=HookSeverity.ALLOW)
-        
+
         # Check for path traversal patterns
         normalized = os.path.normpath(path_arg)
         if ".." in path_arg or normalized.startswith(".."):
@@ -259,34 +258,34 @@ def path_traversal_hook(allowed_paths: list[str] | None = None) -> ConstraintHoo
                 reason=f"Path traversal blocked: '{path_arg}'",
                 severity=HookSeverity.BLOCK,
             )
-        
+
         # Check if within allowed paths
         abs_path = os.path.abspath(normalized)
         for allowed_path in allowed:
             allowed_abs = os.path.abspath(allowed_path)
             if abs_path.startswith(allowed_abs):
                 return HookOutcome(allow=True, reason="ok", severity=HookSeverity.ALLOW)
-        
+
         return HookOutcome(
             allow=False,
             reason=f"Path outside allowed directories: '{path_arg}'",
             severity=HookSeverity.BLOCK,
         )
-    
+
     return hook
 
 
 def file_size_hook(max_size_mb: float = 10.0) -> ConstraintHook:
     """Blocks file operations that exceed size limits.
-    
+
     Prevents resource exhaustion from oversized file operations.
     """
     max_bytes = max_size_mb * 1024 * 1024
-    
+
     def hook(context: HookContext) -> HookOutcome:
         if context.tool_name not in ("read_file", "write_file"):
             return HookOutcome(allow=True, reason="ok", severity=HookSeverity.ALLOW)
-        
+
         # For write operations, check content size
         if context.tool_name == "write_file":
             content = context.arguments.get("content", "")
@@ -296,7 +295,7 @@ def file_size_hook(max_size_mb: float = 10.0) -> ConstraintHook:
                     reason=f"File size exceeds limit of {max_size_mb}MB",
                     severity=HookSeverity.BLOCK,
                 )
-        
+
         # For read operations, check existing file size
         if context.tool_name == "read_file":
             path = context.arguments.get("path", "")
@@ -309,19 +308,19 @@ def file_size_hook(max_size_mb: float = 10.0) -> ConstraintHook:
                     )
             except OSError:
                 pass
-        
+
         return HookOutcome(allow=True, reason="ok", severity=HookSeverity.ALLOW)
-    
+
     return hook
 
 
 def network_policy_hook(allow_network: bool = False) -> ConstraintHook:
     """Blocks network-related tools unless explicitly allowed.
-    
+
     Security hook to prevent unauthorized network access.
     """
     network_tools = {"curl", "wget", "fetch", "download", "http_request"}
-    
+
     def hook(context: HookContext) -> HookOutcome:
         if not allow_network and context.tool_name in network_tools:
             return HookOutcome(
@@ -330,7 +329,7 @@ def network_policy_hook(allow_network: bool = False) -> ConstraintHook:
                 severity=HookSeverity.BLOCK,
             )
         return HookOutcome(allow=True, reason="ok", severity=HookSeverity.ALLOW)
-    
+
     return hook
 
 
@@ -342,7 +341,7 @@ def create_security_pipeline(
     destructive_tools: list[str] | None = None,
 ) -> HookPipeline:
     """Create a pre-configured security pipeline with all security hooks.
-    
+
     Integrates existing security modules into harness constraints:
     - Path traversal protection
     - File size limits
@@ -351,14 +350,14 @@ def create_security_pipeline(
     - Permission gating for destructive tools
     """
     pipeline = HookPipeline()
-    
+
     # PRE_VALIDATE stage: Check permissions and policies
     pipeline.add_hook(HookStage.PRE_VALIDATE, permission_gate_hook(destructive_tools))
     pipeline.add_hook(HookStage.PRE_VALIDATE, policy_hook(blocked_commands))
     pipeline.add_hook(HookStage.PRE_VALIDATE, path_traversal_hook(allowed_paths))
     pipeline.add_hook(HookStage.PRE_VALIDATE, network_policy_hook(allow_network))
-    
+
     # PRE_MODIFY stage: Enforce size limits
     pipeline.add_hook(HookStage.PRE_MODIFY, file_size_hook(max_file_size_mb))
-    
+
     return pipeline

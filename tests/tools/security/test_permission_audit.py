@@ -1,13 +1,9 @@
 """Tests for the permission auditing module."""
 
-import os
-import stat
-from pathlib import Path
 
-import pytest
 
+from vibe.tools.security.audit import AuditSeverity, SecurityAuditLogger
 from vibe.tools.security.permission_audit import PermissionAuditor
-from vibe.tools.security.audit import SecurityAuditLogger, AuditSeverity
 
 
 class TestPermissionAuditor:

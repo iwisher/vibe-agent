@@ -7,8 +7,8 @@ with severity levels and command normalization.
 import re
 import unicodedata
 from dataclasses import dataclass
-from enum import Enum, auto
-from typing import Any, Callable, Optional
+from enum import Enum
+from typing import Any, Optional
 
 
 class PatternSeverity(Enum):
@@ -175,7 +175,7 @@ class PatternEngine:
         for p in self._patterns:
             try:
                 self._compiled[p["id"]] = re.compile(p["pattern"], re.IGNORECASE)
-            except re.error as exc:
+            except re.error:
                 # Skip invalid patterns but log
                 self._compiled[p["id"]] = None  # type: ignore[assignment]
 

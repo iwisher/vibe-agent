@@ -1,9 +1,10 @@
 """Tests for Agent-as-Judge evaluation system."""
 
-import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
-from vibe.evals.judge import AgentJudge, JudgmentRubric, JudgmentResult, DEFAULT_RUBRICS
+import pytest
+
+from vibe.evals.judge import AgentJudge, JudgmentRubric
 
 
 class MockLLMClient:
@@ -176,7 +177,7 @@ class TestAgentJudge:
         # score = 32.5/32.5 * 100 = 100
         scores = {"correctness": 5.0, "completeness": 5.0, "safety": 5.0, "helpfulness": 5.0}
         # Use the internal calculation
-        total_weight = sum(r.weight for r in judge.rubrics)
+        sum(r.weight for r in judge.rubrics)
         weighted_sum = sum(scores.get(r.name, 0) * r.weight for r in judge.rubrics)
         max_possible = sum(r.max_score * r.weight for r in judge.rubrics)
         overall = weighted_sum / max_possible * 100

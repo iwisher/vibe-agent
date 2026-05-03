@@ -7,10 +7,8 @@ wiki not initialized.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from typer.testing import CliRunner
 
 from vibe.cli.main import app

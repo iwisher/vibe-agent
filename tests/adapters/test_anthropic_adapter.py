@@ -2,7 +2,6 @@
 
 import json
 
-import pytest
 from vibe.adapters.anthropic import AnthropicAdapter
 from vibe.core.llm_types import LLMResponse
 

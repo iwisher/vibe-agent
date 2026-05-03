@@ -1,6 +1,5 @@
 """Tests for multi-provider benchmarking."""
 
-import pytest
 
 from vibe.evals.multi_provider_benchmark import (
     BenchmarkScorecard,

@@ -1,6 +1,5 @@
 """Tests for DAG-based task planner and executor."""
 
-import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
@@ -9,10 +8,9 @@ from vibe.harness.dag_planner import (
     DAGExecutor,
     DAGNode,
     DAGNodeStatus,
-    DAGPlanResult,
     DAGPlanner,
+    DAGPlanResult,
 )
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -234,7 +232,7 @@ class TestDAGExecutor:
         dag.root_nodes = [nid for nid, n in dag.nodes.items() if n.depth == 0]
 
         executor = DAGExecutor(mock_tool_executor)
-        results = await executor.execute(dag)
+        await executor.execute(dag)
 
         # bash fails but read_file still runs (independent at root level)
         assert dag.nodes["bash_0"].status == DAGNodeStatus.FAILED

@@ -4,9 +4,9 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from vibe.harness.orchestration.sync_delegate import SyncDelegate, DelegateTask
-from vibe.core.query_loop import QueryLoop
 from vibe.core.model_gateway import LLMClient
+from vibe.core.query_loop import QueryLoop
+from vibe.harness.orchestration.sync_delegate import DelegateTask, SyncDelegate
 from vibe.tools.tool_system import ToolSystem
 
 

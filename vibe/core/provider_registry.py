@@ -10,8 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from vibe.adapters.base import BaseLLMAdapter
-from vibe.adapters.registry import ADAPTER_REGISTRY, get_adapter
-from vibe.core.llm_types import LLMResponse
+from vibe.adapters.registry import get_adapter
 from vibe.core.model_gateway import LLMClient
 
 
