@@ -139,13 +139,13 @@ This document tracks the progress of Vibe Agent, from its core foundation to fut
 ## 🖥️ Phase 5: Observability & Ecosystem
 
 ### 5.1 React Trace Dashboard
-- [ ] FastAPI backend serving trace data
-- [ ] React frontend: session timeline, wiki graph, skill waterfall, telemetry
-- [ ] CLI: `vibe dashboard` to launch
+- [x] FastAPI backend serving trace data
+- [x] React frontend: session timeline, wiki graph, skill waterfall, telemetry
+- [x] CLI: `vibe dashboard` to launch
 
 ### 5.2 Shadow Workspace Rollbacks
-- [ ] Hidden git branch `vibe/shadow-<session-id>` before write-heavy tasks
-- [ ] `vibe rollback` to restore on ERROR/INCOMPLETE
+- [x] Hidden git branch `vibe/shadow-<session-id>` before write-heavy tasks
+- [x] `vibe rollback` to restore on ERROR/INCOMPLETE
 
 ### 5.3 CI/CD Integration
 - [x] GitHub Action for eval suite with regression gate
