@@ -722,6 +722,62 @@ def memory_status():
     console.print(table)
 
 
+@memory_app.command("import")
+def import_cmd(
+    path: str = typer.Argument(..., help="Path to the file or directory to ingest"),
+):
+    """Import documents (PDF, MD, DOCX, etc.) into the Tripartite Memory System.
+    
+    Uses IBM Docling under the hood to semantically extract and format documents.
+    """
+    import asyncio
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+    from vibe.cli.main import DEFAULT_CONFIG, QueryLoopFactory
+    
+    # Initialize the wiki and extractor via factory
+    factory = QueryLoopFactory(
+        base_url=DEFAULT_CONFIG.llm.base_url,
+        model=DEFAULT_CONFIG.llm.default_model,
+        api_key=DEFAULT_CONFIG.resolve_api_key(),
+        config=DEFAULT_CONFIG,
+    )
+    wiki, pageindex, telemetry = factory._create_tripartite(DEFAULT_CONFIG.memory)
+    if not wiki:
+        console.print("[red]Memory system is not enabled or failed to initialize.[/red]")
+        raise typer.Exit(1)
+        
+    try:
+        from vibe.memory.knowledge_extractor import KnowledgeExtractor
+        from vibe.memory.ingestion.worker import IngestionWorker
+    except ImportError as e:
+        console.print(f"[red]Missing dependencies: {e}[/red]")
+        console.print("Make sure you install the ingest extras: pip install vibe-agent[ingest] or docling")
+        raise typer.Exit(1)
+        
+    extractor = KnowledgeExtractor(
+        wiki=wiki,
+        pageindex=pageindex,
+        telemetry=telemetry,
+        llm_client=factory.create_llm(),
+    )
+    worker = IngestionWorker(extractor=extractor)
+    
+    async def run_import():
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            transient=True,
+        ) as progress:
+            progress.add_task(description=f"Parsing and ingesting {path} via Docling...", total=None)
+            try:
+                pages_created = await worker.ingest_file(path)
+                console.print(f"[green]Successfully ingested {path}. Created {pages_created} Wiki Pages.[/green]")
+            except Exception as e:
+                console.print(f"[red]Import failed: {e}[/red]")
+                
+    asyncio.run(run_import())
+
+
 # --- Session sub-commands (Phase 3.2) ---
 
 @session_app.command("list")

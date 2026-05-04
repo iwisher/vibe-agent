@@ -109,10 +109,10 @@ This document tracks the progress of Vibe Agent, from its core foundation to fut
 - [x] Structured ContextPlan consumed by QueryLoop
 
 ### 3.6 Bulk Knowledge Ingestion (PDF/MD)
-- [ ] Document parser pipeline using IBM U local build (e.g., IBM Docling) to convert all `.pdf` files directly to `.md`, ensuring native compatibility with the Tripartite Memory System
-- [ ] Semantic chunking strategy for breaking down massive documents
-- [ ] Ingestion worker to pipe chunks through the `KnowledgeExtractor` to generate structured Wiki Pages
-- [ ] CLI command: `vibe memory import <path-to-dir-or-file> --type [pdf|md]`
+- [x] Document parser pipeline using IBM U local build (e.g., IBM Docling) to convert all `.pdf` files directly to `.md`, ensuring native compatibility with the Tripartite Memory System
+- [x] Semantic chunking strategy for breaking down massive documents
+- [x] Ingestion worker to pipe chunks through the `KnowledgeExtractor` to generate structured Wiki Pages
+- [x] CLI command: `vibe memory import <path-to-dir-or-file> --type [pdf|md]`
 
 ---
 
