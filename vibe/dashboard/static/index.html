@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vibe Agent Dashboard</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f0f23;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+        .app {
+            display: flex;
+            height: 100vh;
+        }
+        .sidebar {
+            width: 240px;
+            background: #1a1a2e;
+            border-right: 1px solid #2a2a4a;
+            padding: 20px 0;
+        }
+        .sidebar h1 {
+            font-size: 18px;
+            padding: 0 20px 20px;
+            color: #7ee787;
+            border-bottom: 1px solid #2a2a4a;
+        }
+        .nav-item {
+            padding: 12px 20px;
+            cursor: pointer;
+            transition: background 0.2s;
+            border-left: 3px solid transparent;
+        }
+        .nav-item:hover {
+            background: #252545;
+        }
+        .nav-item.active {
+            background: #252545;
+            border-left-color: #7ee787;
+            color: #7ee787;
+        }
+        .main {
+            flex: 1;
+            overflow: auto;
+            padding: 24px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        .header h2 {
+            font-size: 24px;
+            font-weight: 600;
+        }
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .card {
+            background: #1a1a2e;
+            border: 1px solid #2a2a4a;
+            border-radius: 8px;
+            padding: 16px;
+        }
+        .card h3 {
+            font-size: 14px;
+            color: #888;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .card .value {
+            font-size: 32px;
+            font-weight: 700;
+            color: #7ee787;
+        }
+        .card .delta {
+            font-size: 12px;
+            color: #888;
+            margin-top: 4px;
+        }
+        .session-list {
+            background: #1a1a2e;
+            border: 1px solid #2a2a4a;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .session-row {
+            display: flex;
+            padding: 12px 16px;
+            border-bottom: 1px solid #2a2a4a;
+            align-items: center;
+            gap: 16px;
+        }
+        .session-row:last-child {
+            border-bottom: none;
+        }
+        .session-row:hover {
+            background: #252545;
+        }
+        .badge {
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .badge-completed { background: #1a4a2a; color: #7ee787; }
+        .badge-error { background: #4a1a1a; color: #ff6b6b; }
+        .badge-running { background: #1a3a5a; color: #74b9ff; }
+        .badge-incomplete { background: #4a3a1a; color: #fdcb6e; }
+        .timeline {
+            position: relative;
+            padding-left: 24px;
+        }
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 7px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: #2a2a4a;
+        }
+        .timeline-item {
+            position: relative;
+            padding: 12px 0;
+            padding-left: 16px;
+        }
+        .timeline-item::before {
+            content: '';
+            position: absolute;
+            left: -20px;
+            top: 16px;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #7ee787;
+        }
+        .timeline-item.user::before { background: #74b9ff; }
+        .timeline-item.assistant::before { background: #7ee787; }
+        .timeline-item.tool::before { background: #fdcb6e; }
+        .timeline-item.error::before { background: #ff6b6b; }
+        .chart-container {
+            background: #1a1a2e;
+            border: 1px solid #2a2a4a;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        .live-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            background: #1a4a2a;
+            border-radius: 12px;
+            font-size: 12px;
+            color: #7ee787;
+        }
+        .live-indicator .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #7ee787;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        .wiki-graph {
+            width: 100%;
+            height: 500px;
+            background: #1a1a2e;
+            border: 1px solid #2a2a4a;
+            border-radius: 8px;
+        }
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 200px;
+            color: #888;
+        }
+        .error {
+            background: #4a1a1a;
+            color: #ff6b6b;
+            padding: 16px;
+            border-radius: 8px;
+            margin: 16px 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        const API_BASE = '';
+        const WS_URL = `ws://${window.location.host}/ws/live`;
+
+        // ── Navigation ──
+        function Sidebar({ activeView, setView }) {
+            const items = [
+                { id: 'overview', label: 'Overview' },
+                { id: 'sessions', label: 'Sessions' },
+                { id: 'wiki', label: 'Wiki Graph' },
+                { id: 'telemetry', label: 'Telemetry' },
+                { id: 'skills', label: 'Skills' },
+                { id: 'live', label: 'Live Monitor' },
+            ];
+            return (
+                <div className="sidebar">
+                    <h1>🔮 Vibe Agent</h1>
+                    {items.map(item => (
+                        <div
+                            key={item.id}
+                            className={`nav-item ${activeView === item.id ? 'active' : ''}`}
+                            onClick={() => setView(item.id)}
+                        >
+                            {item.label}
+                        </div>
+                    ))}
+                </div>
+            );
+        }
+
+        // ── Overview ──
+        function Overview() {
+            const [stats, setStats] = useState({ sessions: 0, wiki: 0, skills: 0, errors: 0 });
+            const [loading, setLoading] = useState(true);
+
+            useEffect(() => {
+                Promise.all([
+                    fetch(`${API_BASE}/api/sessions`).then(r => r.json()),
+                    fetch(`${API_BASE}/api/wiki`).then(r => r.json()),
+                    fetch(`${API_BASE}/api/skills`).then(r => r.json()),
+                    fetch(`${API_BASE}/api/telemetry`).then(r => r.json()),
+                ]).then(([sessions, wiki, skills, telemetry]) => {
+                    const errorMetrics = telemetry.aggregates?.error_count;
+                    setStats({
+                        sessions: sessions.length,
+                        wiki: wiki.length,
+                        skills: skills.length,
+                        errors: errorMetrics ? Math.round(errorMetrics.sum) : 0,
+                    });
+                    setLoading(false);
+                }).catch(() => setLoading(false));
+            }, []);
+
+            if (loading) return <div className="loading">Loading...</div>;
+
+            return (
+                <div>
+                    <div className="header">
+                        <h2>Overview</h2>
+                    </div>
+                    <div className="card-grid">
+                        <div className="card">
+                            <h3>Total Sessions</h3>
+                            <div className="value">{stats.sessions}</div>
+                        </div>
+                        <div className="card">
+                            <h3>Wiki Pages</h3>
+                            <div className="value">{stats.wiki}</div>
+                        </div>
+                        <div className="card">
+                            <h3>Skills Installed</h3>
+                            <div className="value">{stats.skills}</div>
+                        </div>
+                        <div className="card">
+                            <h3>Total Errors</h3>
+                            <div className="value" style={{color: '#ff6b6b'}}>{stats.errors}</div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ── Sessions ──
+        function Sessions() {
+            const [sessions, setSessions] = useState([]);
+            const [selectedSession, setSelectedSession] = useState(null);
+            const [timeline, setTimeline] = useState([]);
+
+            useEffect(() => {
+                fetch(`${API_BASE}/api/sessions`)
+                    .then(r => r.json())
+                    .then(setSessions);
+            }, []);
+
+            const loadTimeline = (id) => {
+                setSelectedSession(id);
+                fetch(`${API_BASE}/api/sessions/${id}/timeline`)
+                    .then(r => r.json())
+                    .then(setTimeline);
+            };
+
+            const getBadgeClass = (state) => {
+                const map = {
+                    'COMPLETED': 'badge-completed',
+                    'ERROR': 'badge-error',
+                    'RUNNING': 'badge-running',
+                    'INCOMPLETE': 'badge-incomplete',
+                };
+                return map[state] || 'badge-running';
+            };
+
+            return (
+                <div>
+                    <div className="header">
+                        <h2>Sessions</h2>
+                    </div>
+                    <div style={{display: 'flex', gap: '16px'}}>
+                        <div style={{flex: 1}}>
+                            <div className="session-list">
+                                {sessions.map(s => (
+                                    <div
+                                        key={s.session_id}
+                                        className="session-row"
+                                        onClick={() => loadTimeline(s.session_id)}
+                                        style={{cursor: 'pointer', background: selectedSession === s.session_id ? '#252545' : ''}}
+                                    >
+                                        <span className={`badge ${getBadgeClass(s.state)}`}>{s.state}</span>
+                                        <span style={{fontFamily: 'monospace', fontSize: '12px'}}>{s.session_id.slice(0, 16)}...</span>
+                                        <span style={{marginLeft: 'auto', color: '#888', fontSize: '12px'}}>
+                                            {s.message_count} msgs · {s.model}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                        <div style={{flex: 1}}>
+                            {selectedSession && (
+                                <div>
+                                    <h3 style={{marginBottom: '12px'}}>Timeline</h3>
+                                    <div className="timeline">
+                                        {timeline.map((event, i) => (
+                                            <div key={i} className={`timeline-item ${event.event_type.split(':')[1] || ''}`}>
+                                                <div style={{fontSize: '12px', color: '#888'}}>{event.timestamp}</div>
+                                                <div style={{fontSize: '13px', marginTop: '4px'}}>
+                                                    {event.event_type}: {event.data?.content_preview || JSON.stringify(event.data).slice(0, 100)}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // ── Wiki Graph (D3-like simple force layout) ──
+        function WikiGraph() {
+            const [pages, setPages] = useState([]);
+            const canvasRef = useRef(null);
+
+            useEffect(() => {
+                fetch(`${API_BASE}/api/wiki`)
+                    .then(r => r.json())
+                    .then(setPages);
+            }, []);
+
+            useEffect(() => {
+                if (!pages.length || !canvasRef.current) return;
+                const canvas = canvasRef.current;
+                const ctx = canvas.getContext('2d');
+                const w = canvas.width = canvas.offsetWidth;
+                const h = canvas.height = canvas.offsetHeight;
+
+                // Simple force-directed layout
+                const nodes = pages.map((p, i) => ({
+                    x: w/2 + Math.cos(i * 2 * Math.PI / pages.length) * 150,
+                    y: h/2 + Math.sin(i * 2 * Math.PI / pages.length) * 150,
+                    vx: 0, vy: 0,
+                    ...p
+                }));
+
+                const links = [];
+                for (let i = 0; i < nodes.length; i++) {
+                    for (let j = i + 1; j < nodes.length; j++) {
+                        const shared = nodes[i].tags.filter(t => nodes[j].tags.includes(t));
+                        if (shared.length > 0) {
+                            links.push({ source: i, target: j, strength: shared.length });
+                        }
+                    }
+                }
+
+                let running = true;
+                const animate = () => {
+                    if (!running) return;
+                    ctx.clearRect(0, 0, w, h);
+
+                    // Forces
+                    for (let i = 0; i < nodes.length; i++) {
+                        for (let j = i + 1; j < nodes.length; j++) {
+                            const dx = nodes[j].x - nodes[i].x;
+                            const dy = nodes[j].y - nodes[i].y;
+                            const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+                            const force = 2000 / (dist * dist);
+                            const fx = (dx / dist) * force;
+                            const fy = (dy / dist) * force;
+                            nodes[i].vx -= fx; nodes[i].vy -= fy;
+                            nodes[j].vx += fx; nodes[j].vy += fy;
+                        }
+                    }
+
+                    // Link attraction
+                    links.forEach(link => {
+                        const s = nodes[link.source];
+                        const t = nodes[link.target];
+                        const dx = t.x - s.x;
+                        const dy = t.y - s.y;
+                        const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+                        const force = (dist - 100) * 0.01 * link.strength;
+                        const fx = (dx / dist) * force;
+                        const fy = (dy / dist) * force;
+                        s.vx += fx; s.vy += fy;
+                        t.vx -= fx; t.vy -= fy;
+                    });
+
+                    // Center gravity
+                    nodes.forEach(n => {
+                        n.vx += (w/2 - n.x) * 0.001;
+                        n.vy += (h/2 - n.y) * 0.001;
+                        n.vx *= 0.9; n.vy *= 0.9;
+                        n.x += n.vx; n.y += n.vy;
+                        n.x = Math.max(30, Math.min(w-30, n.x));
+                        n.y = Math.max(30, Math.min(h-30, n.y));
+                    });
+
+                    // Draw links
+                    ctx.strokeStyle = '#2a2a4a';
+                    ctx.lineWidth = 1;
+                    links.forEach(link => {
+                        ctx.beginPath();
+                        ctx.moveTo(nodes[link.source].x, nodes[link.source].y);
+                        ctx.lineTo(nodes[link.target].x, nodes[link.target].y);
+                        ctx.stroke();
+                    });
+
+                    // Draw nodes
+                    nodes.forEach(n => {
+                        ctx.beginPath();
+                        ctx.arc(n.x, n.y, 20, 0, Math.PI * 2);
+                        ctx.fillStyle = n.verification_status === 'verified' ? '#1a4a2a' : '#4a3a1a';
+                        ctx.fill();
+                        ctx.strokeStyle = n.verification_status === 'verified' ? '#7ee787' : '#fdcb6e';
+                        ctx.lineWidth = 2;
+                        ctx.stroke();
+
+                        ctx.fillStyle = '#e0e0e0';
+                        ctx.font = '11px sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(n.title.slice(0, 15), n.x, n.y + 4);
+                    });
+
+                    requestAnimationFrame(animate);
+                };
+                animate();
+
+                return () => { running = false; };
+            }, [pages]);
+
+            return (
+                <div>
+                    <div className="header">
+                        <h2>Wiki Knowledge Graph</h2>
+                    </div>
+                    <canvas ref={canvasRef} className="wiki-graph" />
+                </div>
+            );
+        }
+
+        // ── Telemetry ──
+        function Telemetry() {
+            const [telemetry, setTelemetry] = useState({ metrics: [], aggregates: {} });
+            const chartRef = useRef(null);
+
+            useEffect(() => {
+                fetch(`${API_BASE}/api/telemetry`)
+                    .then(r => r.json())
+                    .then(setTelemetry);
+            }, []);
+
+            useEffect(() => {
+                if (!telemetry.metrics.length || !chartRef.current) return;
+                const ctx = chartRef.current.getContext('2d');
+                const latencyData = telemetry.metrics
+                    .filter(m => m.metric_name === 'latency_ms')
+                    .slice(-50)
+                    .map(m => m.value);
+
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: latencyData.map((_, i) => i),
+                        datasets: [{
+                            label: 'Latency (ms)',
+                            data: latencyData,
+                            borderColor: '#7ee787',
+                            backgroundColor: 'rgba(126, 231, 135, 0.1)',
+                            tension: 0.4,
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: { legend: { display: false } },
+                        scales: {
+                            x: { display: false },
+                            y: { grid: { color: '#2a2a4a' }, ticks: { color: '#888' } }
+                        }
+                    }
+                });
+            }, [telemetry]);
+
+            return (
+                <div>
+                    <div className="header">
+                        <h2>Telemetry</h2>
+                    </div>
+                    <div className="card-grid">
+                        {Object.entries(telemetry.aggregates).map(([name, agg]) => (
+                            <div className="card" key={name}>
+                                <h3>{name}</h3>
+                                <div className="value">{agg.avg?.toFixed(1) || '0'}</div>
+                                <div className="delta">avg · {agg.count} samples · min {agg.min?.toFixed(1)} · max {agg.max?.toFixed(1)}</div>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="chart-container">
+                        <canvas ref={chartRef} style={{maxHeight: '300px'}} />
+                    </div>
+                </div>
+            );
+        }
+
+        // ── Skills ──
+        function Skills() {
+            const [skills, setSkills] = useState([]);
+
+            useEffect(() => {
+                fetch(`${API_BASE}/api/skills`)
+                    .then(r => r.json())
+                    .then(setSkills);
+            }, []);
+
+            return (
+                <div>
+                    <div className="header">
+                        <h2>Skills</h2>
+                    </div>
+                    <div className="session-list">
+                        {skills.map(s => (
+                            <div key={s.name} className="session-row">
+                                <span style={{fontWeight: 600}}>{s.name}</span>
+                                <span className="badge badge-completed">v{s.version}</span>
+                                <span style={{color: '#888', fontSize: '12px', marginLeft: 'auto'}}>{s.description}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
+        // ── Live Monitor ──
+        function LiveMonitor() {
+            const [connected, setConnected] = useState(false);
+            const [messages, setMessages] = useState([]);
+            const wsRef = useRef(null);
+
+            useEffect(() => {
+                const ws = new WebSocket(WS_URL);
+                wsRef.current = ws;
+
+                ws.onopen = () => setConnected(true);
+                ws.onclose = () => setConnected(false);
+                ws.onmessage = (e) => {
+                    const data = JSON.parse(e.data);
+                    setMessages(prev => [...prev.slice(-49), data]);
+                };
+
+                return () => ws.close();
+            }, []);
+
+            return (
+                <div>
+                    <div className="header">
+                        <h2>Live Monitor</h2>
+                        <div className="live-indicator">
+                            <div className="dot" />
+                            {connected ? 'Connected' : 'Disconnected'}
+                        </div>
+                    </div>
+                    <div className="session-list">
+                        {messages.map((m, i) => (
+                            <div key={i} className="session-row" style={{fontFamily: 'monospace', fontSize: '12px'}}>
+                                <span style={{color: '#888'}}>{new Date().toLocaleTimeString()}</span>
+                                <span>{JSON.stringify(m).slice(0, 200)}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        }
+
+        // ── App ──
+        function App() {
+            const [view, setView] = useState('overview');
+
+            const views = {
+                overview: Overview,
+                sessions: Sessions,
+                wiki: WikiGraph,
+                telemetry: Telemetry,
+                skills: Skills,
+                live: LiveMonitor,
+            };
+
+            const Component = views[view] || Overview;
+
+            return (
+                <div className="app">
+                    <Sidebar activeView={view} setView={setView} />
+                    <div className="main">
+                        <Component />
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>

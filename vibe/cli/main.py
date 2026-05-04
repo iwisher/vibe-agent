@@ -873,6 +873,140 @@ def session_resume(
         raise typer.Exit(code=1)
 
 
+# --- Dashboard sub-commands (Phase 5.1) ---
+
+dashboard_app = typer.Typer(help="Launch web dashboard for session observability")
+app.add_typer(dashboard_app, name="dashboard")
+
+@dashboard_app.command("start")
+def dashboard_start(
+    port: int = typer.Option(8080, "--port", "-p", help="Port to run dashboard on"),
+    host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host to bind to"),
+    no_browser: bool = typer.Option(False, "--no-browser", help="Don't open browser automatically"),
+):
+    """Launch the Vibe Agent trace dashboard (FastAPI + React)."""
+    import webbrowser
+    from vibe.dashboard.server import run_server
+
+    url = f"http://{host}:{port}"
+    console.print(f"[green]Starting dashboard at {url}...[/green]")
+
+    if not no_browser:
+        # Open browser after a short delay to let server start
+        import threading
+        def open_browser():
+            import time
+            time.sleep(1.5)
+            webbrowser.open(url)
+        threading.Thread(target=open_browser, daemon=True).start()
+
+    try:
+        run_server(host=host, port=port)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Dashboard stopped.[/yellow]")
+
+
+# --- Shadow workspace sub-commands (Phase 5.2) ---
+
+shadow_app = typer.Typer(help="Shadow workspace rollback management")
+app.add_typer(shadow_app, name="shadow")
+
+@shadow_app.command("list")
+def shadow_list():
+    """List all shadow branches (workspace checkpoints)."""
+    from vibe.tools.git_shadow import ShadowBranchManager
+
+    manager = ShadowBranchManager()
+    shadows = manager.list_shadows()
+
+    if not shadows:
+        console.print("[dim]No shadow branches found. Run `vibe shadow create` before write-heavy tasks.[/dim]")
+        return
+
+    table = Table(title="Shadow Branches")
+    table.add_column("Session ID", style="cyan")
+    table.add_column("Branch", style="dim")
+    table.add_column("Original", style="magenta")
+    table.add_column("Restorable", style="bold")
+
+    for s in shadows:
+        table.add_row(
+            s.session_id[:16],
+            s.branch_name,
+            s.original_branch,
+            "[green]yes[/green]" if s.restorable else "[red]no[/red]",
+        )
+    console.print(table)
+
+
+@shadow_app.command("create")
+def shadow_create(
+    session_id: str = typer.Argument(..., help="Session ID to create shadow for"),
+):
+    """Create a shadow branch for the current workspace state."""
+    from vibe.tools.git_shadow import ShadowBranchManager
+
+    manager = ShadowBranchManager()
+    shadow = manager.create_shadow(session_id)
+
+    if shadow is None:
+        console.print("[yellow]Not in a git repository or git not available. Shadow not created.[/yellow]")
+        raise typer.Exit(code=1)
+
+    console.print(f"[green]✓[/green] Created shadow branch [bold]{shadow.branch_name}[/bold]")
+    console.print(f"  Original branch: {shadow.original_branch}")
+    console.print(f"  Uncommitted changes: {'yes' if shadow.has_uncommitted_changes else 'no'}")
+
+
+@shadow_app.command("restore")
+def shadow_restore(
+    session_id: str = typer.Argument(..., help="Session ID to restore from shadow"),
+):
+    """Restore workspace from a shadow branch."""
+    from vibe.tools.git_shadow import ShadowBranchManager
+
+    manager = ShadowBranchManager()
+    success = manager.restore_shadow(session_id)
+
+    if success:
+        console.print(f"[green]✓[/green] Restored workspace from shadow for session {session_id[:16]}")
+        console.print("[yellow]You are now on the shadow branch. Use `git checkout <branch>` to return to original.[/yellow]")
+    else:
+        console.print(f"[red]Failed to restore shadow for session {session_id[:16]}.[/red]")
+        raise typer.Exit(code=1)
+
+
+@shadow_app.command("clean")
+def shadow_clean(
+    days: int = typer.Option(7, "--older-than", "-d", help="Remove shadows older than N days"),
+):
+    """Clean up old shadow branches."""
+    from vibe.tools.git_shadow import ShadowBranchManager
+
+    manager = ShadowBranchManager()
+    removed = manager.clean_shadows(older_than_days=days)
+    console.print(f"[green]Removed {removed} shadow branches older than {days} days.[/green]")
+
+
+@shadow_app.command("rollback")
+def shadow_rollback(
+    session_id: str | None = typer.Argument(None, help="Session ID to rollback (default: latest)"),
+):
+    """Alias for `vibe shadow restore` — restore workspace from latest shadow."""
+    if session_id is None:
+        from vibe.tools.git_shadow import ShadowBranchManager
+        manager = ShadowBranchManager()
+        shadows = manager.list_shadows()
+        if not shadows:
+            console.print("[red]No shadows found. Cannot rollback.[/red]")
+            raise typer.Exit(code=1)
+        session_id = shadows[-1].session_id
+        console.print(f"[dim]Rolling back latest shadow: {session_id[:16]}...[/dim]")
+
+    # Delegate to restore
+    shadow_restore(session_id)
+
+
 if __name__ == "__main__":
     app()
 

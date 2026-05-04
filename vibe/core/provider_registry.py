@@ -132,8 +132,8 @@ class ProviderRegistry:
                 default_model=cfg.get("default_model"),
                 cost_tier=cfg.get("cost_tier", "standard"),
                 max_context_tokens=int(cfg.get("max_context_tokens", 8000)),
-                cost_per_1k_prompt=float(cfg.get("cost_per_1k_prompt", 0.0)),
-                cost_per_1k_completion=float(cfg.get("cost_per_1k_completion", 0.0)),
+                cost_per_1k_prompt=float(cfg.get("cost_per_1k_prompt", cfg.get("cost_per_1k_input", 0.0))),
+                cost_per_1k_completion=float(cfg.get("cost_per_1k_completion", cfg.get("cost_per_1k_output", 0.0))),
                 extra_headers=cfg.get("extra_headers", {}),
             )
         return cls(providers)
@@ -147,5 +147,8 @@ class ProviderRegistry:
                 base_url=os.getenv("VIBE_BASE_URL", "http://localhost:11434"),
                 adapter_type="openai",
                 api_key_env_var="LLM_API_KEY",
+                cost_tier="free",
+                cost_per_1k_prompt=0.0,
+                cost_per_1k_completion=0.0,
             )
         })
