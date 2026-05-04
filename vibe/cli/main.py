@@ -883,13 +883,19 @@ def dashboard_start(
     port: int = typer.Option(8080, "--port", "-p", help="Port to run dashboard on"),
     host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host to bind to"),
     no_browser: bool = typer.Option(False, "--no-browser", help="Don't open browser automatically"),
+    no_auth: bool = typer.Option(False, "--no-auth", help="Disable token authentication (dev only)"),
 ):
     """Launch the Vibe Agent trace dashboard (FastAPI + React)."""
     import webbrowser
     from vibe.dashboard.server import run_server
 
-    url = f"http://{host}:{port}"
-    console.print(f"[green]Starting dashboard at {url}...[/green]")
+    url, token = run_server(host=host, port=port, enable_auth=not no_auth)
+    
+    if token:
+        console.print(f"[green]Starting dashboard at {url}[/green]")
+        console.print(f"[dim]Dashboard token: {token[:16]}... (pass via ?token= or X-Dashboard-Token header)[/dim]")
+    else:
+        console.print(f"[green]Starting dashboard at {url} (no auth)[/green]")
 
     if not no_browser:
         # Open browser after a short delay to let server start
@@ -901,7 +907,9 @@ def dashboard_start(
         threading.Thread(target=open_browser, daemon=True).start()
 
     try:
-        run_server(host=host, port=port)
+        import uvicorn
+        from vibe.dashboard.server import app
+        uvicorn.run(app, host=host, port=port, log_level="info")
     except KeyboardInterrupt:
         console.print("\n[yellow]Dashboard stopped.[/yellow]")
 

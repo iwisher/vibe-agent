@@ -95,12 +95,34 @@ class DashboardState:
             self.active_websockets -= disconnected
 
 # ────────────────────────────────
+# Project root discovery
+# ────────────────────────────────
+
+def _find_project_root(start_path: Path | None = None) -> Path:
+    """Find project root by looking for .vibe or .git markers.
+    
+    Traverses parent directories from start_path (or cwd) looking for
+    .vibe/ or .git/ directories. Falls back to cwd if no marker found.
+    """
+    path = start_path or Path(os.getcwd())
+    current = path.resolve()
+    
+    while current != current.parent:
+        if (current / ".vibe").exists() or (current / ".git").exists():
+            return current
+        current = current.parent
+    
+    # Fallback: return the starting path
+    return path.resolve()
+
+
+# ────────────────────────────────
 # FastAPI lifespan
 # ────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[dict, None]:
-    project_root = Path(os.getcwd())
+    project_root = _find_project_root()
     state = DashboardState(project_root)
     app.state.dashboard = state
     yield {"dashboard": state}
@@ -131,6 +153,47 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ────────────────────────────────
+# Simple token-based auth
+# ────────────────────────────────
+
+DASHBOARD_TOKEN: str | None = None
+
+def _generate_dashboard_token() -> str:
+    """Generate a one-time auth token for dashboard access."""
+    import secrets
+    return secrets.token_urlsafe(32)
+
+def _require_token(request: Request) -> bool:
+    """Check if request has valid dashboard token."""
+    global DASHBOARD_TOKEN
+    if DASHBOARD_TOKEN is None:
+        return True  # No token set = no auth required (dev mode)
+    
+    # Check query param
+    token = request.query_params.get("token", "")
+    # Check header
+    if not token:
+        token = request.headers.get("x-dashboard-token", "")
+    
+    return token == DASHBOARD_TOKEN
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """Require token for all API and dashboard endpoints."""
+    # Skip auth for static files and health checks
+    if request.url.path in ["/", "/health"] or request.url.path.startswith("/static/"):
+        return await call_next(request)
+    
+    if not _require_token(request):
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Invalid or missing dashboard token"},
+        )
+    
+    return await call_next(request)
 
 # ────────────────────────────────
 # API Endpoints
@@ -374,9 +437,31 @@ def _preview(text: str, max_len: int) -> str:
 # Entry point
 # ────────────────────────────────
 
-def run_server(host: str = "127.0.0.1", port: int = 8080) -> None:
+def run_server(host: str = "127.0.0.1", port: int = 8080, enable_auth: bool = True) -> tuple[str, str | None]:
+    """Start the dashboard server.
+    
+    Args:
+        host: Host to bind to.
+        port: Port to listen on.
+        enable_auth: If True, generates a one-time token printed to CLI.
+    
+    Returns:
+        Tuple of (url, token) where token may be None if auth disabled.
+    """
     import uvicorn
+    global DASHBOARD_TOKEN
+    
+    token = None
+    if enable_auth:
+        token = _generate_dashboard_token()
+        DASHBOARD_TOKEN = token
+    
+    url = f"http://{host}:{port}"
+    if token:
+        url += f"/?token={token}"
+    
     uvicorn.run(app, host=host, port=port, log_level="info")
+    return url, token
 
 if __name__ == "__main__":
     run_server()

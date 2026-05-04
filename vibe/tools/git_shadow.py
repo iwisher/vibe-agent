@@ -15,6 +15,15 @@ from pathlib import Path
 from typing import Optional
 
 
+def _sanitize_session_id(session_id: str) -> str:
+    """Sanitize session_id for safe use in git branch names.
+    
+    Only allows alphanumeric characters, hyphens, and underscores.
+    Replaces everything else with underscores.
+    """
+    return re.sub(r'[^a-zA-Z0-9_-]', '_', session_id)
+
+
 @dataclass
 class ShadowBranch:
     """Metadata for a shadow branch."""
@@ -63,9 +72,11 @@ class ShadowBranchManager:
             text=True,
             check=check,
         )
-
     def create_shadow(self, session_id: str) -> Optional[ShadowBranch]:
-        """Create a shadow branch for the current session.
+        """Create a shadow branch for the current workspace state.
+
+        Args:
+            session_id: Session identifier to associate with the shadow.
 
         Returns:
             ShadowBranch metadata, or None if git is not available.
@@ -73,41 +84,53 @@ class ShadowBranchManager:
         if not self._git_available:
             return None
 
-        branch_name = f"{self.SHADOW_PREFIX}{session_id}"
+        safe_session_id = _sanitize_session_id(session_id)
+        branch_name = f"vibe/shadow-{safe_session_id}"
+        timestamp = datetime.now(timezone.utc).isoformat()
 
         # Get current branch
-        try:
-            result = self._run_git(["branch", "--show-current"], check=False)
-            original_branch = result.stdout.strip() or "HEAD"
-        except Exception:
-            original_branch = "HEAD"
+        result = self._run_git(["branch", "--show-current"], check=False)
+        original_branch = result.stdout.strip() if result.returncode == 0 else "HEAD"
 
         # Check for uncommitted changes
         status_result = self._run_git(["status", "--porcelain"], check=False)
         has_changes = bool(status_result.stdout.strip())
 
-        # Stash changes if any
+        # Stash changes if any, capturing the stash ref
+        stash_ref = None
         if has_changes:
-            self._run_git(
-                ["stash", "push", "-m", f"vibe-shadow-{session_id}"],
+            stash_result = self._run_git(
+                ["stash", "push", "-m", f"vibe-shadow-{safe_session_id}"],
                 check=False,
             )
+            if stash_result.returncode == 0:
+                # Get the stash ref we just created
+                list_result = self._run_git(["stash", "list"], check=False)
+                if list_result.returncode == 0:
+                    # First line is the most recent stash
+                    lines = list_result.stdout.strip().split("\n")
+                    if lines and lines[0]:
+                        # Extract stash ref like stash@{0}
+                        stash_ref = lines[0].split(":")[0]
 
         # Create shadow branch from current state
         self._run_git(["branch", branch_name], check=False)
 
         # Apply stash back to original branch if we stashed
-        if has_changes:
+        if has_changes and stash_ref:
+            self._run_git(["stash", "pop", stash_ref], check=False)
+        elif has_changes:
+            # Fallback: try pop without ref (risky but better than leaving stashed)
             self._run_git(["stash", "pop"], check=False)
 
         return ShadowBranch(
             session_id=session_id,
             branch_name=branch_name,
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=timestamp,
             original_branch=original_branch,
             has_uncommitted_changes=has_changes,
+            restorable=True,
         )
-
     def restore_shadow(self, session_id: str) -> bool:
         """Restore workspace from a shadow branch.
 
@@ -120,7 +143,8 @@ class ShadowBranchManager:
         if not self._git_available:
             return False
 
-        branch_name = f"{self.SHADOW_PREFIX}{session_id}"
+        safe_session_id = _sanitize_session_id(session_id)
+        branch_name = f"{self.SHADOW_PREFIX}{safe_session_id}"
 
         # Check if branch exists
         branches_result = self._run_git(["branch", "--list", branch_name], check=False)
@@ -222,6 +246,17 @@ class ShadowBranchManager:
                     r"\bgit\s+clean\s+-[fd]",
                     r"\bfind\s+.*-delete",
                     r"\b\S+\s+>\s*\S+",  # output redirection (overwrites) - command > file
+                    r"\bpython\s+.*\b(open|write|remove|unlink|rmdir|shutil)",
+                    r"\bnode\s+.*\b(fs\.)",
+                    r"\bperl\s+.*\b(open|unlink|rmdir)",
+                    r"\bcurl\s+.*\b-o\b",
+                    r"\bwget\s+.*\b-O\b",
+                    r"\bmv\s+\S+",
+                    r"\bcp\s+\S+",
+                    r"\btouch\s+\S+",
+                    r"\bmkdir\s+-p",
+                    r"\bchmod\s+.*777",
+                    r"\bchown\s+",
                 ]
                 for pattern in destructive_patterns:
                     if re.search(pattern, cmd):
