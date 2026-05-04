@@ -40,7 +40,8 @@ The system must resolve paths mentioned in commands or use the `cwd` (Current Wo
 ### 4.1 `vibe/tools/security/approval_store.py` [NEW]
 - `check_approval(command_line: str, cwd: str) -> bool`
 - `add_approval(command_line: str, cwd: str, scope: str = "auto")`
-- Uses `filelock` to ensure atomic writes to the JSON store.
+- **Chain Verification**: Splitting command lines by `|`, `&&`, `;`, `>`, and `>>` to verify each segment independently.
+- **Redirect Validation**: Ensuring output redirection targets are within the approved path hierarchy.
 
 ### 4.2 `vibe/tools/security/human_approval.py` [MODIFY]
 - Integrate `ApprovalStore`.
@@ -50,13 +51,21 @@ The system must resolve paths mentioned in commands or use the `cwd` (Current Wo
 ### 4.3 `vibe/core/coordinators.py` [MODIFY]
 - Update `SecurityCoordinator` to pass `cwd` and `pattern_id` (if available) to the `request_approval` call.
 
-## 5. Security Considerations
+### 4.4 `vibe/tools/bash.py` [MODIFY]
+- **Shell Support**: Add an option to use `asyncio.create_subprocess_shell` when shell metacharacters are detected and the command has been approved.
+- Remove the "Hard Block" on metacharacters, delegating the safety decision to the `SecurityCoordinator`.
+
+## 5. Chain Verification Logic Details
+When a command string like `find . -name "*.py" | grep "TODO" > results.txt` is evaluated:
+1.  **Split**: The string is divided into units: `find . -name "*.py"`, `grep "TODO"`, and `results.txt`.
+2.  **Validate Units**:
+    - `find` is on `SAFE_COMMANDS` list.
+    - `grep` is on `SAFE_COMMANDS` list.
+    - `results.txt` is checked against the approved `root_path`.
+3.  **Result**: If all units pass, the entire chain is auto-approved.
+
+## 6. Security Considerations
 - **Non-Safe Commands**: Commands like `rm`, `mv`, `sudo`, or scripts (`./run.sh`) will NEVER use scoped base-command matching. They will continue to use exact-match "Always" approvals.
+- **Shell Injections**: By verifying every segment of a pipe, we prevent injection of dangerous commands (e.g., `ls | rm`) even if the first command is safe.
 - **Path Traversal**: Approved paths must be resolved to absolute paths to prevent `../` traversal tricks bypassing scoping.
 - **Fail-Closed**: If the JSON store is corrupted or inaccessible, the system defaults to prompting the user.
-
-## 6. Implementation Phases
-1. Implement `ApprovalStore` with JSON persistence.
-2. Update `HumanApprover` to use the store for "Always" logic.
-3. Update `SecurityCoordinator` to pass execution context (`cwd`).
-4. Add comprehensive tests for path scoping and safe command detection.
