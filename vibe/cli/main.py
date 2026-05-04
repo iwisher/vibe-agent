@@ -732,7 +732,8 @@ def import_cmd(
     """
     import asyncio
     from rich.progress import Progress, SpinnerColumn, TextColumn
-    from vibe.cli.main import DEFAULT_CONFIG, QueryLoopFactory
+    from vibe.core.query_loop_factory import QueryLoopFactory
+    from vibe.cli.main import DEFAULT_CONFIG
     
     # Initialize the wiki and extractor via factory
     factory = QueryLoopFactory(

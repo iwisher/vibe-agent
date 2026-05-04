@@ -202,11 +202,15 @@ class CostRouter:
         scorer: ComplexityScorer | None = None,
         default_tier: str = "standard",
         spend_limit: float | None = None,
+        spend_tracker: Any | None = None,
+        session_id: str | None = None,
     ):
         self.registry = provider_registry
         self.scorer = scorer or ComplexityScorer()
         self.default_tier = default_tier
         self.spend_limit = spend_limit  # in cost units; None = unlimited
+        self.spend_tracker = spend_tracker
+        self.session_id = session_id
 
     def route(
         self,
