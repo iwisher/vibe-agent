@@ -323,6 +323,7 @@ class SecurityCoordinator:
         result = self._human_approver.request_approval(
             command=command,
             description=f"{tool_name} tool call",
+            cwd=tool_args.get("cwd") or tool_args.get("path"),
         )
         if not result.approved:
             return SecurityCheckResult(

@@ -4,6 +4,8 @@ import shlex
 from pathlib import Path
 from typing import Any
 
+DEFAULT_STORE_PATH = Path.home() / ".vibe" / "approvals.json"
+
 SAFE_COMMANDS = {
     "ls", "find", "pwd", "du", "df", "stat",
     "cat", "head", "tail", "grep", "sort", "uniq", "wc", "jq"
@@ -15,7 +17,7 @@ class ApprovalStore:
     """Manages persistent command approvals in ~/.vibe/approvals.json."""
 
     def __init__(self, store_path: Path | None = None):
-        self.store_path = store_path
+        self.store_path = store_path or DEFAULT_STORE_PATH
         self.approvals = []
         if self.store_path and self.store_path.exists():
             self._load()

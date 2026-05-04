@@ -8,9 +8,20 @@ Fail-closed: timeout -> deny (not allow).
 
 import sys
 import threading
+import os
+import shlex
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
+
+try:
+    import termios
+    import tty
+except ImportError:
+    termios = None
+    tty = None
+
+from vibe.tools.security.approval_store import ApprovalStore
 
 
 class ApprovalChoice(Enum):
@@ -54,6 +65,7 @@ class HumanApprover:
         self.timeout_seconds = timeout_seconds
         self._session_approved_patterns: set[str] = set()
         self._session_approved_commands: set[str] = set()
+        self.store = ApprovalStore()
 
     def request_approval(
         self,
@@ -61,6 +73,7 @@ class HumanApprover:
         pattern_id: Optional[str] = None,
         description: str = "",
         severity: str = "warning",
+        cwd: Optional[str] = None,
     ) -> ApprovalResult:
         """Request human approval for a flagged command.
 
@@ -91,8 +104,18 @@ class HumanApprover:
                 pattern_id=pattern_id,
             )
 
+        # Check persistent approvals
+        check_cwd = cwd or os.getcwd()
+        if self.store.check_approval(command, check_cwd):
+            return ApprovalResult(
+                approved=True,
+                choice=ApprovalChoice.ALWAYS,
+                reason="Command approved permanently in this path hierarchy",
+                pattern_id=pattern_id,
+            )
+
         # Interactive prompt
-        return self._interactive_prompt(command, pattern_id, description, severity)
+        return self._interactive_prompt(command, pattern_id, description, severity, check_cwd)
 
     def _interactive_prompt(
         self,
@@ -100,6 +123,7 @@ class HumanApprover:
         pattern_id: Optional[str],
         description: str,
         severity: str,
+        cwd: str,
     ) -> ApprovalResult:
         """Show interactive prompt with timeout."""
         print(f"\n{'=' * 60}")
@@ -123,23 +147,23 @@ class HumanApprover:
             try:
                 # Use select for non-blocking input with timeout support
                 import select
-                if hasattr(select, 'poll'):
-                    # Use poll for better cross-platform support
-                    import termios
+                if termios and tty and sys.stdin.isatty():
                     old_settings = termios.tcgetattr(sys.stdin)
                     try:
                         tty.setcbreak(sys.stdin.fileno())
                         while not stop_event.is_set():
                             if select.select([sys.stdin], [], [], 0.1)[0]:
                                 char = sys.stdin.read(1)
-                                if char == '\n':
+                                if char == '\n' or char == '\r':
                                     break
                                 result.append(char)
                     finally:
                         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
                 else:
                     # Fallback to regular input
-                    result.append(input("Choice: ").strip().lower())
+                    print("Choice: ", end="", flush=True)
+                    line = sys.stdin.readline().strip().lower()
+                    result.append(line)
             except (EOFError, KeyboardInterrupt):
                 result.append("")
             event.set()
@@ -183,6 +207,10 @@ class HumanApprover:
                 pattern_id=pattern_id,
             )
         elif choice_str in ("a", "always"):
+            if self.store.is_safe_command(command):
+                self.store.add_scoped_approval(shlex.split(command)[0], cwd)
+            else:
+                self.store.add_exact_approval(command)
             return ApprovalResult(
                 approved=True,
                 choice=ApprovalChoice.ALWAYS,
@@ -192,7 +220,7 @@ class HumanApprover:
         elif choice_str in ("v", "view"):
             print(f"\nFull command:\n{command}\n")
             # Re-prompt
-            return self._interactive_prompt(command, pattern_id, description, severity)
+            return self._interactive_prompt(command, pattern_id, description, severity, cwd)
         else:
             # Default deny
             return ApprovalResult(
