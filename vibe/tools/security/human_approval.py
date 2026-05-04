@@ -104,6 +104,14 @@ class HumanApprover:
                 pattern_id=pattern_id,
             )
 
+        if command in self._session_approved_commands:
+            return ApprovalResult(
+                approved=True,
+                choice=ApprovalChoice.SESSION,
+                reason="Command approved for this session",
+                pattern_id=pattern_id,
+            )
+
         # Check persistent approvals
         check_cwd = cwd or os.getcwd()
         if self.store.check_approval(command, check_cwd):
@@ -200,6 +208,7 @@ class HumanApprover:
         elif choice_str in ("s", "session"):
             if pattern_id:
                 self._session_approved_patterns.add(pattern_id)
+            self._session_approved_commands.add(command)
             return ApprovalResult(
                 approved=True,
                 choice=ApprovalChoice.SESSION,
@@ -233,3 +242,8 @@ class HumanApprover:
     def is_auto_mode(self) -> bool:
         """Check if running in auto-approval mode."""
         return self.mode == ApprovalMode.AUTO
+
+    def reset_session(self) -> None:
+        """Clear all session-level approvals."""
+        self._session_approved_patterns.clear()
+        self._session_approved_commands.clear()

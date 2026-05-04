@@ -63,10 +63,9 @@ class BashTool(Tool):
         super().__init__(
             name="bash",
             description=(
-                "Execute bash commands. ONLY simple commands are supported. "
-                "Do NOT use pipes (|), redirects (>, >>), command chaining (&&, ;), "
-                "or variable expansion ($). If you need to perform multiple steps "
-                "or complex operations, use multiple tool calls."
+                "Execute bash commands. Simple commands are preferred, but pipes (|), "
+                "redirects (>, >>), and command chaining (&&, ;) are supported if approved. "
+                "Complex operations can be performed in a single tool call."
             ),
         )
         self.sandbox = sandbox or BashSandbox()
@@ -153,7 +152,7 @@ class BashTool(Tool):
 
         return re.sub(pattern, _repl, text)
 
-    async def execute(self, command: str, **kwargs) -> ToolResult:
+    async def execute(self, command: str, use_shell: bool = False, **kwargs) -> ToolResult:
         command = self._redirect_path(command)
         matched = self._is_dangerous(command)
         if matched:
@@ -170,34 +169,43 @@ class BashTool(Tool):
                 error="Command not in allowed_commands whitelist.",
             )
 
-        # PRIMARY defense: reject any command with unquoted shell metacharacters.
-        # We use create_subprocess_exec (not shell), so pipes, redirects,
-        # command chaining, and variable expansion are not supported.
+        # Check for shell metacharacters
         shell_char = self._has_unquoted_shell_chars(command)
-        if shell_char:
+        if shell_char and not use_shell:
+            # If metacharacters are present but use_shell wasn't granted, we default to exec
+            # but this will likely fail or behave unexpectedly if the user intended shell features.
+            # We log a warning but proceed with exec unless we want to be stricter.
+            # Actually, to maintain safety, we should still error if the user didn't grant shell.
             return ToolResult(
                 success=False,
                 content=None,
                 error=(
-                    f"Shell metacharacter '{shell_char}' detected. "
-                    "Only simple commands are supported (no pipes, redirects, "
-                    "command chaining, or variable expansion). "
-                    "Split complex operations into multiple tool calls."
+                    f"Shell metacharacter '{shell_char}' detected but shell mode not enabled. "
+                    "Ensure the command is approved for shell execution."
                 ),
             )
 
         try:
-            args = shlex.split(command)
-            if not args:
-                return ToolResult(success=False, content=None, error="Empty command.")
+            if use_shell:
+                proc = await asyncio.create_subprocess_shell(
+                    command,
+                    cwd=self.sandbox.working_dir,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    start_new_session=True,
+                )
+            else:
+                args = shlex.split(command)
+                if not args:
+                    return ToolResult(success=False, content=None, error="Empty command.")
 
-            proc = await asyncio.create_subprocess_exec(
-                *args,
-                cwd=self.sandbox.working_dir,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                start_new_session=True,
-            )
+                proc = await asyncio.create_subprocess_exec(
+                    *args,
+                    cwd=self.sandbox.working_dir,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    start_new_session=True,
+                )
             stdout_data, stderr_data = await asyncio.wait_for(
                 proc.communicate(), timeout=self.sandbox.timeout
             )

@@ -97,11 +97,75 @@ class ApprovalStore:
         })
         self._save()
 
+    def _split_command_chain(self, command_line: str) -> list[dict[str, Any]]:
+        """Split a command line into units and redirections.
+        
+        Returns a list of dicts: {'type': 'cmd'|'redirect', 'content': str}
+        """
+        try:
+            tokens = shlex.split(command_line)
+        except ValueError:
+            return []
+
+        units = []
+        current_unit = []
+        
+        i = 0
+        while i < len(tokens):
+            token = tokens[i]
+            if token in {"|", "&&", ";", "||"}:
+                if current_unit:
+                    units.append({"type": "cmd", "content": " ".join(current_unit)})
+                    current_unit = []
+            elif token in {">", ">>", "2>", "2>>"}:
+                if current_unit:
+                    units.append({"type": "cmd", "content": " ".join(current_unit)})
+                    current_unit = []
+                if i + 1 < len(tokens):
+                    units.append({"type": "redirect", "content": tokens[i+1]})
+                    i += 1
+            else:
+                current_unit.append(token)
+            i += 1
+        
+        if current_unit:
+            units.append({"type": "cmd", "content": " ".join(current_unit)})
+            
+        return units
+
     def check_approval(self, command_line: str, cwd: str) -> bool:
         """Check if a command is approved in the given context."""
         abs_cwd = str(Path(cwd).resolve())
+        
+        # 1. Exact match check (fast path)
+        for app in self.approvals:
+            if app.get("type") == "exact_match" and app.get("command") == command_line:
+                return True
+
+        # 2. Split into units for chain verification
+        units = self._split_command_chain(command_line)
+        if not units:
+            return False
+
+        # If it's a simple command, check it directly
+        if len(units) == 1 and units[0]["type"] == "cmd":
+            return self._check_single_unit_approval(units[0]["content"], abs_cwd)
+
+        # For chains, EVERY unit must be approved
+        for unit in units:
+            if unit["type"] == "cmd":
+                if not self._check_single_unit_approval(unit["content"], abs_cwd):
+                    return False
+            elif unit["type"] == "redirect":
+                if not self._is_path_in_hierarchy(unit["content"], abs_cwd):
+                    return False
+        
+        return True
+
+    def _check_single_unit_approval(self, command: str, abs_cwd: str) -> bool:
+        """Check if a single command unit is safe or approved."""
         try:
-            tokens = shlex.split(command_line)
+            tokens = shlex.split(command)
         except ValueError:
             return False
         if not tokens:
@@ -111,13 +175,30 @@ class ApprovalStore:
         if "/" in base:
             base = Path(base).name
 
-        for app in self.approvals:
-            if app.get("type") == "exact_match":
-                if app.get("command") == command_line:
-                    return True
-            elif app.get("type") == "scoped_base_cmd":
-                if app.get("command") == base:
+        # Check if it's a safe command
+        if self.is_safe_command(command):
+            # Safe commands are auto-approved if we are in an approved hierarchy for that base cmd
+            # or if it's globally safe (implied by being in SAFE_COMMANDS)
+            # Actually, the user wants "if all cmd in piped cmd are approved".
+            # So we check if the base cmd is approved for this hierarchy.
+            for app in self.approvals:
+                if app.get("type") == "scoped_base_cmd" and app.get("command") == base:
                     root = app.get("root_path", "")
-                    if abs_cwd == root or abs_cwd.startswith(root + os.sep) or (root == "/" and abs_cwd.startswith("/")):
+                    if self._is_path_in_hierarchy(abs_cwd, root):
                         return True
+        
+        # Also check for exact matches of this specific unit (less common but possible)
+        for app in self.approvals:
+            if app.get("type") == "exact_match" and app.get("command") == command:
+                return True
+                
         return False
+
+    def _is_path_in_hierarchy(self, target_path: str, root_path: str) -> bool:
+        """Check if target_path is within the root_path hierarchy."""
+        try:
+            abs_target = str(Path(target_path).resolve())
+            abs_root = str(Path(root_path).resolve())
+            return abs_target == abs_root or abs_target.startswith(abs_root + os.sep) or (abs_root == "/" and abs_target.startswith("/"))
+        except Exception:
+            return False

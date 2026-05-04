@@ -320,18 +320,24 @@ class SecurityCoordinator:
         if not isinstance(command, str):
             command = str(tool_args)
 
+        # Detect if shell execution is needed
+        has_shell = any(c in command for c in "|&;><$`")
+        
         result = self._human_approver.request_approval(
             command=command,
             description=f"{tool_name} tool call",
             cwd=tool_args.get("cwd") or tool_args.get("path"),
         )
-        if not result.approved:
-            return SecurityCheckResult(
-                allowed=False,
-                reason=result.reason or "Approval denied",
-                layer="human_approval",
-            )
-        return SecurityCheckResult(allowed=True)
+        if result.approved:
+            if has_shell:
+                tool_args["use_shell"] = True
+            return SecurityCheckResult(allowed=True)
+        
+        return SecurityCheckResult(
+            allowed=False,
+            reason=result.reason or "Approval denied",
+            layer="human_approval",
+        )
 
     def _check_smart_approver(self, tool_name: str, tool_args: dict[str, Any]) -> SecurityCheckResult:
         """Layer 4: LLM-based risk assessment."""
