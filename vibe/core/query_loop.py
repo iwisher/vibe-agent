@@ -64,6 +64,8 @@ class QueryResult:
     context_truncated: bool = False
     metrics: Metrics | None = None
     state: QueryState = QueryState.IDLE
+    is_status: bool = False
+    status_message: str = ""
 
 
 class QueryLoop:

@@ -77,6 +77,13 @@ async def test_run_error_response(mock_llm, tool_system):
     assert results[0].state == QueryState.ERROR
 
 
+def test_query_result_status_fields():
+    from vibe.core.query_loop import QueryResult
+    qr = QueryResult(is_status=True, status_message="Testing...")
+    assert qr.is_status is True
+    assert qr.status_message == "Testing..."
+
+
 @pytest.mark.asyncio
 async def test_hook_pipeline_veto(mock_llm, tool_system):
     mock_llm.complete.side_effect = [
