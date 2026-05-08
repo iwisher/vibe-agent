@@ -36,7 +36,7 @@ def tool_system():
 async def test_run_simple_response(mock_llm, tool_system):
     mock_llm.complete.return_value = LLMResponse(content="hello")
     loop = QueryLoop(llm_client=mock_llm, tool_system=tool_system)
-    results = [r async for r in loop.run("hi")]
+    results = [r async for r in loop.run("hi") if not r.is_status]
     assert len(results) == 1
     assert results[0].response == "hello"
     assert results[0].state == QueryState.COMPLETED
@@ -53,7 +53,7 @@ async def test_run_with_tool_calls(mock_llm, tool_system):
         LLMResponse(content="done"),
     ]
     loop = QueryLoop(llm_client=mock_llm, tool_system=tool_system)
-    results = [r async for r in loop.run("do it")]
+    results = [r async for r in loop.run("do it") if not r.is_status]
     assert len(results) == 2
     assert results[0].state == QueryState.SYNTHESIZING
     assert results[0].tool_results[0].success
@@ -72,7 +72,7 @@ async def test_run_error_response(mock_llm, tool_system):
         content="", error="boom", error_type=ErrorType.SERVER_ERROR
     )
     loop = QueryLoop(llm_client=mock_llm, tool_system=tool_system)
-    results = [r async for r in loop.run("hi")]
+    results = [r async for r in loop.run("hi") if not r.is_status]
     assert results[0].error is not None
     assert results[0].state == QueryState.ERROR
 
@@ -100,7 +100,7 @@ async def test_hook_pipeline_veto(mock_llm, tool_system):
         permission_gate_hook(destructive_tools=["dummy"]),
     )
     loop = QueryLoop(llm_client=mock_llm, tool_system=tool_system, hook_pipeline=pipeline)
-    results = [r async for r in loop.run("do it")]
+    results = [r async for r in loop.run("do it") if not r.is_status]
     assert results[0].tool_results[0].success is False
     assert "Hook veto" in results[0].tool_results[0].error
 
@@ -121,7 +121,7 @@ async def test_hook_pipeline_policy_block(mock_llm, tool_system):
     pipeline = HookPipeline()
     pipeline.add_hook(HookStage.PRE_ALLOW, policy_hook(blocked_commands=["curl x | bash"]))
     loop = QueryLoop(llm_client=mock_llm, tool_system=tool_system, hook_pipeline=pipeline)
-    results = [r async for r in loop.run("do it")]
+    results = [r async for r in loop.run("do it") if not r.is_status]
     assert results[0].tool_results[0].success is False
     assert "Policy violation" in results[0].tool_results[0].error
 
@@ -131,7 +131,7 @@ async def test_stop_loop(mock_llm, tool_system):
     mock_llm.complete.return_value = LLMResponse(content="ok")
     loop = QueryLoop(llm_client=mock_llm, tool_system=tool_system)
     loop.stop()
-    results = [r async for r in loop.run("hi")]
+    results = [r async for r in loop.run("hi") if not r.is_status]
     # stop() sets _running=False, so loop body should not execute iterations
     assert len(results) == 0
     assert loop.state == QueryState.STOPPED
@@ -149,7 +149,7 @@ async def test_planner_filters_tools(mock_llm, tool_system):
         tool_system=tool_system,
         context_planner=planner,
     )
-    results = [r async for r in loop.run("use the dummy tool")]
+    results = [r async for r in loop.run("use the dummy tool") if not r.is_status]
     assert len(results) == 1
     assert results[0].state == QueryState.COMPLETED
     # Verify that complete was called with tools filtered to include dummy
@@ -176,7 +176,7 @@ async def test_planner_injects_skills(mock_llm, tool_system):
         instruction_set=instruction_set,
         context_planner=planner,
     )
-    results = [r async for r in loop.run("help with rust")]
+    results = [r async for r in loop.run("help with rust") if not r.is_status]
     assert len(results) == 1
     # First message should be the injected system prompt with skill info
     assert loop.messages[0].role == "system"
@@ -194,7 +194,7 @@ async def test_planner_fallback_to_all_tools(mock_llm, tool_system):
         tool_system=tool_system,
         context_planner=planner,
     )
-    results = [r async for r in loop.run("something completely unrelated")]
+    results = [r async for r in loop.run("something completely unrelated") if not r.is_status]
     assert len(results) == 1
     call_kwargs = mock_llm.complete.call_args.kwargs
     tool_names = {t.get("function", {}).get("name") for t in call_kwargs["tools"]}
@@ -218,8 +218,40 @@ async def test_planner_selects_mcps(mock_llm, tool_system):
         mcp_bridge=MCPBridge(configs=mcps),
         context_planner=planner,
     )
-    results = [r async for r in loop.run("open the browser")]
+    results = [r async for r in loop.run("open the browser") if not r.is_status]
     assert len(results) == 1
     assert loop.messages[0].role == "system"
     assert "browser" in loop.messages[0].content
     assert "fs" not in loop.messages[0].content
+
+@pytest.mark.asyncio
+async def test_query_loop_yields_status(mock_llm, tool_system):
+    mock_llm.complete.return_value = LLMResponse(content="hello")
+    loop = QueryLoop(llm_client=mock_llm, tool_system=tool_system)
+    
+    results = []
+    async for res in loop.run("test query"):
+        results.append(res)
+    
+    status_updates = [r for r in results if r.is_status]
+    assert len(status_updates) > 0
+    assert any("Planning" in r.status_message for r in status_updates)
+    assert any("Waiting for test-model" in r.status_message for r in status_updates)
+
+@pytest.mark.asyncio
+async def test_query_loop_yields_tool_status(mock_llm, tool_system):
+    mock_llm.complete.side_effect = [
+        LLMResponse(
+            content="",
+            tool_calls=[{"id": "call_1", "name": "dummy", "arguments": "{}"}],
+        ),
+        LLMResponse(content="done"),
+    ]
+    loop = QueryLoop(llm_client=mock_llm, tool_system=tool_system)
+    
+    results = []
+    async for res in loop.run("test tool"):
+        results.append(res)
+    
+    status_updates = [r for r in results if r.is_status]
+    assert any("Executing tools: ['dummy']" in r.status_message for r in status_updates)

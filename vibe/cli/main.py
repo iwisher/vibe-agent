@@ -62,6 +62,7 @@ def _save_readline_history() -> None:
 
 async def interactive_mode(query_loop: QueryLoop) -> None:
     _setup_readline_history()
+    verbose_mode = False
     console.print("[bold green]Vibe Agent[/bold green] ready. Type /exit to quit, /clear to reset.")
     while True:
         try:
@@ -84,16 +85,60 @@ async def interactive_mode(query_loop: QueryLoop) -> None:
             query_loop.clear_history()
             console.print("History cleared.")
             continue
+        if user_input.lower() == "/verbose":
+            verbose_mode = not verbose_mode
+            status = "enabled" if verbose_mode else "disabled"
+            console.print(f"Verbose mode {status}.")
+            continue
 
         query_loop.add_user_message(user_input)
+        with console.status("[dim]Thinking...[/dim]", spinner="dots") as status_spinner:
+            async for result in query_loop.run():
+                if result.is_status:
+                    if verbose_mode:
+                        console.print(f"[dim]  → {result.status_message}[/dim]")
+                    else:
+                        status_spinner.update(f"[dim]{result.status_message}[/dim]")
+                    continue
+
+                if result.error:
+                    console.print(Panel(str(result.error), title="Error", border_style="red"))
+                elif result.context_truncated:
+                    console.print("[dim](context compacted)[/dim]")
+                else:
+                    console.print(result.response, end="")
+
+                for tr in result.tool_results:
+                    style = "green" if tr.success else "red"
+                    title = "Tool Result" if tr.success else "Tool Error"
+                    panel_content = tr.content if tr.content else (tr.error or "")
+                    console.print(Panel(panel_content, title=title, border_style=style))
+
+                if result.metrics:
+                    m = result.metrics
+                    # Ensure metrics start on a new line (response may have end="")
+                    console.print()
+                    metrics_str = (
+                        f"{m.total_tokens} tokens | "
+                        f"{m.elapsed_seconds:.1f}s | "
+                        f"{m.tokens_per_second:.1f} tok/s"
+                    )
+                    console.print(f"[dim]{metrics_str}[/dim]")
+        console.print()
+
+
+async def single_query_mode(query_loop: QueryLoop, query: str) -> None:
+    query_loop.add_user_message(query)
+    with console.status("[dim]Thinking...[/dim]", spinner="dots") as status_spinner:
         async for result in query_loop.run():
+            if result.is_status:
+                status_spinner.update(f"[dim]{result.status_message}[/dim]")
+                continue
+
             if result.error:
                 console.print(Panel(str(result.error), title="Error", border_style="red"))
-            elif result.context_truncated:
-                console.print("[dim](context compacted)[/dim]")
-            else:
+            elif not result.context_truncated:
                 console.print(result.response, end="")
-
             for tr in result.tool_results:
                 style = "green" if tr.success else "red"
                 title = "Tool Result" if tr.success else "Tool Error"
@@ -104,32 +149,12 @@ async def interactive_mode(query_loop: QueryLoop) -> None:
                 m = result.metrics
                 # Ensure metrics start on a new line (response may have end="")
                 console.print()
-                console.print(
-                    f"[dim]{m.total_tokens} tokens | {m.elapsed_seconds:.1f}s | {m.tokens_per_second:.1f} tok/s[/dim]"
+                metrics_str = (
+                    f"{m.total_tokens} tokens | "
+                    f"{m.elapsed_seconds:.1f}s | "
+                    f"{m.tokens_per_second:.1f} tok/s"
                 )
-        console.print()
-
-
-async def single_query_mode(query_loop: QueryLoop, query: str) -> None:
-    query_loop.add_user_message(query)
-    async for result in query_loop.run():
-        if result.error:
-            console.print(Panel(str(result.error), title="Error", border_style="red"))
-        elif not result.context_truncated:
-            console.print(result.response, end="")
-        for tr in result.tool_results:
-            style = "green" if tr.success else "red"
-            title = "Tool Result" if tr.success else "Tool Error"
-            panel_content = tr.content if tr.content else (tr.error or "")
-            console.print(Panel(panel_content, title=title, border_style=style))
-
-        if result.metrics:
-            m = result.metrics
-            # Ensure metrics start on a new line (response may have end="")
-            console.print()
-            console.print(
-                f"[dim]{m.total_tokens} tokens | {m.elapsed_seconds:.1f}s | {m.tokens_per_second:.1f} tok/s[/dim]"
-            )
+                console.print(f"[dim]{metrics_str}[/dim]")
     console.print()
 
 

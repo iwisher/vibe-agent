@@ -230,6 +230,7 @@ class QueryLoop:
             return
         self._running = True
         self._set_state(QueryState.PLANNING)
+        yield QueryResult(is_status=True, status_message="Planning strategy...", state=self._state)
         import uuid
         self._session_id = str(uuid.uuid4())
         self._session_start_time = time.time()
@@ -299,6 +300,11 @@ class QueryLoop:
                         llm_msgs = self._build_llm_messages()
 
                     tools_for_llm = self._select_tools_for_llm()
+                    yield QueryResult(
+                        is_status=True,
+                        status_message=f"Waiting for {self.llm.model}...",
+                        state=self._state,
+                    )
                     start_time = time.time()
                     response = await self.error_recovery.execute_with_retry(
                         lambda: self.llm.complete(llm_msgs, tools=tools_for_llm)
@@ -321,10 +327,14 @@ class QueryLoop:
                         break
 
                     if response.tool_calls:
+                        tool_names = [extract_tool_call_name(tc) for tc in response.tool_calls]
                         if self.logger:
-                            from vibe.tools._utils import extract_tool_call_name
-                            tool_names = [extract_tool_call_name(tc) for tc in response.tool_calls]
                             self.logger.info(f"LLM requested tools: {tool_names}")
+                        yield QueryResult(
+                            is_status=True,
+                            status_message=f"Executing tools: {tool_names}...",
+                            state=QueryState.TOOL_EXECUTION,
+                        )
                         yield await self._process_tool_response(response, metrics)
                     else:
                         should_continue, result = await self._process_content_response(response, metrics)
