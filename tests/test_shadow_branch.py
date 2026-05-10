@@ -18,7 +18,9 @@ def git_repo(tmp_path):
 
     # Initialize git repo
     subprocess.run(["git", "init"], check=True, capture_output=True)
-    subprocess.run(["git", "config", "user.email", "test@test.com"], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@test.com"], check=True, capture_output=True
+    )
     subprocess.run(["git", "config", "user.name", "Test User"], check=True, capture_output=True)
 
     # Create initial commit
@@ -45,7 +47,7 @@ class TestShadowBranchManager:
         assert shadow.original_branch == "main" or shadow.original_branch == "master"
 
     def test_list_shadows(self, git_repo):
-        """Listing shadows should return created shadows."""
+        """Listing shadows should return created shadows with metadata."""
         manager = ShadowBranchManager(git_repo)
         manager.create_shadow("sess-001")
         manager.create_shadow("sess-002")
@@ -55,8 +57,14 @@ class TestShadowBranchManager:
         assert any(s.session_id == "sess-001" for s in shadows)
         assert any(s.session_id == "sess-002" for s in shadows)
 
+        # Metadata should be populated from git config
+        for s in shadows:
+            assert s.original_branch in ("main", "master", "HEAD")
+            assert s.has_uncommitted_changes is False
+            assert s.created_at != ""  # creation timestamp populated from reflog
+
     def test_restore_shadow(self, git_repo):
-        """Restoring a shadow should checkout the shadow branch."""
+        """Restoring a shadow should return workspace to original branch state."""
         manager = ShadowBranchManager(git_repo)
 
         # Create a file and shadow
@@ -66,6 +74,7 @@ class TestShadowBranchManager:
 
         shadow = manager.create_shadow("sess-003")
         assert shadow is not None
+        original = shadow.original_branch
 
         # Modify the file
         (git_repo / "test.txt").write_text("modified")
@@ -76,9 +85,39 @@ class TestShadowBranchManager:
         success = manager.restore_shadow("sess-003")
         assert success is True
 
-        # Should be on shadow branch
-        result = subprocess.run(["git", "branch", "--show-current"], capture_output=True, text=True, check=True)
-        assert "vibe/shadow-sess-003" in result.stdout
+        # Should be back on the original branch with restored content
+        result = subprocess.run(
+            ["git", "branch", "--show-current"], capture_output=True, text=True, check=True
+        )
+        assert result.stdout.strip() == original
+        assert (git_repo / "test.txt").read_text() == "original"
+
+    def test_create_shadow_no_stash_race(self, git_repo):
+        """Shadow creation should work even when stash stack is non-empty."""
+        manager = ShadowBranchManager(git_repo)
+
+        # Pre-populate the stash stack to simulate a race-prone environment
+        (git_repo / "stashed.txt").write_text("pre-existing stash")
+        subprocess.run(["git", "add", "."], check=True, capture_output=True)
+        subprocess.run(
+            ["git", "stash", "push", "-m", "unrelated-stash"],
+            check=True,
+            capture_output=True,
+        )
+
+        # Now create a shadow — should not be affected by existing stash entries
+        shadow = manager.create_shadow("sess-race")
+        assert shadow is not None
+        assert shadow.branch_name == "vibe/shadow-sess-race"
+
+        # The existing stash should still be present (git stash create is non-destructive)
+        stash_list = subprocess.run(
+            ["git", "stash", "list"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        assert "unrelated-stash" in stash_list.stdout
 
     def test_is_write_heavy_operation(self):
         """Write-heavy detection should identify destructive operations."""
@@ -88,6 +127,25 @@ class TestShadowBranchManager:
         assert manager.is_write_heavy_operation("bash", {"command": "rm -rf /tmp/test"}) is True
         assert manager.is_write_heavy_operation("bash", {"command": "echo hello"}) is False
         assert manager.is_write_heavy_operation("file_read", {}) is False
+
+    def test_write_heavy_false_positives(self):
+        """Previously over-broad patterns should not flag benign commands."""
+        manager = ShadowBranchManager()
+
+        # These were false positives with the old regex set
+        assert manager.is_write_heavy_operation("bash", {"command": "mv --help"}) is False
+        assert (
+            manager.is_write_heavy_operation("bash", {"command": "python -c \"print('hello')\""})
+            is False
+        )
+        assert manager.is_write_heavy_operation("bash", {"command": "touch file.txt"}) is False
+        assert manager.is_write_heavy_operation("bash", {"command": "cp src dst"}) is False
+        assert manager.is_write_heavy_operation("bash", {"command": "mkdir -p dir"}) is False
+
+        # Output redirection SHOULD still be flagged as write-heavy
+        assert (
+            manager.is_write_heavy_operation("bash", {"command": "echo hello > file.txt"}) is True
+        )
 
     def test_no_op_manager(self):
         """NoOpShadowManager should return safe defaults."""

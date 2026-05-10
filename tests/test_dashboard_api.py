@@ -158,3 +158,42 @@ This is a test wiki page with some content.
             websocket.send_text("ping")
             data = websocket.receive_json()
             assert data["type"] == "pong"
+
+    def test_run_server_returns_tuple_without_blocking(self, tmp_path):
+        """run_server() must return (url, token) without blocking."""
+        import os
+
+        os.chdir(tmp_path)
+        from vibe.dashboard.server import run_server
+
+        url, token = run_server(host="127.0.0.1", port=9999, enable_auth=True)
+
+        assert url == "http://127.0.0.1:9999/?token=" + token
+        assert token is not None
+        assert len(token) > 20
+        # Should return immediately — not block on server startup
+
+    def test_root_requires_auth(self, client, tmp_path):
+        """Root path / must require a valid dashboard token."""
+        os.chdir(tmp_path)
+        from vibe.dashboard.server import DASHBOARD_TOKEN
+
+        # Set a token to enable auth
+        original_token = DASHBOARD_TOKEN
+        from vibe.dashboard.server import _generate_dashboard_token
+
+        token = _generate_dashboard_token()
+        import vibe.dashboard.server as server_module
+
+        server_module.DASHBOARD_TOKEN = token
+
+        try:
+            response = client.get("/")
+            assert response.status_code == 401
+
+            response = client.get(f"/?token={token}")
+            # Should be 200 or 404 depending on whether static files exist;
+            # the important thing is it's not 401
+            assert response.status_code != 401
+        finally:
+            server_module.DASHBOARD_TOKEN = original_token

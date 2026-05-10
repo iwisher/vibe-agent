@@ -32,6 +32,10 @@ app.add_typer(skill_app, name="skill")
 session_app = typer.Typer(help="Session management — list and resume incomplete sessions")
 app.add_typer(session_app, name="session")
 
+# Phase A: Preference layer commands
+pref_app = typer.Typer(help="Preference management")
+app.add_typer(pref_app, name="pref")
+
 console = Console()
 
 DEFAULT_CONFIG = VibeConfig.load()
@@ -90,6 +94,35 @@ async def interactive_mode(query_loop: QueryLoop) -> None:
             status = "enabled" if verbose_mode else "disabled"
             console.print(f"Verbose mode {status}.")
             continue
+        if user_input.lower() == "/resume":
+            from vibe.core.query_loop import QueryLoop
+            from vibe.harness.memory.session_store import SessionStore
+
+            store = SessionStore()
+            incomplete = store.list_incomplete(limit=1)
+            if not incomplete:
+                console.print("[yellow]No incomplete sessions found.[/yellow]")
+                continue
+            session_id = incomplete[0]["session_id"]
+            # Build a factory matching the current loop's config
+            factory = QueryLoopFactory(
+                base_url=DEFAULT_CONFIG.llm.base_url,
+                model=query_loop.llm.model,
+                api_key=DEFAULT_CONFIG.resolve_api_key(),
+                working_dir=str(Path.cwd()),
+                fallback_chain=DEFAULT_CONFIG.get_fallback_chain(),
+                config=DEFAULT_CONFIG,
+                logger=query_loop.logger,
+            )
+            try:
+                query_loop = await QueryLoop.resume(session_id, store, factory)
+                console.print(
+                    f"[green]Resumed session {session_id[:16]}...[/green] "
+                    f"(state: {query_loop.state.name}, iteration: {query_loop._iteration})"
+                )
+            except ValueError as e:
+                console.print(f"[red]Failed to resume: {e}[/red]")
+            continue
 
         query_loop.add_user_message(user_input)
         with console.status("[dim]Thinking...[/dim]", spinner="dots") as status_spinner:
@@ -124,7 +157,6 @@ async def interactive_mode(query_loop: QueryLoop) -> None:
                         f"{m.tokens_per_second:.1f} tok/s"
                     )
                     console.print(f"[dim]{metrics_str}[/dim]")
-        console.print()
 
 
 async def single_query_mode(query_loop: QueryLoop, query: str) -> None:
@@ -165,36 +197,96 @@ def main(
     server: str = typer.Option(DEFAULT_CONFIG.llm.base_url, "--server", "-s"),
     api_key: str | None = typer.Option(None, "--api-key", "-k"),
     working_dir: str = typer.Option(".", "--working-dir", "-w"),
-    debug: bool = typer.Option(False, "--debug", "-d", help="Print request URL and redacted headers to stderr"),
+    debug: bool = typer.Option(
+        False, "--debug", "-d", help="Print request URL and redacted headers to stderr"
+    ),
 ):
     """Run Vibe Agent in interactive or single-query mode."""
     working_dir = str(Path(working_dir).expanduser().resolve())
 
+    # Use semantic model names for the fallback chain so the registry can resolve them
+    fallback_chain = DEFAULT_CONFIG.get_fallback_chain()
+
+    # Phase 3.2: Check for incomplete sessions before creating a fresh QueryLoop
+    session_cfg = getattr(DEFAULT_CONFIG, "session", None)
+    should_resume = False
+    resumed_session_id: str | None = None
+
+    if not ctx.args and session_cfg is not None:
+        from vibe.harness.memory.session_store import SessionStore
+
+        store = SessionStore()
+        incomplete = store.list_incomplete(limit=1)
+        if incomplete:
+            latest = incomplete[0]
+            latest_id = latest["session_id"]
+            if getattr(session_cfg, "auto_resume", False):
+                should_resume = True
+                resumed_session_id = latest_id
+                console.print(
+                    f"[dim]Auto-resuming session {latest_id[:16]}...[/dim]"
+                )
+            elif getattr(session_cfg, "prompt_on_resume", True):
+                console.print(
+                    f"[yellow]You have an incomplete session ({latest_id[:16]}...).[/yellow]"
+                )
+                choice = input("Resume latest session? [y/n]: ").strip().lower()
+                if choice == "y":
+                    should_resume = True
+                    resumed_session_id = latest_id
+
     # Initialize Session Logger
-    session_id = str(uuid.uuid4())[:8]
+    if should_resume and resumed_session_id:
+        session_id = resumed_session_id[:8]
+    else:
+        session_id = str(uuid.uuid4())[:8]
     logger = setup_session_logger(DEFAULT_CONFIG.logging, session_id)
     if DEFAULT_CONFIG.logging.enabled:
         logger.info(f"Starting session {session_id} in {working_dir}")
 
-    # Use semantic model names for the fallback chain so the registry can resolve them
-    fallback_chain = DEFAULT_CONFIG.get_fallback_chain()
+    if should_resume and resumed_session_id:
+        # Resume existing session
+        from vibe.core.query_loop import QueryLoop
+        from vibe.harness.memory.session_store import SessionStore
 
-    query_loop = QueryLoopFactory(
-        base_url=server,
-        model=model,
-        api_key=api_key if api_key is not None else DEFAULT_CONFIG.resolve_api_key(),
-        working_dir=working_dir,
-        fallback_chain=fallback_chain,
-        config=DEFAULT_CONFIG,
-        logger=logger,
-        debug=debug,
-    ).create()
+        factory = QueryLoopFactory(
+            base_url=server,
+            model=model,
+            api_key=api_key if api_key is not None else DEFAULT_CONFIG.resolve_api_key(),
+            working_dir=working_dir,
+            fallback_chain=fallback_chain,
+            config=DEFAULT_CONFIG,
+            logger=logger,
+            debug=debug,
+        )
 
-    if ctx.args:
-        query = " ".join(ctx.args)
-        asyncio.run(single_query_mode(query_loop, query))
+        async def _run_resumed():
+            store = SessionStore()
+            loop = await QueryLoop.resume(resumed_session_id, store, factory)
+            console.print(
+                f"[green]Resumed session {resumed_session_id[:16]}...[/green] "
+                f"(state: {loop.state.name}, iteration: {loop._iteration})"
+            )
+            await interactive_mode(loop)
+
+        asyncio.run(_run_resumed())
     else:
-        asyncio.run(interactive_mode(query_loop))
+        query_loop = QueryLoopFactory(
+            base_url=server,
+            model=model,
+            api_key=api_key if api_key is not None else DEFAULT_CONFIG.resolve_api_key(),
+            working_dir=working_dir,
+            fallback_chain=fallback_chain,
+            config=DEFAULT_CONFIG,
+            logger=logger,
+            debug=debug,
+        ).create()
+
+        if ctx.args:
+            query = " ".join(ctx.args)
+            asyncio.run(single_query_mode(query_loop, query))
+        else:
+            asyncio.run(interactive_mode(query_loop))
 
 
 @eval_app.command("run")
@@ -205,7 +297,9 @@ def run_evals(
     api_key: str | None = typer.Option(None, "--api-key", "-k"),
     working_dir: str = typer.Option(".", "--working-dir", "-w"),
     limit: int | None = typer.Option(None, "--limit", "-n", help="Limit number of evals to run"),
-    debug: bool = typer.Option(False, "--debug", "-d", help="Print request URL and redacted headers to stderr"),
+    debug: bool = typer.Option(
+        False, "--debug", "-d", help="Print request URL and redacted headers to stderr"
+    ),
 ):
     """Run built-in eval cases and display results."""
     working_dir = str(Path(working_dir).expanduser().resolve())
@@ -301,7 +395,9 @@ def update_baseline():
             by_difficulty[difficulty]["passed"] += 1
 
     baseline = {
-        "date": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+        "date": __import__("datetime")
+        .datetime.now(__import__("datetime").timezone.utc)
+        .isoformat(),
         "overall_score": summary["score"],
         "total_cases": summary["total_runs"],
         "passed": summary["passed"],
@@ -329,7 +425,9 @@ def run_soak(
     server: str = typer.Option(DEFAULT_CONFIG.llm.base_url, "--server", "-s"),
     api_key: str | None = typer.Option(None, "--api-key", "-k"),
     working_dir: str = typer.Option(".", "--working-dir", "-w"),
-    debug: bool = typer.Option(False, "--debug", help="Print request URL and redacted headers to stderr"),
+    debug: bool = typer.Option(
+        False, "--debug", help="Print request URL and redacted headers to stderr"
+    ),
 ):
     """Run a long-running soak test against built-in eval cases."""
     working_dir = str(Path(working_dir).expanduser().resolve())
@@ -403,16 +501,20 @@ wiki_app.add_typer(wiki_index_app, name="index")
 def _get_wiki() -> "Any":
     """Get a configured LLMWiki instance."""
     from vibe.memory.wiki import LLMWiki
+
     return LLMWiki(base_path="~/.vibe/wiki")
 
 
 @wiki_app.command("list")
 def wiki_list(
     tag: str | None = typer.Option(None, "--tag", "-t", help="Filter by tag"),
-    status: str | None = typer.Option(None, "--status", "-s", help="Filter by status (draft|verified)"),
+    status: str | None = typer.Option(
+        None, "--status", "-s", help="Filter by status (draft|verified)"
+    ),
 ):
     """List wiki pages."""
     import asyncio
+
     wiki = _get_wiki()
     pages = asyncio.run(wiki.list_pages(tag=tag, status=status))
     if not pages:
@@ -425,7 +527,9 @@ def wiki_list(
     table.add_column("Tags")
     table.add_column("Updated", style="dim")
     for p in pages:
-        status_style = "[green]verified[/green]" if p.status == "verified" else "[yellow]draft[/yellow]"
+        status_style = (
+            "[green]verified[/green]" if p.status == "verified" else "[yellow]draft[/yellow]"
+        )
         table.add_row(p.id[:8], p.title, status_style, ", ".join(p.tags), p.last_updated)
     console.print(table)
 
@@ -437,6 +541,7 @@ def wiki_search(
 ):
     """Search wiki pages (BM25)."""
     import asyncio
+
     wiki = _get_wiki()
     pages = asyncio.run(wiki.search_pages(query=query, limit=limit))
     if not pages:
@@ -456,6 +561,7 @@ def wiki_show(
 ):
     """Show a wiki page with rendered links."""
     import asyncio
+
     wiki = _get_wiki()
     # Try by ID, then by slug
     page = asyncio.run(wiki.get_page(page_id))
@@ -464,21 +570,25 @@ def wiki_show(
     if page is None:
         console.print(f"[red]Page not found: {page_id}[/red]")
         raise typer.Exit(code=1)
-    console.print(Panel(
-        f"[bold]{page.title}[/bold]\n"
-        f"ID: {page.id}\nStatus: {page.status}\nTags: {', '.join(page.tags)}\n"
-        f"Created: {page.date_created} | Updated: {page.last_updated}\n"
-        f"Citations: {len(page.citations)}\n\n{page.content}",
-        title=f"Wiki: {page.title}",
-        border_style="cyan",
-    ))
+    console.print(
+        Panel(
+            f"[bold]{page.title}[/bold]\n"
+            f"ID: {page.id}\nStatus: {page.status}\nTags: {', '.join(page.tags)}\n"
+            f"Created: {page.date_created} | Updated: {page.last_updated}\n"
+            f"Citations: {len(page.citations)}\n\n{page.content}",
+            title=f"Wiki: {page.title}",
+            border_style="cyan",
+        )
+    )
 
 
 @wiki_app.command("create")
 def wiki_create(
     title: str = typer.Option(..., "--title", "-t", help="Page title"),
     tags: str = typer.Option("", "--tags", help="Comma-separated tags"),
-    content: str = typer.Option("", "--content", "-c", help="Initial content (or opens $EDITOR if empty)"),
+    content: str = typer.Option(
+        "", "--content", "-c", help="Initial content (or opens $EDITOR if empty)"
+    ),
 ):
     """Create a new wiki page. Opens $EDITOR if no --content provided."""
     import asyncio
@@ -507,7 +617,9 @@ def wiki_create(
 
     wiki = _get_wiki()
     page = asyncio.run(wiki.create_page(title=title, content=content, tags=tag_list))
-    console.print(f"[green]✓[/green] Created wiki page: [bold]{page.title}[/bold] (ID: {page.id[:8]})")
+    console.print(
+        f"[green]✓[/green] Created wiki page: [bold]{page.title}[/bold] (ID: {page.id[:8]})"
+    )
 
 
 @wiki_app.command("edit")
@@ -552,6 +664,7 @@ def wiki_edit(
 def wiki_index_rebuild():
     """Rebuild the wiki page index (full rebuild)."""
     from vibe.memory.pageindex import PageIndex
+
     wiki = _get_wiki()
     pageindex = PageIndex(index_path="~/.vibe/memory/index.json")
     console.print("Rebuilding wiki index...")
@@ -565,19 +678,24 @@ def wiki_expire(
 ):
     """Expire draft wiki pages older than N days."""
     import asyncio
+
     wiki = _get_wiki()
     count = asyncio.run(wiki.expire_drafts(cutoff_days=days))
     if count == 0:
         console.print(f"[dim]No draft pages older than {days} days found.[/dim]")
     else:
-        console.print(f"[green]✓[/green] Expired {count} draft wiki page(s) older than {days} days.")
+        console.print(
+            f"[green]✓[/green] Expired {count} draft wiki page(s) older than {days} days."
+        )
 
 
 @wiki_app.command("compile")
 def wiki_compile(
     hours: int = typer.Option(24, "--hours", "-h", help="Look back N hours for sessions"),
     novelty: float = typer.Option(0.5, "--novelty", "-n", help="Novelty threshold (0.0-1.0)"),
-    confidence: float = typer.Option(0.8, "--confidence", "-c", help="Confidence threshold (0.0-1.0)"),
+    confidence: float = typer.Option(
+        0.8, "--confidence", "-c", help="Confidence threshold (0.0-1.0)"
+    ),
 ):
     """Compile recent trace sessions into pending wiki pages for review."""
     import asyncio
@@ -603,11 +721,13 @@ def wiki_compile(
         llm_client=llm_client,
         config=DEFAULT_CONFIG,
     )
-    summary = asyncio.run(compiler.compile_recent(
-        hours=hours,
-        novelty_threshold=novelty,
-        confidence_threshold=confidence,
-    ))
+    summary = asyncio.run(
+        compiler.compile_recent(
+            hours=hours,
+            novelty_threshold=novelty,
+            confidence_threshold=confidence,
+        )
+    )
     console.print("[green]✓[/green] Compilation complete:")
     console.print(f"  Sessions scanned: {summary.sessions_scanned}")
     console.print(f"  Items extracted: {summary.items_extracted}")
@@ -619,7 +739,9 @@ def wiki_compile(
 
 @wiki_app.command("review")
 def wiki_review(
-    auto_approve: bool = typer.Option(False, "--auto-approve", "-a", help="Approve all pending pages"),
+    auto_approve: bool = typer.Option(
+        False, "--auto-approve", "-a", help="Approve all pending pages"
+    ),
     list_only: bool = typer.Option(False, "--list", "-l", help="List pending pages without action"),
 ):
     """Review pending wiki pages. Approve, reject, or list them."""
@@ -631,7 +753,7 @@ def wiki_review(
     compiler = WikiCompiler(
         trace_store=None,  # Not needed for review
         wiki=wiki,
-        llm_client=None,   # Not needed for review
+        llm_client=None,  # Not needed for review
     )
 
     pending = asyncio.run(compiler.list_pending())
@@ -711,6 +833,7 @@ def memory_status():
     if wiki.db is not None:
         try:
             import time
+
             cutoff = time.time() - 86400
             cursor = wiki.db.conn.execute(
                 "SELECT COUNT(*), AVG(duration_seconds) FROM _telemetry WHERE type = 'session' AND timestamp > ?",
@@ -728,7 +851,10 @@ def memory_status():
             compactions_24h = cursor.fetchone()[0] or 0
         except Exception as e:
             import logging
-            logging.getLogger("vibe.cli").debug("Failed to fetch telemetry for memory status: %s", e)
+
+            logging.getLogger("vibe.cli").debug(
+                "Failed to fetch telemetry for memory status: %s", e
+            )
 
     # Print status
     table = Table(title="Tripartite Memory Status")
@@ -752,14 +878,14 @@ def import_cmd(
     path: str = typer.Argument(..., help="Path to the file or directory to ingest"),
 ):
     """Import documents (PDF, MD, DOCX, etc.) into the Tripartite Memory System.
-    
+
     Uses IBM Docling under the hood to semantically extract and format documents.
     """
     import asyncio
     from rich.progress import Progress, SpinnerColumn, TextColumn
     from vibe.core.query_loop_factory import QueryLoopFactory
     from vibe.cli.main import DEFAULT_CONFIG
-    
+
     # Initialize the wiki and extractor via factory
     factory = QueryLoopFactory(
         base_url=DEFAULT_CONFIG.llm.base_url,
@@ -771,15 +897,17 @@ def import_cmd(
     if not wiki:
         console.print("[red]Memory system is not enabled or failed to initialize.[/red]")
         raise typer.Exit(1)
-        
+
     try:
         from vibe.memory.knowledge_extractor import KnowledgeExtractor
         from vibe.memory.ingestion.worker import IngestionWorker
     except ImportError as e:
         console.print(f"[red]Missing dependencies: {e}[/red]")
-        console.print("Make sure you install the ingest extras: pip install vibe-agent[ingest] or docling")
+        console.print(
+            "Make sure you install the ingest extras: pip install vibe-agent[ingest] or docling"
+        )
         raise typer.Exit(1)
-        
+
     extractor = KnowledgeExtractor(
         wiki=wiki,
         pageindex=pageindex,
@@ -787,24 +915,29 @@ def import_cmd(
         llm_client=factory.create_llm(),
     )
     worker = IngestionWorker(extractor=extractor)
-    
+
     async def run_import():
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             transient=True,
         ) as progress:
-            progress.add_task(description=f"Parsing and ingesting {path} via Docling...", total=None)
+            progress.add_task(
+                description=f"Parsing and ingesting {path} via Docling...", total=None
+            )
             try:
                 pages_created = await worker.ingest_file(path)
-                console.print(f"[green]Successfully ingested {path}. Created {pages_created} Wiki Pages.[/green]")
+                console.print(
+                    f"[green]Successfully ingested {path}. Created {pages_created} Wiki Pages.[/green]"
+                )
             except Exception as e:
                 console.print(f"[red]Import failed: {e}[/red]")
-                
+
     asyncio.run(run_import())
 
 
 # --- Session sub-commands (Phase 3.2) ---
+
 
 @session_app.command("list")
 def session_list(
@@ -839,12 +972,16 @@ def session_list(
 
 @session_app.command("resume")
 def session_resume(
-    session_id: str | None = typer.Argument(None, help="Session ID to resume (default: latest incomplete)"),
+    session_id: str | None = typer.Argument(
+        None, help="Session ID to resume (default: latest incomplete)"
+    ),
     model: str = typer.Option(DEFAULT_CONFIG.llm.default_model, "--model", "-m"),
     server: str = typer.Option(DEFAULT_CONFIG.llm.base_url, "--server", "-s"),
     api_key: str | None = typer.Option(None, "--api-key", "-k"),
     working_dir: str = typer.Option(".", "--working-dir", "-w"),
-    debug: bool = typer.Option(False, "--debug", "-d", help="Print request URL and redacted headers to stderr"),
+    debug: bool = typer.Option(
+        False, "--debug", "-d", help="Print request URL and redacted headers to stderr"
+    ),
 ):
     """Resume an incomplete session from a checkpoint."""
     from vibe.core.query_loop import QueryLoop
@@ -857,7 +994,9 @@ def session_resume(
     if session_id is None:
         sessions = store.list_incomplete(limit=1)
         if not sessions:
-            console.print("[yellow]No incomplete sessions found. Start a new session with `vibe`.[/yellow]")
+            console.print(
+                "[yellow]No incomplete sessions found. Start a new session with `vibe`.[/yellow]"
+            )
             raise typer.Exit(code=0)
         session_id = sessions[0]["session_id"]
         console.print(f"[dim]Resuming latest session: {session_id[:16]}...[/dim]\n")
@@ -887,8 +1026,12 @@ def session_resume(
 
     async def _run_resume():
         loop = await QueryLoop.resume(session_id, store, factory)
-        console.print(f"[green]✓[/green] Resumed session [bold]{session_id[:16]}[/bold] (state: {loop.state.name}, iteration: {loop._iteration})")
-        console.print("[dim]Continue the conversation. Type /exit to quit, /clear to reset.[/dim]\n")
+        console.print(
+            f"[green]✓[/green] Resumed session [bold]{session_id[:16]}[/bold] (state: {loop.state.name}, iteration: {loop._iteration})"
+        )
+        console.print(
+            "[dim]Continue the conversation. Type /exit to quit, /clear to reset.[/dim]\n"
+        )
         await interactive_mode(loop)
 
     try:
@@ -903,37 +1046,46 @@ def session_resume(
 dashboard_app = typer.Typer(help="Launch web dashboard for session observability")
 app.add_typer(dashboard_app, name="dashboard")
 
+
 @dashboard_app.command("start")
 def dashboard_start(
     port: int = typer.Option(8080, "--port", "-p", help="Port to run dashboard on"),
     host: str = typer.Option("127.0.0.1", "--host", "-h", help="Host to bind to"),
     no_browser: bool = typer.Option(False, "--no-browser", help="Don't open browser automatically"),
-    no_auth: bool = typer.Option(False, "--no-auth", help="Disable token authentication (dev only)"),
+    no_auth: bool = typer.Option(
+        False, "--no-auth", help="Disable token authentication (dev only)"
+    ),
 ):
     """Launch the Vibe Agent trace dashboard (FastAPI + React)."""
     import webbrowser
     from vibe.dashboard.server import run_server
 
     url, token = run_server(host=host, port=port, enable_auth=not no_auth)
-    
+
     if token:
         console.print(f"[green]Starting dashboard at {url}[/green]")
-        console.print(f"[dim]Dashboard token: {token[:16]}... (pass via ?token= or X-Dashboard-Token header)[/dim]")
+        console.print(
+            f"[dim]Dashboard token: {token[:16]}... (pass via ?token= or X-Dashboard-Token header)[/dim]"
+        )
     else:
         console.print(f"[green]Starting dashboard at {url} (no auth)[/green]")
 
     if not no_browser:
         # Open browser after a short delay to let server start
         import threading
+
         def open_browser():
             import time
+
             time.sleep(1.5)
             webbrowser.open(url)
+
         threading.Thread(target=open_browser, daemon=True).start()
 
     try:
         import uvicorn
         from vibe.dashboard.server import app
+
         uvicorn.run(app, host=host, port=port, log_level="info")
     except KeyboardInterrupt:
         console.print("\n[yellow]Dashboard stopped.[/yellow]")
@@ -944,6 +1096,7 @@ def dashboard_start(
 shadow_app = typer.Typer(help="Shadow workspace rollback management")
 app.add_typer(shadow_app, name="shadow")
 
+
 @shadow_app.command("list")
 def shadow_list():
     """List all shadow branches (workspace checkpoints)."""
@@ -953,7 +1106,9 @@ def shadow_list():
     shadows = manager.list_shadows()
 
     if not shadows:
-        console.print("[dim]No shadow branches found. Run `vibe shadow create` before write-heavy tasks.[/dim]")
+        console.print(
+            "[dim]No shadow branches found. Run `vibe shadow create` before write-heavy tasks.[/dim]"
+        )
         return
 
     table = Table(title="Shadow Branches")
@@ -983,7 +1138,9 @@ def shadow_create(
     shadow = manager.create_shadow(session_id)
 
     if shadow is None:
-        console.print("[yellow]Not in a git repository or git not available. Shadow not created.[/yellow]")
+        console.print(
+            "[yellow]Not in a git repository or git not available. Shadow not created.[/yellow]"
+        )
         raise typer.Exit(code=1)
 
     console.print(f"[green]✓[/green] Created shadow branch [bold]{shadow.branch_name}[/bold]")
@@ -1002,8 +1159,12 @@ def shadow_restore(
     success = manager.restore_shadow(session_id)
 
     if success:
-        console.print(f"[green]✓[/green] Restored workspace from shadow for session {session_id[:16]}")
-        console.print("[yellow]You are now on the shadow branch. Use `git checkout <branch>` to return to original.[/yellow]")
+        console.print(
+            f"[green]✓[/green] Restored workspace from shadow for session {session_id[:16]}"
+        )
+        console.print(
+            "[yellow]You are now on the shadow branch. Use `git checkout <branch>` to return to original.[/yellow]"
+        )
     else:
         console.print(f"[red]Failed to restore shadow for session {session_id[:16]}.[/red]")
         raise typer.Exit(code=1)
@@ -1028,6 +1189,7 @@ def shadow_rollback(
     """Alias for `vibe shadow restore` — restore workspace from latest shadow."""
     if session_id is None:
         from vibe.tools.git_shadow import ShadowBranchManager
+
         manager = ShadowBranchManager()
         shadows = manager.list_shadows()
         if not shadows:
@@ -1040,6 +1202,96 @@ def shadow_rollback(
     shadow_restore(session_id)
 
 
+# --- Preference sub-commands (Phase A) ---
+
+
+@pref_app.command("tool-set")
+def pref_tool_set(
+    tool_name: str = typer.Argument(..., help="Tool name or glob pattern"),
+    args: str = typer.Argument(..., help="JSON dict of default args"),
+):
+    """Set default arguments for a tool."""
+    import json
+
+    from vibe.preferences.tool_prefs import ToolPreferenceRegistry
+
+    registry = ToolPreferenceRegistry()
+    parsed = json.loads(args)
+    rule = registry.set_default_args(tool_name, parsed)
+    console.print(f"[green]✓[/green] Set defaults for [bold]{tool_name}[/bold]: {parsed}")
+    console.print(f"[dim]Rule ID: {rule.rule_id}[/dim]")
+
+
+@pref_app.command("tool-list")
+def pref_tool_list():
+    """List all tool preferences."""
+    from vibe.preferences.tool_prefs import ToolPreferenceRegistry
+
+    registry = ToolPreferenceRegistry()
+    rules = registry.list_preferences()
+    if not rules:
+        console.print("[dim]No tool preferences set.[/dim]")
+        return
+
+    table = Table(title="Tool Preferences")
+    table.add_column("Pattern", style="cyan")
+    table.add_column("Action", style="green")
+    table.add_column("Args", style="dim")
+    table.add_column("Hits", style="yellow")
+
+    for r in rules:
+        table.add_row(r.pattern, r.action, str(r.action_args), str(r.hit_count))
+    console.print(table)
+
+
+@pref_app.command("tool-remove")
+def pref_tool_remove(
+    tool_name: str = typer.Argument(..., help="Tool name pattern to remove"),
+):
+    """Remove default arguments for a tool."""
+    from vibe.preferences.tool_prefs import ToolPreferenceRegistry
+
+    registry = ToolPreferenceRegistry()
+    if registry.remove_default_args(tool_name):
+        console.print(f"[green]✓[/green] Removed preferences for [bold]{tool_name}[/bold]")
+    else:
+        console.print(f"[yellow]No preferences found for {tool_name}[/yellow]")
+
+
+@pref_app.command("prune")
+def pref_prune(
+    days: int = typer.Option(30, "--days", "-d", help="Remove inferred rules unused for N days"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be removed"),
+):
+    """Remove stale inferred preference rules."""
+    from vibe.preferences.registry import PreferenceRegistry
+
+    registry = PreferenceRegistry()
+    if dry_run:
+        # Load all policies and count what would be removed
+        total = 0
+        for domain in registry.list_domains():
+            policy = registry.load_policy(domain)
+            if policy is None:
+                continue
+            from datetime import datetime, timedelta, timezone
+
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+            stale = [
+                r
+                for r in policy.rules
+                if r.source == "inferred"
+                and (r.last_used_at is None or r.last_used_at < cutoff)
+                and r.hit_count > 0
+            ]
+            total += len(stale)
+            for r in stale:
+                console.print(f"[dim]Would prune: {domain}/{r.rule_id} ({r.pattern})[/dim]")
+        console.print(f"[yellow]{total} rules would be pruned (dry run).[/yellow]")
+    else:
+        removed = registry.prune_stale(days=days)
+        console.print(f"[green]✓[/green] Pruned {removed} stale rules.")
+
+
 if __name__ == "__main__":
     app()
-

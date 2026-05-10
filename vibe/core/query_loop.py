@@ -3,6 +3,7 @@
 import asyncio
 import copy
 import time
+import uuid
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Any, AsyncIterator, Callable
@@ -96,6 +97,10 @@ class QueryLoop:
         pageindex: Any | None = None,
         telemetry: Any | None = None,
         session_store: Any | None = None,
+        cost_router: Any | None = None,
+        dag_planner: Any | None = None,
+        enable_dag_execution: bool = False,
+        tool_prefs: Any | None = None,
     ):
         # Allow VibeConfig to override individual parameters
         if config is not None:
@@ -120,7 +125,9 @@ class QueryLoop:
         self.llm = llm_client
         self.tools = tool_system
         self.max_iterations = int(max_iterations) if max_iterations is not None else 50
-        self.max_context_tokens = int(max_context_tokens) if max_context_tokens is not None else 8000
+        self.max_context_tokens = (
+            int(max_context_tokens) if max_context_tokens is not None else 8000
+        )
         self.compactor = context_compactor or ContextCompactor(max_tokens=self.max_context_tokens)
         self.compaction_coord = CompactionCoordinator(self.compactor)
         self.error_recovery = error_recovery or ErrorRecovery(RetryPolicy())
@@ -129,7 +136,7 @@ class QueryLoop:
             feedback_engine, feedback_threshold, max_feedback_retries
         )
         self.tool_executor = ToolExecutor(
-            tool_system, self.hook_pipeline, mcp_bridge=mcp_bridge
+            tool_system, self.hook_pipeline, mcp_bridge=mcp_bridge, tool_prefs=tool_prefs
         )
         # Phase 6: 5-layer security defense
         sec_cfg = security_config
@@ -164,6 +171,11 @@ class QueryLoop:
         # Phase 3.2: Session checkpointing for durable suspension/resumption
         self._session_store = session_store
         self._iteration = 0
+        # Phase 3.3: Cost-aware dynamic routing
+        self.cost_router = cost_router
+        # Phase 3.4: DAG-based parallel tool execution
+        self.dag_planner = dag_planner
+        self.enable_dag_execution = enable_dag_execution
 
     @property
     def state(self) -> QueryState:
@@ -230,10 +242,9 @@ class QueryLoop:
             return
         self._running = True
         self._set_state(QueryState.PLANNING)
-        yield QueryResult(is_status=True, status_message="Planning strategy...", state=self._state)
-        import uuid
         self._session_id = str(uuid.uuid4())
         self._session_start_time = time.time()
+        yield QueryResult(is_status=True, status_message="Planning strategy...", state=self._state)
         if self.logger:
             self.logger.info(f"Starting QueryLoop run. Initial query: {initial_query}")
         try:
@@ -245,9 +256,9 @@ class QueryLoop:
             if initial_query and self.wiki is not None and self.pageindex is not None:
                 try:
                     routing_timeout = 2.0
-                    if hasattr(self, '_config_memory'):
+                    if hasattr(self, "_config_memory"):
                         routing_timeout = getattr(
-                            self._config_memory, 'routing_timeout_seconds', 2.0
+                            self._config_memory, "routing_timeout_seconds", 2.0
                         )
                     wiki_nodes = await asyncio.wait_for(
                         self.pageindex.route(initial_query),
@@ -255,8 +266,7 @@ class QueryLoop:
                     )
                     if wiki_nodes:
                         wiki_hint = "\n\n## Relevant Knowledge\n" + "\n".join(
-                            f"- [[{n.node_id}]] {n.title}: {n.description}"
-                            for n in wiki_nodes[:3]
+                            f"- [[{n.node_id}]] {n.title}: {n.description}" for n in wiki_nodes[:3]
                         )
                 except asyncio.TimeoutError:
                     pass  # Fail gracefully — preserve planner latency
@@ -269,7 +279,8 @@ class QueryLoop:
             if initial_query:
                 plan_request = PlanRequest(
                     query=initial_query,
-                    available_tools=self.tools.get_tool_schemas() + (self.mcp_bridge.get_tool_schemas() if self.mcp_bridge else []),
+                    available_tools=self.tools.get_tool_schemas()
+                    + (self.mcp_bridge.get_tool_schemas() if self.mcp_bridge else []),
                     available_skills=self.instruction_set.skills if self.instruction_set else [],
                     available_mcps=[
                         {"name": cfg.name, "description": cfg.description}
@@ -279,7 +290,9 @@ class QueryLoop:
                 )
                 self._plan_result = self.context_planner.plan(plan_request)
                 if self.logger:
-                    self.logger.info(f"Planner selected tools: {self._plan_result.selected_tool_names}")
+                    self.logger.info(
+                        f"Planner selected tools: {self._plan_result.selected_tool_names}"
+                    )
                 if self._plan_result.system_prompt_append:
                     self.messages.insert(
                         0,
@@ -300,6 +313,18 @@ class QueryLoop:
                         llm_msgs = self._build_llm_messages()
 
                     tools_for_llm = self._select_tools_for_llm()
+
+                    # Phase 3.3: Cost-aware dynamic routing
+                    if self.cost_router is not None:
+                        decision = self.cost_router.route(llm_msgs, available_tools=tools_for_llm)
+                        if decision.model_id != self.llm.model:
+                            self.set_model(decision.model_id)
+                            if self.logger:
+                                self.logger.info(
+                                    f"CostRouter: switched to {decision.model_id} "
+                                    f"({decision.reason})"
+                                )
+
                     yield QueryResult(
                         is_status=True,
                         status_message=f"Waiting for {self.llm.model}...",
@@ -315,14 +340,20 @@ class QueryLoop:
                     if response.is_error:
                         self._set_state(QueryState.ERROR)
                         yield QueryResult(
-                            response="", error=Exception(response.error), metrics=metrics, state=self._state
+                            response="",
+                            error=Exception(response.error),
+                            metrics=metrics,
+                            state=self._state,
                         )
                         break
 
                     if not response.content and not response.tool_calls:
                         self._set_state(QueryState.ERROR)
                         yield QueryResult(
-                            response="", error=Exception("Empty response"), metrics=metrics, state=self._state
+                            response="",
+                            error=Exception("Empty response"),
+                            metrics=metrics,
+                            state=self._state,
                         )
                         break
 
@@ -337,7 +368,9 @@ class QueryLoop:
                         )
                         yield await self._process_tool_response(response, metrics)
                     else:
-                        should_continue, result = await self._process_content_response(response, metrics)
+                        should_continue, result = await self._process_content_response(
+                            response, metrics
+                        )
                         if result:
                             yield result
                         if not should_continue:
@@ -360,9 +393,7 @@ class QueryLoop:
             if self._telemetry is not None and self._session_id:
                 try:
                     elapsed = time.time() - self._session_start_time
-                    total_chars = sum(
-                        len(m.content) for m in self.messages if m.content
-                    )
+                    total_chars = sum(len(m.content) for m in self.messages if m.content)
                     self._telemetry.record_session(
                         session_id=self._session_id,
                         duration_seconds=elapsed,
@@ -396,9 +427,7 @@ class QueryLoop:
                 and getattr(self._config_memory.rlm, "enabled", False)
             ):
                 try:
-                    self._rlm_trigger_task = asyncio.create_task(
-                        self._maybe_trigger_rlm()
-                    )
+                    self._rlm_trigger_task = asyncio.create_task(self._maybe_trigger_rlm())
                 except Exception as e:
                     if self.logger:
                         self.logger.debug(f"RLM trigger task spawn failed (non-fatal): {e}")
@@ -409,20 +438,21 @@ class QueryLoop:
                     tool_results = []
                     for msg in self.messages:
                         if msg.role == "tool":
-                            tool_results.append({
-                                "tool_call_id": msg.tool_call_id,
-                                "content": msg.content,
-                            })
+                            tool_results.append(
+                                {
+                                    "tool_call_id": msg.tool_call_id,
+                                    "content": msg.content,
+                                }
+                            )
                     self._trace_store.log_session(
                         session_id=self._session_id,
-                        messages=[
-                            {"role": m.role, "content": m.content}
-                            for m in self.messages
-                        ],
+                        messages=[{"role": m.role, "content": m.content} for m in self.messages],
                         tool_results=tool_results,
                         success=self._state == QueryState.COMPLETED,
                         model=self.llm.model if self.llm else "unknown",
-                        error=str(self._state.name) if self._state in (QueryState.ERROR, QueryState.INCOMPLETE) else None,
+                        error=str(self._state.name)
+                        if self._state in (QueryState.ERROR, QueryState.INCOMPLETE)
+                        else None,
                     )
                 except Exception:
                     # Logging failures must not crash the session
@@ -467,18 +497,22 @@ class QueryLoop:
         )
         return selected
 
-    async def _execute_with_security(self, tool_calls: list) -> list[ToolResult]:
-        """Execute tool calls with 5-layer security checks.
+    def _filter_tool_calls(
+        self, tool_calls: list
+    ) -> tuple[list[Any], list[int], list[ToolResult | None]]:
+        """Filter tool calls through security checks.
 
-        Returns results in the same order as tool_calls, with blocked calls
-        replaced by error ToolResults.
+        Returns:
+            allowed_calls: List of calls that passed security.
+            allowed_indices: Original indices of allowed calls.
+            results: List with None for allowed calls and error ToolResult for blocked calls.
         """
-        if self.security_coord is None:
-            return await self.tool_executor.execute(tool_calls)
-
         results: list[ToolResult | None] = [None] * len(tool_calls)
         allowed_calls: list[Any] = []
         allowed_indices: list[int] = []
+
+        if self.security_coord is None:
+            return tool_calls, list(range(len(tool_calls))), results
 
         for i, call in enumerate(tool_calls):
             call_name = extract_tool_call_name(call)
@@ -494,6 +528,16 @@ class QueryLoop:
                     error=f"Security blocked: {check.reason}",
                 )
 
+        return allowed_calls, allowed_indices, results
+
+    async def _execute_with_security(self, tool_calls: list) -> list[ToolResult]:
+        """Execute tool calls with 5-layer security checks.
+
+        Returns results in the same order as tool_calls, with blocked calls
+        replaced by error ToolResults.
+        """
+        allowed_calls, allowed_indices, results = self._filter_tool_calls(tool_calls)
+
         if allowed_calls:
             executed = await self.tool_executor.execute(allowed_calls)
             for idx, result in zip(allowed_indices, executed):
@@ -501,10 +545,62 @@ class QueryLoop:
 
         return [r for r in results if r is not None]
 
+    async def _execute_tools_dag(self, tool_calls: list) -> list[ToolResult]:
+        """Execute tool calls via DAG planner for parallelization.
+
+        Falls back to sequential execution if the DAG is invalid or has no parallelism.
+        """
+        allowed_calls, allowed_indices, results = self._filter_tool_calls(tool_calls)
+
+        if not allowed_calls or len(allowed_calls) <= 1:
+            # Not enough calls for DAG parallelism — use sequential
+            if allowed_calls:
+                executed = await self.tool_executor.execute(allowed_calls)
+                for idx, result in zip(allowed_indices, executed):
+                    results[idx] = result
+            return [r for r in results if r is not None]
+
+        dag = self.dag_planner.build_from_tool_calls(allowed_calls)
+        if not dag.is_valid or dag.max_depth == 0:
+            # No parallelism detected — fallback to sequential
+            if self.logger:
+                self.logger.debug(
+                    f"DAG fallback: valid={dag.is_valid}, depth={dag.max_depth}, "
+                    f"nodes={dag.node_count}"
+                )
+            executed = await self.tool_executor.execute(allowed_calls)
+            for idx, result in zip(allowed_indices, executed):
+                results[idx] = result
+            return [r for r in results if r is not None]
+
+        # Execute via DAGExecutor for parallelization
+        from vibe.harness.dag_planner import DAGExecutor
+
+        dag_executor = DAGExecutor(self.tool_executor)
+        dag_results = await dag_executor.execute(dag)
+
+        # Map DAG results back to original tool call order
+        for idx, call in zip(allowed_indices, allowed_calls):
+            node_id = f"tool_{allowed_indices.index(idx)}"
+            result = dag_results.get(node_id)
+            if result is not None:
+                results[idx] = result
+
+        return [r for r in results if r is not None]
+
     async def _process_tool_response(self, response: LLMResponse, metrics: Metrics) -> QueryResult:
         """Handle a response containing tool calls."""
         self._set_state(QueryState.TOOL_EXECUTION)
-        tool_results = await self._execute_with_security(response.tool_calls)
+
+        # Phase 3.4: Use DAG execution for parallelizable tool calls
+        if (
+            self.enable_dag_execution
+            and self.dag_planner is not None
+            and len(response.tool_calls) > 1
+        ):
+            tool_results = await self._execute_tools_dag(response.tool_calls)
+        else:
+            tool_results = await self._execute_with_security(response.tool_calls)
         self.messages.append(
             Message(
                 role="assistant",
@@ -533,7 +629,9 @@ class QueryLoop:
             state=self._state,
         )
 
-    async def _process_content_response(self, response: LLMResponse, metrics: Metrics) -> tuple[bool, QueryResult | None]:
+    async def _process_content_response(
+        self, response: LLMResponse, metrics: Metrics
+    ) -> tuple[bool, QueryResult | None]:
         """Handle a response with no tool calls. Returns (should_continue, result_to_yield)."""
         self.messages.append(
             Message(role="assistant", content=response.content or "", model_version=self.llm.model)
@@ -549,7 +647,9 @@ class QueryLoop:
                 state=QueryState.PROCESSING,
             )
         self._set_state(QueryState.COMPLETED)
-        return False, QueryResult(response=response.content or "", metrics=metrics, state=self._state)
+        return False, QueryResult(
+            response=response.content or "", metrics=metrics, state=self._state
+        )
 
     async def _execute_tool_calls(self, tool_calls: list) -> list[ToolResult]:
         """Deprecated: delegates to ToolExecutor."""
@@ -611,9 +711,7 @@ class QueryLoop:
             novelty_threshold = 0.5
             confidence_threshold = 0.8
             if self._config_memory is not None:
-                novelty_threshold = getattr(
-                    self._config_memory.wiki, "novelty_threshold", 0.5
-                )
+                novelty_threshold = getattr(self._config_memory.wiki, "novelty_threshold", 0.5)
                 confidence_threshold = getattr(
                     self._config_memory.wiki, "confidence_threshold", 0.8
                 )
@@ -680,7 +778,9 @@ class QueryLoop:
                     page_words = set(page.title.lower().split())
                     query_words = set(title_lower.split())
                     if page_words and query_words:
-                        overlap = len(page_words & query_words) / max(len(page_words), len(query_words))
+                        overlap = len(page_words & query_words) / max(
+                            len(page_words), len(query_words)
+                        )
                         if overlap > 0.7:
                             return page
             return None
@@ -711,7 +811,7 @@ class QueryLoop:
                 wiki=self.wiki,
                 trace_store=self._trace_store,
                 rlm_trainer=trainer,
-                rlm_config=self._config_memory.rlm
+                rlm_config=self._config_memory.rlm,
             )
 
             if decision.should_trigger:
@@ -767,13 +867,16 @@ class QueryLoop:
         )
         if self.compactor is not None:
             from vibe.core.coordinators import CompactionCoordinator
+
             new_loop.compactor = CompactionCoordinator(self.compactor.compactor)
         if getattr(self, "tool_executor", None) is not None:
             from vibe.core.coordinators import ToolExecutor
+
             new_loop.tool_executor = ToolExecutor(
                 self.tool_executor.tools,
                 self.tool_executor.hook_pipeline,
                 getattr(self.tool_executor, "mcp_bridge", None),
+                getattr(self.tool_executor, "tool_prefs", None),
             )
             # Copy registered handlers to new executor
             if hasattr(self.tool_executor, "_handlers"):
@@ -814,6 +917,7 @@ class QueryLoop:
 
         # Restore messages
         from vibe.core.query_loop import Message
+
         loop.messages = [
             Message(
                 role=m["role"],
@@ -829,6 +933,7 @@ class QueryLoop:
         plan_data = checkpoint.get("plan_result")
         if plan_data:
             from vibe.harness.planner import PlanResult
+
             loop._plan_result = PlanResult(
                 selected_tool_names=plan_data.get("selected_tool_names", []),
                 system_prompt_append=plan_data.get("system_prompt_append"),
@@ -867,15 +972,21 @@ class QueryLoop:
                     pass
 
         # Close LLM client and MCP bridge
-        if self.llm is not None and hasattr(self.llm, 'close'):
+        if self.llm is not None and hasattr(self.llm, "close"):
             close_fn = self.llm.close
-            if asyncio.iscoroutinefunction(close_fn) or (hasattr(close_fn, '__call__') and asyncio.iscoroutinefunction(getattr(close_fn, '__call__', None))):
+            if asyncio.iscoroutinefunction(close_fn) or (
+                hasattr(close_fn, "__call__")
+                and asyncio.iscoroutinefunction(getattr(close_fn, "__call__", None))
+            ):
                 await close_fn()
             elif callable(close_fn):
                 close_fn()
-        if self.mcp_bridge is not None and hasattr(self.mcp_bridge, 'close'):
+        if self.mcp_bridge is not None and hasattr(self.mcp_bridge, "close"):
             close_fn = self.mcp_bridge.close
-            if asyncio.iscoroutinefunction(close_fn) or (hasattr(close_fn, '__call__') and asyncio.iscoroutinefunction(getattr(close_fn, '__call__', None))):
+            if asyncio.iscoroutinefunction(close_fn) or (
+                hasattr(close_fn, "__call__")
+                and asyncio.iscoroutinefunction(getattr(close_fn, "__call__", None))
+            ):
                 await close_fn()
             elif callable(close_fn):
                 close_fn()

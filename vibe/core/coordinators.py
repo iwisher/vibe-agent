@@ -21,6 +21,9 @@ from vibe.tools._utils import extract_tool_call_arguments, extract_tool_call_nam
 from vibe.tools.mcp_bridge import MCPBridge
 from vibe.tools.tool_system import ToolResult, ToolSystem
 
+# Phase A: Tool preference registry (lazy import to avoid cycles)
+ToolPreferenceRegistry = Any
+
 
 @dataclass
 class SecurityCheckResult:
@@ -41,10 +44,12 @@ class ToolExecutor:
         tool_system: ToolSystem,
         hook_pipeline: HookPipeline,
         mcp_bridge: MCPBridge | None = None,
+        tool_prefs: Any | None = None,
     ):
         self.tools = tool_system
         self.hook_pipeline = hook_pipeline
         self.mcp_bridge = mcp_bridge
+        self.tool_prefs = tool_prefs
         self._handlers: dict[str, Callable] = {}
 
     def register_handler(self, tool_name: str, handler: Callable) -> None:
@@ -71,6 +76,10 @@ class ToolExecutor:
                 else:
                     call_name = getattr(call, "name", None)
                     arguments = getattr(call, "arguments", {})
+
+                # Phase A: Apply tool preferences (default arg overrides)
+                if self.tool_prefs is not None:
+                    arguments = self.tool_prefs.apply(call_name, arguments)
 
                 # Pre-hooks
                 pre_outcome = self.hook_pipeline.run_pre_hooks(call_name, arguments)
