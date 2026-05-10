@@ -2,9 +2,9 @@ import tempfile
 from pathlib import Path
 
 from vibe.core.coordinators import ToolExecutor
-from vibe.preferences.tool_prefs import ToolPreferenceRegistry
 from vibe.preferences.registry import PreferenceRegistry
-from vibe.tools.tool_system import ToolResult, ToolSystem
+from vibe.preferences.tool_prefs import ToolPreferenceRegistry
+from vibe.tools.tool_system import ToolResult
 
 
 class MockToolSystem:

@@ -236,6 +236,17 @@ class SecurityCoordinator:
                 auto_mode=getattr(self.config, "is_auto_approve", lambda: False)(),
             )
 
+        # Phase C: Approval policy DB (learned rules)
+        pref_cfg = getattr(self.config, "preferences", None) if hasattr(self.config, "preferences") else None
+        if pref_cfg is not None and getattr(pref_cfg, "enabled", False) and getattr(pref_cfg, "approval_enabled", True):
+            try:
+                from vibe.preferences.approval_rules import ApprovalPolicyDB
+                self._approval_policy_db = ApprovalPolicyDB()
+            except Exception:
+                self._approval_policy_db = None
+        else:
+            self._approval_policy_db = None
+
     def evaluate_tool_call(self, tool_name: str, tool_args: dict[str, Any]) -> SecurityCheckResult:
         """Evaluate a tool call through all 5 security layers.
 
@@ -251,6 +262,11 @@ class SecurityCoordinator:
         if not file_result.allowed:
             return file_result
 
+        # Phase C: Check learned approval rules before expensive gates
+        learned_result = self._check_learned_approval_rules(tool_name, tool_args)
+        if learned_result is not None:
+            return learned_result
+
         # Layer 3: Human approval gates
         approval_result = self._check_approval(tool_name, tool_args)
         if not approval_result.allowed:
@@ -264,6 +280,27 @@ class SecurityCoordinator:
         # Layer 5: Checkpoints (create rollback point before destructive ops)
         checkpoint_result = self._check_checkpoint(tool_name, tool_args)
         return checkpoint_result
+
+    def _check_learned_approval_rules(
+        self, tool_name: str, tool_args: dict[str, Any]
+    ) -> SecurityCheckResult | None:
+        """Phase C: Check learned approval rules before expensive gates.
+
+        Returns SecurityCheckResult if a rule matched, None to fall through.
+        """
+        if self._approval_policy_db is None:
+            return None
+        try:
+            decision = self._approval_policy_db.check(tool_name, tool_args)
+            if decision.action == "allow":
+                return SecurityCheckResult(allowed=True, reason=decision.reason, layer="learned_approval")
+            elif decision.action == "deny":
+                return SecurityCheckResult(
+                    allowed=False, reason=decision.reason, layer="learned_approval"
+                )
+        except Exception:
+            pass
+        return None
 
     def _check_patterns(self, tool_name: str, tool_args: dict[str, Any]) -> SecurityCheckResult:
         """Layer 1: Scan commands for dangerous patterns."""

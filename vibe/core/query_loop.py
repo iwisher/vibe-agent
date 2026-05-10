@@ -299,6 +299,19 @@ class QueryLoop:
                         Message(role="system", content=self._plan_result.system_prompt_append),
                     )
 
+                # Phase B: Inject response style preferences into system prompt
+                try:
+                    from vibe.preferences.style_policy import ResponseStylePolicy
+
+                    style_policy = ResponseStylePolicy()
+                    style_append = style_policy.get_system_prompt_append()
+                    if style_append:
+                        self.messages.insert(
+                            0, Message(role="system", content=style_append)
+                        )
+                except Exception:
+                    pass  # Non-critical: style preferences are optional
+
             iteration = self._iteration
             max_iterations = int(self.max_iterations) if self.max_iterations is not None else 50
             while self._running and iteration < max_iterations:

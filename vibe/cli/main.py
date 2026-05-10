@@ -1293,5 +1293,165 @@ def pref_prune(
         console.print(f"[green]✓[/green] Pruned {removed} stale rules.")
 
 
+@pref_app.command("style-set")
+def pref_style_set(
+    key: str = typer.Argument(..., help="Style key: verbosity|plan_format|confirm_threshold|show_commands"),
+    value: str = typer.Argument(..., help="Value for the key"),
+):
+    """Set a response style preference."""
+    from vibe.preferences.style_policy import (
+        ConfirmThreshold,
+        PlanFormat,
+        ResponseStylePolicy,
+        Verbosity,
+    )
+
+    style = ResponseStylePolicy()
+    if key == "verbosity":
+        style.set_verbosity(Verbosity(value))
+    elif key == "plan_format":
+        style.set_plan_format(PlanFormat(value))
+    elif key == "confirm_threshold":
+        style.set_confirm_threshold(ConfirmThreshold(value))
+    elif key == "show_commands":
+        style.set_show_commands(value.lower() == "true")
+    else:
+        console.print(f"[red]Unknown style key: {key}[/red]")
+        raise typer.Exit(1)
+
+    console.print(f"[green]✓[/green] Set {key} = {value}")
+
+
+@pref_app.command("style-show")
+def pref_style_show():
+    """Show current style preferences."""
+    from vibe.preferences.style_policy import ResponseStylePolicy
+
+    style = ResponseStylePolicy()
+    prompt = style.get_system_prompt_append()
+    if prompt:
+        console.print("[bold]Active style injections:[/bold]")
+        console.print(prompt)
+    else:
+        console.print("[dim]No style preferences set.[/dim]")
+
+
+@pref_app.command("approval-list")
+def pref_approval_list():
+    """List learned approval rules."""
+    from vibe.preferences.approval_rules import ApprovalPolicyDB
+
+    db = ApprovalPolicyDB()
+    rules = db._policy.rules if db._policy else []
+    if not rules:
+        console.print("[dim]No approval rules learned.[/dim]")
+        return
+
+    table = Table(title="Approval Rules")
+    table.add_column("Pattern", style="cyan")
+    table.add_column("Action", style="green")
+    table.add_column("Path", style="dim")
+    table.add_column("Hits", style="yellow")
+
+    for r in rules:
+        path = r.action_args.get("path_pattern", "—")
+        table.add_row(r.pattern, r.action, str(path), str(r.hit_count))
+    console.print(table)
+
+
+@pref_app.command("approval-clear")
+def pref_approval_clear():
+    """Clear all learned approval rules."""
+    from vibe.preferences.registry import PreferenceRegistry
+
+    PreferenceRegistry().delete_policy("approval")
+    console.print("[green]✓[/green] Cleared all approval rules")
+
+
+# --- Macro sub-commands (Phase D) ---
+
+macro_app = typer.Typer(help="Macro session workflows")
+app.add_typer(macro_app, name="macro")
+
+
+@macro_app.command("list")
+def macro_list():
+    """List saved macro sessions."""
+    from vibe.preferences.macro_session import MacroSessionRunner
+
+    runner = MacroSessionRunner()
+    macros = runner.list_macros()
+    if not macros:
+        console.print("[dim]No macros saved.[/dim]")
+        return
+
+    table = Table(title="Macro Sessions")
+    table.add_column("Name", style="cyan")
+    table.add_column("Description", style="dim")
+    table.add_column("Trigger", style="yellow")
+    table.add_column("Steps", style="green")
+
+    for m in macros:
+        table.add_row(m.name, m.description, m.trigger or "manual", str(len(m.steps)))
+    console.print(table)
+
+
+@macro_app.command("run")
+def macro_run(
+    name: str = typer.Argument(..., help="Macro name to run"),
+    var: list[str] = typer.Option([], "--var", help="Variables as key=val"),
+):
+    """Run a macro session."""
+    import asyncio
+
+    from vibe.preferences.macro_session import MacroSessionRunner
+
+    runner = MacroSessionRunner()
+    macro = runner.load_macro(name)
+    if macro is None:
+        console.print(f"[red]Macro '{name}' not found.[/red]")
+        raise typer.Exit(1)
+
+    variables = {}
+    for v in var:
+        if "=" in v:
+            k, val = v.split("=", 1)
+            variables[k] = val
+
+    console.print(f"[green]Running macro:[/green] {name}")
+
+    async def _run():
+        results = await runner.run(macro, variables)
+        console.print("\n[bold]Results:[/bold]")
+        for k, v in results.items():
+            console.print(f"  {k}: {v}")
+
+    asyncio.run(_run())
+
+
+@macro_app.command("create")
+def macro_create(
+    name: str = typer.Argument(..., help="Macro name"),
+    description: str = typer.Option("", "--desc", "-d"),
+):
+    """Create a new macro session interactively."""
+    from vibe.preferences.macro_session import MacroSession, MacroStep, MacroSessionRunner
+
+    console.print("[dim]Enter steps (empty query to finish):[/dim]")
+    steps = []
+    while True:
+        step_name = input("Step name: ")
+        query = input("Query template: ")
+        if not query:
+            break
+        store_as = input("Store result as (optional): ") or None
+        steps.append(MacroStep(name=step_name, query=query, store_result_as=store_as))
+
+    macro = MacroSession(name=name, description=description, steps=steps)
+    runner = MacroSessionRunner()
+    runner.save_macro(macro)
+    console.print(f"[green]✓[/green] Saved macro '{name}' with {len(steps)} steps")
+
+
 if __name__ == "__main__":
     app()

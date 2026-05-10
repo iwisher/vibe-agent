@@ -7,9 +7,8 @@ import os
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
-from vibe.preferences.models import PreferencePolicy, PreferenceRule, PreferenceSource
+from vibe.preferences.models import PreferencePolicy, PreferenceSource
 
 
 class PreferenceRegistry:
