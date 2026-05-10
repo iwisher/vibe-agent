@@ -99,7 +99,8 @@ class TestReadBlocklist:
         guard = FileSafetyGuard()
         with pytest.raises(FileSafetyError) as exc:
             guard.check_read("skills/.hub/index-cache")
-        assert exc.value.reason == "prompt_injection_defense"
+        # May be read_blocklist_prefix if project is in a blocked path (e.g. /private/var on macOS)
+        assert exc.value.reason in ("prompt_injection_defense", "read_blocklist_prefix")
 
 
 class TestPathTraversal:

@@ -88,7 +88,8 @@ async def test_query_loop_feedback_retry(mock_llm, tool_system):
         feedback_threshold=0.7,
         max_feedback_retries=1,
     )
-    results = [r async for r in loop.run("hi")]
+    all_results = [r async for r in loop.run("hi")]
+    results = [r for r in all_results if not r.is_status]
 
     # First yield is the bad response with PROCESSING state (feedback injected)
     assert results[0].response == "bad"
@@ -116,7 +117,8 @@ async def test_query_loop_no_feedback_when_score_high(mock_llm, tool_system):
         feedback_engine=engine,
         feedback_threshold=0.7,
     )
-    results = [r async for r in loop.run("hi")]
+    all_results = [r async for r in loop.run("hi")]
+    results = [r for r in all_results if not r.is_status]
     assert len(results) == 1
     assert results[0].state == QueryState.COMPLETED
 
@@ -143,7 +145,8 @@ async def test_feedback_001_low_score_triggers_retry(mock_llm, tool_system):
         feedback_threshold=0.6,
         max_feedback_retries=1,
     )
-    results = [r async for r in loop.run("hi")]
+    all_results = [r async for r in loop.run("hi")]
+    results = [r for r in all_results if not r.is_status]
 
     # First yield: bad response with PROCESSING state (retry triggered)
     assert results[0].response == "bad"
@@ -175,7 +178,8 @@ async def test_feedback_002_high_score_skips_retry(mock_llm, tool_system):
         feedback_threshold=0.6,
         max_feedback_retries=1,
     )
-    results = [r async for r in loop.run("hi")]
+    all_results = [r async for r in loop.run("hi")]
+    results = [r for r in all_results if not r.is_status]
 
     # Single result, no retry
     assert len(results) == 1

@@ -48,7 +48,8 @@ async def test_edge_001_empty_tool_list_does_not_crash(mock_llm, empty_tool_syst
         tool_system=empty_tool_system,
         max_iterations=5,
     )
-    results = [r async for r in loop.run("hi")]
+    all_results = [r async for r in loop.run("hi")]
+    results = [r for r in all_results if not r.is_status]
 
     assert len(results) >= 1
     assert results[-1].state == QueryState.COMPLETED
@@ -82,7 +83,8 @@ async def test_edge_002_malformed_tool_args_graceful_error(mock_llm, tool_system
         tool_system=tool_system_with_dummy,
         max_iterations=5,
     )
-    results = [r async for r in loop.run("do something")]
+    all_results = [r async for r in loop.run("do something")]
+    results = [r for r in all_results if not r.is_status]
 
     # Should yield a result with tool_results containing the error
     assert len(results) >= 1
@@ -114,7 +116,8 @@ async def test_edge_003_max_iteration_exhaustion_returns_partial(mock_llm, tool_
         tool_system=tool_system_with_dummy,
         max_iterations=2,
     )
-    results = [r async for r in loop.run("infinite tools")]
+    all_results = [r async for r in loop.run("infinite tools")]
+    results = [r for r in all_results if not r.is_status]
 
     # Should have exactly 2 iterations worth of results
     assert len(results) == 2

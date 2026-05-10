@@ -33,9 +33,10 @@ async def test_queryloop_001_incomplete_on_max_iterations():
     tools.execute_tool = AsyncMock(return_value=MagicMock(success=True, content="ok", error=None))
 
     loop = QueryLoop(llm_client=llm, tool_system=tools, max_iterations=3)
-    results = []
+    all_results = []
     async for r in loop.run(initial_query="test"):
-        results.append(r)
+        all_results.append(r)
+    results = [r for r in all_results if not r.is_status]
 
     assert loop.state == QueryState.INCOMPLETE
 
@@ -54,9 +55,10 @@ async def test_queryloop_002_completed_on_natural_break():
     tools.get_tool_schemas.return_value = []
 
     loop = QueryLoop(llm_client=llm, tool_system=tools, max_iterations=50)
-    results = []
+    all_results = []
     async for r in loop.run(initial_query="test"):
-        results.append(r)
+        all_results.append(r)
+    results = [r for r in all_results if not r.is_status]
 
     assert loop.state == QueryState.COMPLETED
     assert len(results) == 1
