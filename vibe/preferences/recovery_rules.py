@@ -1,23 +1,30 @@
-"""Recovery rule registry — map error patterns to recovery actions."""
+"""Recovery rule database — learned from error recovery patterns."""
 
 from __future__ import annotations
 
-import fnmatch
-import logging
-import re
+from dataclasses import dataclass
 from typing import Any
 
 from vibe.preferences.models import PreferencePolicy, PreferenceRule, PreferenceSource
 from vibe.preferences.registry import PreferenceRegistry
 
-logger = logging.getLogger(__name__)
+
+@dataclass
+class RecoveryAction:
+    """A recovery action for a specific error pattern."""
+
+    tool_name: str
+    error_pattern: str  # regex or substring
+    recovery_tool: str  # tool to use for recovery
+    recovery_args: dict[str, Any]
+    max_attempts: int = 3
 
 
 class RecoveryRuleDB:
-    """Registry for error-recovery rules.
+    """Database of recovery rules learned from user corrections.
 
-    Maps error patterns to recovery actions (retry_with, fallback_to, ask_user).
-    Attempt limits are tracked in session_state (in-memory), NOT persisted to DB.
+    When a tool fails, check if we have a learned recovery pattern.
+    Track attempt counts in session state (not persisted) to prevent loops.
     """
 
     DOMAIN = "recovery"
@@ -38,39 +45,41 @@ class RecoveryRuleDB:
 
     def add_rule(
         self,
+        tool_name: str,
         error_pattern: str,
-        recovery_action: str,
+        recovery_tool: str,
         recovery_args: dict[str, Any],
-        tool_name: str | None = None,
-        max_attempts: int = 1,
-        source: PreferenceSource = PreferenceSource.EXPLICIT,
+        max_attempts: int = 3,
     ) -> PreferenceRule:
         """Add a recovery rule.
 
         Args:
-            error_pattern: Regex or glob pattern to match against error messages.
-            recovery_action: One of "retry_with", "fallback_to", "ask_user".
-            recovery_args: Arguments for the recovery action.
-            tool_name: Optional tool name to scope the rule; None means global.
-            max_attempts: Max times this rule may fire per session.
-            source: How this preference was created.
+            tool_name: Tool that failed
+            error_pattern: Error message substring to match
+            recovery_tool: Tool to use for recovery
+            recovery_args: Args for recovery tool
+            max_attempts: Max recovery attempts per session
         """
         rule = PreferenceRule(
-            pattern=error_pattern,
-            action=recovery_action,
+            pattern=tool_name,
+            action="recover",
             action_args={
+                "error_pattern": error_pattern,
+                "recovery_tool": recovery_tool,
                 "recovery_args": recovery_args,
-                "tool_name": tool_name,
                 "max_attempts": max_attempts,
             },
-            source=source,
+            source=PreferenceSource.INFERRED,
         )
         if self._policy:
-            # Remove existing rule for same pattern + tool_name combination
+            # Remove duplicates
             self._policy.rules = [
                 r
                 for r in self._policy.rules
-                if not (r.pattern == error_pattern and r.action_args.get("tool_name") == tool_name)
+                if not (
+                    r.pattern == tool_name
+                    and r.action_args.get("error_pattern") == error_pattern
+                )
             ]
             self._policy.add_rule(rule)
             self._save()
@@ -78,85 +87,69 @@ class RecoveryRuleDB:
 
     def find_recovery(
         self,
+        tool_name: str,
         error_message: str,
-        tool_name: str | None = None,
-        session_state: dict[str, Any] | None = None,
-    ) -> PreferenceRule | None:
-        """Find a matching recovery rule for an error message.
+        session_state: dict[str, Any],
+    ) -> RecoveryAction | None:
+        """Find a recovery action for a failed tool.
 
         Args:
-            error_message: The error message to match against.
-            tool_name: Optional tool name for scoping.
-            session_state: In-memory dict tracking attempt counts per rule_id.
+            tool_name: Tool that failed
+            error_message: Error message from the tool
+            session_state: Mutable session state for attempt tracking
 
         Returns:
-            Matching PreferenceRule, or None if no match or max attempts exceeded.
+            RecoveryAction if found and attempts remain, None otherwise
         """
         if self._policy is None or not self._policy.enabled:
             return None
 
-        if session_state is None:
-            session_state = {}
-        attempt_counts: dict[str, int] = session_state.setdefault("recovery_attempts", {})
-
         for rule in self._policy.get_enabled_rules():
-            rule_tool = rule.action_args.get("tool_name")
-            max_attempts = rule.action_args.get("max_attempts", 1)
-
-            # If rule is scoped to a specific tool, require match
-            if rule_tool is not None and rule_tool != tool_name:
+            if rule.pattern != tool_name:
                 continue
 
-            if not self._matches(rule.pattern, error_message):
+            pattern = rule.action_args.get("error_pattern", "")
+            if pattern.lower() not in error_message.lower():
                 continue
 
-            # Check attempt limit against session_state
-            current_attempts = attempt_counts.get(rule.rule_id, 0)
-            if current_attempts >= max_attempts:
+            # Check attempt limit using session state
+            rule_key = f"recovery_attempts:{rule.rule_id}"
+            attempts = session_state.get(rule_key, 0)
+            max_attempts = rule.action_args.get("max_attempts", 3)
+
+            if attempts >= max_attempts:
                 continue
 
-            # Increment attempt count in session_state
-            attempt_counts[rule.rule_id] = current_attempts + 1
+            # Increment attempt count in session state
+            session_state[rule_key] = attempts + 1
 
-            # Batch hit for persistence
+            # Batch hit count
             self._registry.batch_hit(self.DOMAIN, rule.rule_id)
 
-            return rule
+            return RecoveryAction(
+                tool_name=tool_name,
+                error_pattern=pattern,
+                recovery_tool=rule.action_args["recovery_tool"],
+                recovery_args=rule.action_args.get("recovery_args", {}),
+                max_attempts=max_attempts,
+            )
 
         return None
 
-    def list_rules(self) -> list[PreferenceRule]:
-        """List all recovery rules."""
-        if self._policy is None:
-            return []
-        return list(self._policy.rules)
-
-    def remove_rule(self, error_pattern: str, tool_name: str | None = None) -> bool:
-        """Remove a recovery rule. Returns True if removed."""
+    def remove_rule(self, tool_name: str, error_pattern: str) -> bool:
+        """Remove a recovery rule."""
         if self._policy is None:
             return False
-        original_len = len(self._policy.rules)
+        original_count = len(self._policy.rules)
         self._policy.rules = [
             r
             for r in self._policy.rules
-            if not (r.pattern == error_pattern and r.action_args.get("tool_name") == tool_name)
+            if not (
+                r.pattern == tool_name
+                and r.action_args.get("error_pattern") == error_pattern
+            )
         ]
-        if len(self._policy.rules) < original_len:
+        if len(self._policy.rules) < original_count:
             self._save()
             return True
         return False
-
-    @staticmethod
-    def _matches(pattern: str, error_message: str) -> bool:
-        """Check if pattern matches error message (regex or glob)."""
-        try:
-            if re.search(pattern, error_message):
-                return True
-        except re.error:
-            pass
-        try:
-            if fnmatch.fnmatch(error_message, pattern):
-                return True
-        except Exception:
-            pass
-        return pattern in error_message

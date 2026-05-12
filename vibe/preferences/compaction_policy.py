@@ -1,31 +1,29 @@
-"""Compaction policy registry — control context compaction behavior."""
+"""Compaction policy — user preferences for context window management."""
 
 from __future__ import annotations
 
-import logging
-from enum import Enum
+from dataclasses import dataclass
 from typing import Any
 
 from vibe.preferences.models import PreferencePolicy, PreferenceRule, PreferenceSource
 from vibe.preferences.registry import PreferenceRegistry
 
-logger = logging.getLogger(__name__)
 
+@dataclass
+class CompactionConfig:
+    """Configuration for context compaction behavior."""
 
-class CompactionStrategy(str, Enum):
-    """Available compaction strategies."""
-
-    TRUNCATE = "truncate"
-    LLM_SUMMARIZE = "llm_summarize"
-    OFFLOAD = "offload"
-    DROP = "drop"
+    max_tokens: int = 8000
+    preserve_recent_n: int = 4  # preserve last N messages
+    preserve_summary: bool = True
+    compression_ratio: float = 0.5
 
 
 class CompactionPolicy:
-    """Policy registry for compaction preferences.
+    """User preferences for context window compaction.
 
-    Stores per-domain compaction settings using the same _set_field/_get_field
-    pattern as other preference policies.
+    Mined from explicit commands like "keep last 4 messages" or
+    "summarize older context".
     """
 
     DOMAIN = "compaction"
@@ -44,121 +42,68 @@ class CompactionPolicy:
         if self._policy:
             self._registry.save_policy(self._policy)
 
-    def _set_field(
-        self,
-        key: str,
-        value: Any,
-        source: PreferenceSource = PreferenceSource.EXPLICIT,
-    ) -> None:
-        """Set a policy field value, replacing any existing rule for that key."""
+    def set_config(self, config: CompactionConfig) -> None:
+        """Set compaction configuration."""
         if self._policy is None:
             return
-        self._policy.rules = [r for r in self._policy.rules if r.pattern != key]
-        rule = PreferenceRule(
-            pattern=key,
-            action="set_field",
-            action_args={"value": value},
-            source=source,
+        # Remove existing config rules
+        self._policy.rules = [r for r in self._policy.rules if r.pattern != "config"]
+        self._policy.add_rule(
+            PreferenceRule(
+                pattern="config",
+                action="set",
+                action_args={
+                    "max_tokens": config.max_tokens,
+                    "preserve_recent_n": config.preserve_recent_n,
+                    "preserve_summary": config.preserve_summary,
+                    "compression_ratio": config.compression_ratio,
+                },
+                source=PreferenceSource.EXPLICIT,
+            )
         )
-        self._policy.add_rule(rule)
         self._save()
 
-    def _get_field(self, key: str, default: Any = None) -> Any:
-        """Get the current value for a policy field, or default if unset."""
+    def get_config(self) -> CompactionConfig:
+        """Get current compaction configuration."""
         if self._policy is None:
-            return default
-        for rule in reversed(self._policy.rules):
-            if rule.pattern == key:
-                return rule.action_args.get("value", default)
-        return default
+            return CompactionConfig()
+        for rule in self._policy.rules:
+            if rule.pattern == "config":
+                args = rule.action_args
+                return CompactionConfig(
+                    max_tokens=args.get("max_tokens", 8000),
+                    preserve_recent_n=args.get("preserve_recent_n", 4),
+                    preserve_summary=args.get("preserve_summary", True),
+                    compression_ratio=args.get("compression_ratio", 0.5),
+                )
+        return CompactionConfig()
 
-    # -- Public API --
+    def set_tool_priority(self, tool_name: str, priority: str) -> None:
+        """Set priority for a tool's output during compaction.
 
-    def set_strategy(
-        self,
-        strategy: CompactionStrategy,
-        source: PreferenceSource = PreferenceSource.EXPLICIT,
-    ) -> PreferenceRule:
-        """Set the default compaction strategy."""
-        self._set_field("strategy", strategy.value, source=source)
-        # Return the rule that was just added
-        return (
-            self._policy.rules[-1]
-            if self._policy
-            else PreferenceRule(
-                pattern="strategy", action="set_field", action_args={"value": strategy.value}
-            )
-        )
-
-    def get_strategy(self) -> CompactionStrategy | None:
-        """Get the current compaction strategy, or None if unset."""
-        val = self._get_field("strategy")
-        if val is None:
-            return None
-        try:
-            return CompactionStrategy(val)
-        except ValueError:
-            return None
-
-    def set_drop_priority(
-        self,
-        priorities: list[str],
-        source: PreferenceSource = PreferenceSource.EXPLICIT,
-    ) -> PreferenceRule:
-        """Set message-type drop priority (ordered list, lowest priority dropped first)."""
-        self._set_field("drop_priority", priorities, source=source)
-        return (
-            self._policy.rules[-1]
-            if self._policy
-            else PreferenceRule(
-                pattern="drop_priority", action="set_field", action_args={"value": priorities}
-            )
-        )
-
-    def get_drop_priority(self) -> list[str] | None:
-        """Get the current drop priority list, or None if unset."""
-        return self._get_field("drop_priority")
-
-    def set_never_summarize(
-        self,
-        message_types: list[str],
-        source: PreferenceSource = PreferenceSource.EXPLICIT,
-    ) -> PreferenceRule:
-        """Set message types that should never be summarized."""
-        self._set_field("never_summarize", message_types, source=source)
-        return (
-            self._policy.rules[-1]
-            if self._policy
-            else PreferenceRule(
-                pattern="never_summarize", action="set_field", action_args={"value": message_types}
-            )
-        )
-
-    def get_never_summarize(self) -> list[str] | None:
-        """Get the list of message types to never summarize, or None if unset."""
-        return self._get_field("never_summarize")
-
-    def set_offload_threshold(
-        self,
-        threshold: int,
-        source: PreferenceSource = PreferenceSource.EXPLICIT,
-    ) -> PreferenceRule:
-        """Set token threshold above which offloading is triggered."""
-        self._set_field("offload_threshold", threshold, source=source)
-        return (
-            self._policy.rules[-1]
-            if self._policy
-            else PreferenceRule(
-                pattern="offload_threshold", action="set_field", action_args={"value": threshold}
-            )
-        )
-
-    def get_offload_threshold(self) -> int | None:
-        """Get the offload token threshold, or None if unset."""
-        return self._get_field("offload_threshold")
-
-    def list_settings(self) -> list[PreferenceRule]:
-        """List all compaction settings."""
+        priority: "keep" | "summarize" | "drop"
+        """
         if self._policy is None:
-            return []
-        return list(self._policy.rules)
+            return
+        # Remove existing rule for this tool
+        self._policy.rules = [
+            r for r in self._policy.rules if not (r.pattern == tool_name and r.action == "priority")
+        ]
+        self._policy.add_rule(
+            PreferenceRule(
+                pattern=tool_name,
+                action="priority",
+                action_args={"priority": priority},
+                source=PreferenceSource.EXPLICIT,
+            )
+        )
+        self._save()
+
+    def get_tool_priority(self, tool_name: str) -> str | None:
+        """Get priority for a tool."""
+        if self._policy is None:
+            return None
+        for rule in self._policy.rules:
+            if rule.pattern == tool_name and rule.action == "priority":
+                return rule.action_args.get("priority")
+        return None

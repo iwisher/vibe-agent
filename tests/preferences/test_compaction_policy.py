@@ -1,66 +1,48 @@
 import tempfile
 from pathlib import Path
 
-from vibe.preferences.compaction_policy import CompactionPolicy, CompactionStrategy
+from vibe.preferences.compaction_policy import CompactionConfig, CompactionPolicy
 from vibe.preferences.registry import PreferenceRegistry
 
 
 class TestCompactionPolicy:
-    def test_set_and_get_strategy(self):
+    def test_set_and_get_config(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "prefs.db"
             policy = CompactionPolicy(PreferenceRegistry(str(db)))
 
-            policy.set_strategy(CompactionStrategy.LLM_SUMMARIZE)
-            assert policy.get_strategy() == CompactionStrategy.LLM_SUMMARIZE
+            config = CompactionConfig(max_tokens=4000, preserve_recent_n=2)
+            policy.set_config(config)
 
-            policy.set_strategy(CompactionStrategy.DROP)
-            assert policy.get_strategy() == CompactionStrategy.DROP
+            loaded = policy.get_config()
+            assert loaded.max_tokens == 4000
+            assert loaded.preserve_recent_n == 2
+            assert loaded.preserve_summary is True  # default
 
-    def test_default_values(self):
+    def test_default_config(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "prefs.db"
             policy = CompactionPolicy(PreferenceRegistry(str(db)))
 
-            assert policy.get_strategy() is None
-            assert policy.get_drop_priority() is None
-            assert policy.get_never_summarize() is None
-            assert policy.get_offload_threshold() is None
+            config = policy.get_config()
+            assert config.max_tokens == 8000
+            assert config.preserve_recent_n == 4
 
-    def test_overwrite_existing(self):
+    def test_tool_priority(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "prefs.db"
             policy = CompactionPolicy(PreferenceRegistry(str(db)))
 
-            policy.set_strategy(CompactionStrategy.TRUNCATE)
-            policy.set_strategy(CompactionStrategy.OFFLOAD)
+            policy.set_tool_priority("read_file", "keep")
+            assert policy.get_tool_priority("read_file") == "keep"
+            assert policy.get_tool_priority("bash") is None
 
-            # Should only have one rule after overwrite
-            rules = policy.list_settings()
-            assert len(rules) == 1
-            assert rules[0].action_args["value"] == CompactionStrategy.OFFLOAD.value
-            assert policy.get_strategy() == CompactionStrategy.OFFLOAD
-
-    def test_set_and_get_drop_priority(self):
+    def test_overwrite_existing_config(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "prefs.db"
             policy = CompactionPolicy(PreferenceRegistry(str(db)))
 
-            policy.set_drop_priority(["system", "assistant", "user"])
-            assert policy.get_drop_priority() == ["system", "assistant", "user"]
+            policy.set_config(CompactionConfig(max_tokens=1000))
+            policy.set_config(CompactionConfig(max_tokens=2000))
 
-    def test_set_and_get_never_summarize(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            db = Path(tmp) / "prefs.db"
-            policy = CompactionPolicy(PreferenceRegistry(str(db)))
-
-            policy.set_never_summarize(["tool_result", "approval_request"])
-            assert policy.get_never_summarize() == ["tool_result", "approval_request"]
-
-    def test_set_and_get_offload_threshold(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            db = Path(tmp) / "prefs.db"
-            policy = CompactionPolicy(PreferenceRegistry(str(db)))
-
-            policy.set_offload_threshold(8000)
-            assert policy.get_offload_threshold() == 8000
+            assert policy.get_config().max_tokens == 2000
