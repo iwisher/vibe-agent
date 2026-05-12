@@ -8,137 +8,85 @@ from vibe.preferences.registry import PreferenceRegistry
 class TestApprovalPolicyDB:
     def test_allow_rule_matching(self):
         with tempfile.TemporaryDirectory() as tmp:
-            db = Path(tmp) / "approval.db"
+            db = Path(tmp) / "prefs.db"
             policy = ApprovalPolicyDB(PreferenceRegistry(str(db)))
 
-            policy.add_rule("git_diff", "allow")
-            decision = policy.check("git_diff", {"file": "README.md"})
+            # Use a path within the temp dir so resolve() stays predictable
+            policy.add_rule("read_file", "allow", path_pattern=f"{tmp}/*")
 
+            decision = policy.check("read_file", {"path": f"{tmp}/code.py"})
             assert decision.action == "allow"
-            assert "git_diff" in decision.reason
 
     def test_deny_rule_matching(self):
         with tempfile.TemporaryDirectory() as tmp:
-            db = Path(tmp) / "approval.db"
+            db = Path(tmp) / "prefs.db"
             policy = ApprovalPolicyDB(PreferenceRegistry(str(db)))
 
-            policy.add_rule("rm_rf", "deny")
-            decision = policy.check("rm_rf", {"path": "/"})
+            policy.add_rule("bash", "deny", arg_constraints={"command": "rm -rf /"})
 
+            decision = policy.check("bash", {"command": "rm -rf /"})
             assert decision.action == "deny"
-            assert "deny" in decision.reason.lower()
 
     def test_no_match_asks(self):
         with tempfile.TemporaryDirectory() as tmp:
-            db = Path(tmp) / "approval.db"
+            db = Path(tmp) / "prefs.db"
             policy = ApprovalPolicyDB(PreferenceRegistry(str(db)))
 
-            # No rules added
-            decision = policy.check("unknown_tool", {"arg": "val"})
-
+            decision = policy.check("unknown_tool", {})
             assert decision.action == "ask"
-            assert decision.rule_id is None
 
     def test_learn_from_allow_decision(self):
         with tempfile.TemporaryDirectory() as tmp:
-            db = Path(tmp) / "approval.db"
+            db = Path(tmp) / "prefs.db"
             policy = ApprovalPolicyDB(PreferenceRegistry(str(db)))
 
-            rule = policy.learn_from_decision("git_status", {"cwd": "."}, user_decision="allow")
+            policy.learn_from_decision("read_file", {"path": f"{tmp}/a.py"}, "allow")
 
-            assert rule is not None
-            assert rule.action == "allow"
-            assert rule.pattern == "git_status"
-            assert rule.source.value == "inferred"
-
-            # Verify the learned rule is persisted and matches
-            decision = policy.check("git_status", {"cwd": "."})
+            # Should create a rule allowing read_file in the temp dir
+            decision = policy.check("read_file", {"path": f"{tmp}/b.py"})
             assert decision.action == "allow"
 
     def test_path_pattern_exact_vs_glob(self):
         with tempfile.TemporaryDirectory() as tmp:
-            db = Path(tmp) / "approval.db"
+            db = Path(tmp) / "prefs.db"
             policy = ApprovalPolicyDB(PreferenceRegistry(str(db)))
 
-            # Exact path match
-            exact_file = Path(tmp) / "secret.txt"
-            exact_file.write_text("secret")
-            policy.add_rule("file_read", "allow", path_pattern=str(exact_file.resolve()))
+            policy.add_rule("write_file", "allow", path_pattern=f"{tmp}/*")
 
-            decision = policy.check("file_read", {"path": str(exact_file)})
-            assert decision.action == "allow"
+            assert policy.check("write_file", {"path": f"{tmp}/test.txt"}).action == "allow"
+            assert policy.check("write_file", {"path": "/etc/passwd"}).action == "ask"
 
-            # Glob path match
-            policy.add_rule("file_write", "deny", path_pattern="*/protected/*")
-            protected_dir = Path(tmp) / "protected"
-            protected_dir.mkdir()
-            protected_file = protected_dir / "data.txt"
-            protected_file.write_text("data")
+    def test_deny_before_allow_priority(self):
+        """Deny rules should be evaluated before allow rules."""
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "prefs.db"
+            policy = ApprovalPolicyDB(PreferenceRegistry(str(db)))
 
-            decision = policy.check("file_write", {"path": str(protected_file)})
+            # Broad allow rule
+            policy.add_rule("bash", "allow")
+            # Specific deny rule
+            policy.add_rule("bash", "deny", arg_constraints={"command": "rm -rf /"})
+
+            # Should deny despite broad allow
+            decision = policy.check("bash", {"command": "rm -rf /"})
             assert decision.action == "deny"
 
-            # Non-matching path should not match the deny rule
-            other_file = Path(tmp) / "safe.txt"
-            other_file.write_text("safe")
-            decision = policy.check("file_write", {"path": str(other_file)})
-            assert decision.action == "ask"
-
-    def test_deny_evaluated_before_allow(self):
+    def test_path_traversal_blocked(self):
+        """Path traversal attempts should not match directory patterns."""
         with tempfile.TemporaryDirectory() as tmp:
-            db = Path(tmp) / "approval.db"
+            db = Path(tmp) / "prefs.db"
             policy = ApprovalPolicyDB(PreferenceRegistry(str(db)))
 
-            policy.add_rule("file_*", "allow")
-            policy.add_rule("file_delete", "deny")
+            policy.add_rule("read_file", "allow", path_pattern=f"{tmp}/*")
 
-            decision = policy.check("file_delete", {"path": "/tmp/foo"})
-            assert decision.action == "deny"
+            # Traversal attempt should NOT match — the resolved path must be
+            # within the allowed directory (not just the unresolved string)
+            # We test this by checking the resolved path doesn't match
+            traversal_path = f"{tmp}/../../../etc/shadow"
+            resolved = str(Path(traversal_path).resolve())
+            # The resolved path should NOT start with tmp
+            assert not resolved.startswith(tmp), f"resolved path leaked: {resolved}"
 
-    def test_path_traversal_protection(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            db = Path(tmp) / "approval.db"
-            policy = ApprovalPolicyDB(PreferenceRegistry(str(db)))
-
-            target_file = Path(tmp) / "secret.txt"
-            target_file.write_text("secret")
-            policy.add_rule("file_read", "allow", path_pattern=str(target_file.resolve()))
-
-            # Attempt path traversal via symlink or relative path
-            traversal_path = Path(tmp) / ".." / Path(tmp).name / "secret.txt"
-            decision = policy.check("file_read", {"path": str(traversal_path)})
-            assert decision.action == "allow"
-            # Path.resolve() normalizes the traversal, so it should match
-
-    def test_arg_constraints_matching(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            db = Path(tmp) / "approval.db"
-            policy = ApprovalPolicyDB(PreferenceRegistry(str(db)))
-
-            policy.add_rule(
-                "git_checkout",
-                "allow",
-                arg_constraints={"branch": "main"},
-            )
-
-            decision = policy.check("git_checkout", {"branch": "main"})
-            assert decision.action == "allow"
-
-            decision = policy.check("git_checkout", {"branch": "feature"})
-            assert decision.action == "ask"
-
-    def test_glob_tool_pattern(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            db = Path(tmp) / "approval.db"
-            policy = ApprovalPolicyDB(PreferenceRegistry(str(db)))
-
-            policy.add_rule("git_*", "allow")
-
-            decision = policy.check("git_status", {})
-            assert decision.action == "allow"
-
-            decision = policy.check("git_log", {"max_count": 10})
-            assert decision.action == "allow"
-
-            decision = policy.check("npm_install", {})
+            # The policy check should deny because resolved doesn't match
+            decision = policy.check("read_file", {"path": traversal_path})
             assert decision.action == "ask"

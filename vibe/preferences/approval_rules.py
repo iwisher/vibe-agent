@@ -1,9 +1,8 @@
-"""Approval rules registry — policy-driven tool call approval decisions."""
+"""Approval rule database — learned from user approval decisions."""
 
 from __future__ import annotations
 
 import fnmatch
-import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -11,23 +10,20 @@ from typing import Any
 from vibe.preferences.models import PreferencePolicy, PreferenceRule, PreferenceSource
 from vibe.preferences.registry import PreferenceRegistry
 
-logger = logging.getLogger(__name__)
-
 
 @dataclass
 class ApprovalDecision:
-    """Result of an approval rule check."""
+    """Result of an approval policy check."""
 
-    action: str  # "allow", "deny", "ask"
+    action: str  # "allow" | "deny" | "ask"
     reason: str
     rule_id: str | None = None
 
 
 class ApprovalPolicyDB:
-    """Registry for tool approval rules.
+    """Database of approval rules learned from user decisions.
 
-    Rules are evaluated in security order: deny rules first, then allow rules.
-    If no rule matches, the default action is "ask".
+    Rules are structured as: (tool_pattern, path_pattern, arg_constraints) → action
     """
 
     DOMAIN = "approval"
@@ -57,11 +53,11 @@ class ApprovalPolicyDB:
         """Add an approval rule.
 
         Args:
-            tool_pattern: Exact tool name or glob pattern (e.g., "file_*")
-            action: "allow" or "deny"
-            path_pattern: Optional glob pattern for path arguments
-            arg_constraints: Optional dict of argument constraints
-            min_confidence: Minimum confidence threshold for the rule
+            tool_pattern: Tool name or glob
+            action: What to do when matched ("allow", "deny", "ask")
+            path_pattern: Optional path glob (for file tools)
+            arg_constraints: Optional arg values that must match
+            min_confidence: Required confidence for auto-execution (inferred rules)
         """
         rule = PreferenceRule(
             pattern=tool_pattern,
@@ -71,10 +67,18 @@ class ApprovalPolicyDB:
                 "arg_constraints": arg_constraints or {},
                 "min_confidence": min_confidence,
             },
-            confidence=min_confidence,
-            source=PreferenceSource.EXPLICIT,
+            source=PreferenceSource.INFERRED,
         )
         if self._policy:
+            # Remove duplicate patterns
+            self._policy.rules = [
+                r
+                for r in self._policy.rules
+                if not (
+                    r.pattern == tool_pattern
+                    and r.action_args.get("path_pattern") == path_pattern
+                )
+            ]
             self._policy.add_rule(rule)
             self._save()
         return rule
@@ -83,41 +87,89 @@ class ApprovalPolicyDB:
         self,
         tool_name: str,
         arguments: dict[str, Any],
-        tool_result_summary: dict[str, Any] | None = None,
+        tool_result_summary: str | None = None,
     ) -> ApprovalDecision:
-        """Check approval rules for a tool call.
+        """Check if an operation matches any approval rule.
 
+        Returns ApprovalDecision with action and matched rule info.
         Deny rules are evaluated before allow rules for security.
-        Returns "ask" if no rule matches.
         """
         if self._policy is None or not self._policy.enabled:
-            return ApprovalDecision(action="ask", reason="No approval policy loaded")
+            return ApprovalDecision(action="ask", reason="no policy")
 
+        # SECURITY: Evaluate deny rules first, then allow rules
         enabled_rules = self._policy.get_enabled_rules()
         deny_rules = [r for r in enabled_rules if r.action == "deny"]
         allow_rules = [r for r in enabled_rules if r.action == "allow"]
 
-        # Evaluate deny rules first
-        for rule in deny_rules:
-            if self._matches(rule, tool_name, arguments):
+        for rule in deny_rules + allow_rules:
+            match = self._matches(rule, tool_name, arguments)
+            if match:
+                # Batch hit count (not persisted immediately)
                 self._registry.batch_hit(self.DOMAIN, rule.rule_id)
                 return ApprovalDecision(
-                    action="deny",
-                    reason=f"Matched deny rule for pattern '{rule.pattern}'",
+                    action=rule.action,
+                    reason=f"matched rule {rule.rule_id}: {rule.pattern}",
                     rule_id=rule.rule_id,
                 )
 
-        # Then evaluate allow rules
-        for rule in allow_rules:
-            if self._matches(rule, tool_name, arguments):
-                self._registry.batch_hit(self.DOMAIN, rule.rule_id)
-                return ApprovalDecision(
-                    action="allow",
-                    reason=f"Matched allow rule for pattern '{rule.pattern}'",
-                    rule_id=rule.rule_id,
-                )
+        return ApprovalDecision(action="ask", reason="no matching rule")
 
-        return ApprovalDecision(action="ask", reason="No matching approval rule found")
+    def _matches(
+        self, rule: PreferenceRule, tool_name: str, arguments: dict[str, Any]
+    ) -> bool:
+        """Check if a rule matches a tool invocation.
+
+        SECURITY: All paths are resolved to absolute form before matching
+        to prevent path traversal bypasses (e.g., /projects/../../../etc/shadow).
+        """
+        # Tool name match
+        if not fnmatch.fnmatch(tool_name, rule.pattern):
+            return False
+
+        path_pattern = rule.action_args.get("path_pattern")
+        if path_pattern:
+            # Extract path from arguments (common for file/bash tools)
+            raw_path = (
+                arguments.get("path")
+                or arguments.get("file_path")
+                or arguments.get("cwd")
+                or ""
+            )
+            # SECURITY: Resolve absolute path to prevent traversal bypass
+            try:
+                resolved = str(Path(raw_path).resolve())
+            except (OSError, ValueError):
+                return False
+            # Match against resolved path
+            # On macOS, /tmp resolves to /private/tmp and /var/folders resolves to
+            # /private/var/folders. We match against both resolved and unresolved
+            # forms for portability, BUT we also verify the resolved path is within
+            # the allowed directory to prevent path traversal bypasses.
+            unresolved = str(Path(raw_path))
+            resolved_match = fnmatch.fnmatch(resolved, path_pattern)
+            unresolved_match = fnmatch.fnmatch(unresolved, path_pattern)
+            
+            # SECURITY: Path traversal check — if the unresolved path contains
+            # parent directory references (..), the resolved path MUST also match.
+            # For normal paths, either match is sufficient (macOS /private compat).
+            has_traversal = ".." in unresolved
+            if has_traversal:
+                # Traversal attempt: both must match
+                if not (resolved_match and unresolved_match):
+                    return False
+            else:
+                # Normal path: either match is fine
+                if not (resolved_match or unresolved_match):
+                    return False
+
+        arg_constraints = rule.action_args.get("arg_constraints", {})
+        for key, expected in arg_constraints.items():
+            actual = arguments.get(key)
+            if actual != expected:
+                return False
+
+        return True
 
     def learn_from_decision(
         self,
@@ -125,96 +177,29 @@ class ApprovalPolicyDB:
         arguments: dict[str, Any],
         user_decision: str,
         context: dict[str, Any] | None = None,
-    ) -> PreferenceRule | None:
-        """Learn from a user decision and create an inferred rule.
+    ) -> None:
+        """Record a user approval decision for future rule mining.
 
-        Args:
-            tool_name: The tool that was used
-            arguments: The arguments that were used
-            user_decision: "allow" or "deny"
-            context: Optional context about the decision
+        This is called after every manual approval gate interaction.
         """
-        if user_decision not in ("allow", "deny"):
-            logger.warning("Invalid user_decision '%s', expected 'allow' or 'deny'", user_decision)
-            return None
-
-        # Build a tool pattern from the tool name
-        tool_pattern = tool_name
-
-        # Extract path pattern from arguments if present
-        path_pattern = None
-        for key in ("path", "file", "dest", "target"):
-            if key in arguments:
-                path_pattern = str(arguments[key])
-                break
-
-        rule = PreferenceRule(
-            pattern=tool_pattern,
-            action=user_decision,
-            action_args={
-                "path_pattern": path_pattern,
-                "arg_constraints": {},
-                "learned_context": context or {},
-            },
-            confidence=0.8,
-            source=PreferenceSource.INFERRED,
-        )
-        if self._policy:
-            self._policy.add_rule(rule)
-            self._save()
-        return rule
-
-    def list_rules(self) -> list[PreferenceRule]:
-        """List all approval rules."""
-        if self._policy is None:
-            return []
-        return list(self._policy.rules)
-
-    @staticmethod
-    def _matches(rule: PreferenceRule, tool_name: str, arguments: dict[str, Any]) -> bool:
-        """Check if a rule matches a tool call.
-
-        Matches tool name via exact match or fnmatch glob.
-        If the rule has a path_pattern, resolves the path and matches via fnmatch.
-        If arg_constraints are present, all must be satisfied.
-        """
-        # Tool name match
-        pattern = rule.pattern
-        if pattern != tool_name and not fnmatch.fnmatch(tool_name, pattern):
-            return False
-
-        action_args = rule.action_args or {}
-
-        # Path pattern match
-        path_pattern = action_args.get("path_pattern")
-        if path_pattern:
-            # Look for path-like arguments
-            path_value = None
-            for key in ("path", "file", "dest", "target"):
-                if key in arguments:
-                    path_value = arguments[key]
-                    break
-
-            if path_value is not None:
-                try:
-                    resolved = Path(str(path_value)).resolve()
-                    # Match against resolved path string
-                    if not fnmatch.fnmatch(str(resolved), path_pattern):
-                        return False
-                except (OSError, ValueError):
-                    # If resolution fails, fall back to raw string match
-                    if not fnmatch.fnmatch(str(path_value), path_pattern):
-                        return False
-            else:
-                # Rule requires path pattern but no path argument present
-                return False
-
-        # Argument constraints match
-        arg_constraints = action_args.get("arg_constraints") or {}
-        for key, expected in arg_constraints.items():
-            if key not in arguments:
-                return False
-            if arguments[key] != expected:
-                return False
-
-        return True
+        # For MVP: immediately create a rule if pattern is clear
+        # Future: batch mine with clustering
+        path = arguments.get("path") or arguments.get("file_path") or arguments.get("cwd")
+        if path and user_decision == "allow":
+            # Create a broad rule: allow this tool in this directory
+            dir_pattern = str(Path(path).parent) + "/*"
+            self.add_rule(
+                tool_pattern=tool_name,
+                action="allow",
+                path_pattern=dir_pattern,
+            )
+        elif user_decision == "deny":
+            # Create a deny rule for exact args
+            self.add_rule(
+                tool_pattern=tool_name,
+                action="deny",
+                path_pattern=str(path) if path else None,
+                arg_constraints={
+                    k: v for k, v in arguments.items() if k in ["command", "recursive"]
+                },
+            )
