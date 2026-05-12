@@ -1,1 +1,1 @@
-"""Tests for vibe preferences layer."""
+# Preference layer tests

@@ -63,3 +63,24 @@ class TestToolPreferenceRegistry:
             reg2 = ToolPreferenceRegistry(PreferenceRegistry(str(db)))
             rules = reg2.list_preferences()
             assert rules[0].hit_count == 2
+
+    def test_disabled_policy_returns_original(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "prefs.db"
+            reg = ToolPreferenceRegistry(PreferenceRegistry(str(db)))
+
+            reg.set_default_args("git_diff", {"flags": ["--stat"]})
+            reg._policy.enabled = False
+            reg._save()
+
+            result = reg.apply("git_diff", {"file": "README.md"})
+            assert "flags" not in result
+            assert result["file"] == "README.md"
+
+    def test_no_policy_returns_original(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = Path(tmp) / "prefs.db"
+            reg = ToolPreferenceRegistry(PreferenceRegistry(str(db)))
+
+            result = reg.apply("unknown_tool", {"arg": "val"})
+            assert result == {"arg": "val"}

@@ -5,10 +5,11 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
-from vibe.preferences.models import PreferencePolicy, PreferenceSource
+from vibe.preferences.models import PreferencePolicy, PreferenceRule
 
 
 class PreferenceRegistry:
@@ -111,7 +112,7 @@ class PreferenceRegistry:
 
     def prune_stale(self, days: int = 30) -> int:
         """Remove inferred rules not used in N days. Returns count removed."""
-        from datetime import timedelta
+        from vibe.preferences.models import PreferenceSource
 
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         removed = 0
