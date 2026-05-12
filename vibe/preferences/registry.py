@@ -127,8 +127,7 @@ class PreferenceRegistry:
                 r
                 for r in policy.rules
                 if r.source != PreferenceSource.INFERRED
-                or (r.last_used_at is not None and r.last_used_at > cutoff)
-                or r.hit_count == 0  # Never used inferred rules are also stale
+                or (r.last_used_at is not None and r.last_used_at >= cutoff)
             ]
             removed += original_len - len(policy.rules)
             self.save_policy(policy)
