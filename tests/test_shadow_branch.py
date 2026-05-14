@@ -14,23 +14,21 @@ def git_repo(tmp_path):
     """Create a temporary git repository."""
     repo = tmp_path / "repo"
     repo.mkdir()
-    os.chdir(repo)
 
-    # Initialize git repo
-    subprocess.run(["git", "init"], check=True, capture_output=True)
+    # Initialize git repo with cwd=repo (no os.chdir to preserve test isolation)
+    subprocess.run(["git", "init"], cwd=repo, check=True, capture_output=True)
     subprocess.run(
-        ["git", "config", "user.email", "test@test.com"], check=True, capture_output=True
+        ["git", "config", "user.email", "test@test.com"], cwd=repo, check=True, capture_output=True
     )
-    subprocess.run(["git", "config", "user.name", "Test User"], check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True, capture_output=True)
 
     # Create initial commit
     (repo / "README.md").write_text("# Test Repo")
-    subprocess.run(["git", "add", "."], check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-m", "Initial commit"], check=True, capture_output=True)
+    subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=repo, check=True, capture_output=True)
 
     yield repo
-
-    os.chdir(Path.cwd().parent)
+    # No teardown needed; tmp_path cleans up automatically
 
 
 class TestShadowBranchManager:
@@ -69,8 +67,8 @@ class TestShadowBranchManager:
 
         # Create a file and shadow
         (git_repo / "test.txt").write_text("original")
-        subprocess.run(["git", "add", "."], check=True, capture_output=True)
-        subprocess.run(["git", "commit", "-m", "Add test file"], check=True, capture_output=True)
+        subprocess.run(["git", "add", "."], cwd=git_repo, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "Add test file"], cwd=git_repo, check=True, capture_output=True)
 
         shadow = manager.create_shadow("sess-003")
         assert shadow is not None
@@ -78,8 +76,8 @@ class TestShadowBranchManager:
 
         # Modify the file
         (git_repo / "test.txt").write_text("modified")
-        subprocess.run(["git", "add", "."], check=True, capture_output=True)
-        subprocess.run(["git", "commit", "-m", "Modify test file"], check=True, capture_output=True)
+        subprocess.run(["git", "add", "."], cwd=git_repo, check=True, capture_output=True)
+        subprocess.run(["git", "commit", "-m", "Modify test file"], cwd=git_repo, check=True, capture_output=True)
 
         # Restore shadow
         success = manager.restore_shadow("sess-003")
@@ -87,7 +85,7 @@ class TestShadowBranchManager:
 
         # Should be back on the original branch with restored content
         result = subprocess.run(
-            ["git", "branch", "--show-current"], capture_output=True, text=True, check=True
+            ["git", "branch", "--show-current"], cwd=git_repo, capture_output=True, text=True, check=True
         )
         assert result.stdout.strip() == original
         assert (git_repo / "test.txt").read_text() == "original"
@@ -98,9 +96,10 @@ class TestShadowBranchManager:
 
         # Pre-populate the stash stack to simulate a race-prone environment
         (git_repo / "stashed.txt").write_text("pre-existing stash")
-        subprocess.run(["git", "add", "."], check=True, capture_output=True)
+        subprocess.run(["git", "add", "."], cwd=git_repo, check=True, capture_output=True)
         subprocess.run(
             ["git", "stash", "push", "-m", "unrelated-stash"],
+            cwd=git_repo,
             check=True,
             capture_output=True,
         )
@@ -113,6 +112,7 @@ class TestShadowBranchManager:
         # The existing stash should still be present (git stash create is non-destructive)
         stash_list = subprocess.run(
             ["git", "stash", "list"],
+            cwd=git_repo,
             capture_output=True,
             text=True,
             check=True,
@@ -159,7 +159,6 @@ class TestShadowBranchManager:
 
     def test_non_git_directory(self, tmp_path):
         """Manager should handle non-git directories gracefully."""
-        os.chdir(tmp_path)
         manager = ShadowBranchManager(tmp_path)
 
         assert manager._git_available is False

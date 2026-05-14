@@ -165,8 +165,11 @@ class ShadowBranchManager:
         original_branch = config_result.stdout.strip() if config_result.returncode == 0 else ""
 
         try:
-            # Stash any current changes on the current branch
-            self._run_git(["stash", "push", "-m", "vibe-restore-stash"], check=False)
+            # Stash any current changes on the current branch before switching
+            stashed = False
+            stash_res = self._run_git(["stash", "push", "-m", "vibe-restore-stash"], check=False)
+            if stash_res.returncode == 0 and "No local changes to save" not in stash_res.stderr:
+                stashed = True
 
             # Checkout shadow branch to get its state
             self._run_git(["checkout", branch_name], check=True)
@@ -178,6 +181,9 @@ class ShadowBranchManager:
 
             return True
         except subprocess.CalledProcessError:
+            # Rollback the stash if we failed to restore
+            if stashed:
+                self._run_git(["stash", "pop"], check=False)
             return False
 
     def list_shadows(self) -> list[ShadowBranch]:

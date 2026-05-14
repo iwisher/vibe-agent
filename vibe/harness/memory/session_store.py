@@ -7,6 +7,7 @@ traces are for completed session history.
 import json
 import os
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -34,25 +35,26 @@ class SessionStore:
         self._init_db()
 
     def _init_db(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
-            # WAL mode for durability during crashes (Phase 3.2)
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.executescript(
-                """
-                CREATE TABLE IF NOT EXISTS session_checkpoints (
-                    session_id TEXT PRIMARY KEY,
-                    state TEXT NOT NULL,
-                    messages_json TEXT NOT NULL,
-                    plan_result_json TEXT,
-                    iteration INTEGER DEFAULT 0,
-                    feedback_retries INTEGER DEFAULT 0,
-                    model TEXT,
-                    created_at TEXT,
-                    updated_at TEXT
-                );
-                CREATE INDEX IF NOT EXISTS idx_checkpoints_updated ON session_checkpoints(updated_at);
-                """
-            )
+        with closing(sqlite3.connect(self.db_path, timeout=5.0)) as conn:
+            with conn:
+                # WAL mode for durability during crashes (Phase 3.2)
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.executescript(
+                    """
+                    CREATE TABLE IF NOT EXISTS session_checkpoints (
+                        session_id TEXT PRIMARY KEY,
+                        state TEXT NOT NULL,
+                        messages_json TEXT NOT NULL,
+                        plan_result_json TEXT,
+                        iteration INTEGER DEFAULT 0,
+                        feedback_retries INTEGER DEFAULT 0,
+                        model TEXT,
+                        created_at TEXT,
+                        updated_at TEXT
+                    );
+                    CREATE INDEX IF NOT EXISTS idx_checkpoints_updated ON session_checkpoints(updated_at);
+                    """
+                )
 
     def _redact(self, data: dict[str, Any]) -> dict[str, Any]:
         """Redact secrets from session data before persistence."""
@@ -83,34 +85,35 @@ class SessionStore:
         safe_messages = [self._redact(m) for m in messages]
         safe_plan = self._redact(plan_result) if plan_result else None
 
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO session_checkpoints
-                (session_id, state, messages_json, plan_result_json, iteration,
-                 feedback_retries, model, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(
-                    (SELECT created_at FROM session_checkpoints WHERE session_id = ?),
-                    ?
-                ), ?)
-                """,
-                (
-                    session_id,
-                    state,
-                    json.dumps(safe_messages),
-                    json.dumps(safe_plan) if safe_plan else None,
-                    iteration,
-                    feedback_retries,
-                    model,
-                    session_id,
-                    now,
-                    now,
-                ),
-            )
+        with closing(sqlite3.connect(self.db_path, timeout=5.0)) as conn:
+            with conn:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO session_checkpoints
+                    (session_id, state, messages_json, plan_result_json, iteration,
+                     feedback_retries, model, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(
+                        (SELECT created_at FROM session_checkpoints WHERE session_id = ?),
+                        ?
+                    ), ?)
+                    """,
+                    (
+                        session_id,
+                        state,
+                        json.dumps(safe_messages),
+                        json.dumps(safe_plan) if safe_plan else None,
+                        iteration,
+                        feedback_retries,
+                        model,
+                        session_id,
+                        now,
+                        now,
+                    ),
+                )
 
     def load_checkpoint(self, session_id: str) -> dict[str, Any] | None:
         """Load a checkpoint by session_id. Returns None if not found."""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path, timeout=5.0)) as conn:
             conn.row_factory = sqlite3.Row
             row = conn.execute(
                 "SELECT * FROM session_checkpoints WHERE session_id = ?",
@@ -132,7 +135,7 @@ class SessionStore:
 
     def list_incomplete(self, limit: int = 20) -> list[dict[str, Any]]:
         """List all incomplete sessions ordered by most recently updated first."""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path, timeout=5.0)) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """
@@ -147,16 +150,17 @@ class SessionStore:
 
     def delete_checkpoint(self, session_id: str) -> bool:
         """Delete a checkpoint. Returns True if a row was deleted."""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.execute(
-                "DELETE FROM session_checkpoints WHERE session_id = ?",
-                (session_id,),
-            )
-            return cursor.rowcount > 0
+        with closing(sqlite3.connect(self.db_path, timeout=5.0)) as conn:
+            with conn:
+                cursor = conn.execute(
+                    "DELETE FROM session_checkpoints WHERE session_id = ?",
+                    (session_id,),
+                )
+                return cursor.rowcount > 0
 
     def has_checkpoint(self, session_id: str) -> bool:
         """Check if a checkpoint exists for the given session_id."""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path, timeout=5.0)) as conn:
             result = conn.execute(
                 "SELECT 1 FROM session_checkpoints WHERE session_id = ?",
                 (session_id,),
@@ -165,6 +169,6 @@ class SessionStore:
 
     def count_checkpoints(self) -> int:
         """Return total number of checkpoints."""
-        with sqlite3.connect(self.db_path) as conn:
+        with closing(sqlite3.connect(self.db_path, timeout=5.0)) as conn:
             result = conn.execute("SELECT COUNT(*) FROM session_checkpoints").fetchone()
             return result[0] if result else 0
