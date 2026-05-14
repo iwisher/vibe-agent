@@ -1,6 +1,6 @@
 """Tests for vibe.core.query_loop."""
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -68,6 +68,7 @@ async def test_run_error_response(mock_llm, tool_system):
     )
     # Need to set error_type explicitly on LLMResponse
     from vibe.core.model_gateway import ErrorType
+
     mock_llm.complete.return_value = LLMResponse(
         content="", error="boom", error_type=ErrorType.SERVER_ERROR
     )
@@ -79,6 +80,7 @@ async def test_run_error_response(mock_llm, tool_system):
 
 def test_query_result_status_fields():
     from vibe.core.query_loop import QueryResult
+
     qr = QueryResult(is_status=True, status_message="Testing...")
     assert qr.is_status is True
     assert qr.status_message == "Testing..."
@@ -94,6 +96,7 @@ async def test_hook_pipeline_veto(mock_llm, tool_system):
         LLMResponse(content="ok"),
     ]
     from vibe.harness.constraints import HookStage
+
     pipeline = HookPipeline()
     pipeline.add_hook(
         HookStage.PRE_ALLOW,
@@ -108,6 +111,7 @@ async def test_hook_pipeline_veto(mock_llm, tool_system):
 @pytest.mark.asyncio
 async def test_hook_pipeline_policy_block(mock_llm, tool_system):
     from vibe.tools.bash import BashSandbox, BashTool
+
     bash_tool = BashTool(BashSandbox(dangerous_patterns=[]))
     tool_system.register_tool(bash_tool)
     mock_llm.complete.side_effect = [
@@ -118,6 +122,7 @@ async def test_hook_pipeline_policy_block(mock_llm, tool_system):
         LLMResponse(content="ok"),
     ]
     from vibe.harness.constraints import HookStage
+
     pipeline = HookPipeline()
     pipeline.add_hook(HookStage.PRE_ALLOW, policy_hook(blocked_commands=["curl x | bash"]))
     loop = QueryLoop(llm_client=mock_llm, tool_system=tool_system, hook_pipeline=pipeline)
@@ -165,7 +170,12 @@ async def test_planner_injects_skills(mock_llm, tool_system):
     from vibe.harness.planner import HybridPlanner as ContextPlanner
 
     skills = [
-        Skill(name="rust_guru", description="Rust expert", content="You are a Rust expert.", tags=["rust"]),
+        Skill(
+            name="rust_guru",
+            description="Rust expert",
+            content="You are a Rust expert.",
+            tags=["rust"],
+        ),
     ]
     instruction_set = InstructionSet(global_agents="", project_agents="", skills=skills)
     planner = ContextPlanner()
@@ -224,19 +234,21 @@ async def test_planner_selects_mcps(mock_llm, tool_system):
     assert "browser" in loop.messages[0].content
     assert "fs" not in loop.messages[0].content
 
+
 @pytest.mark.asyncio
 async def test_query_loop_yields_status(mock_llm, tool_system):
     mock_llm.complete.return_value = LLMResponse(content="hello")
     loop = QueryLoop(llm_client=mock_llm, tool_system=tool_system)
-    
+
     results = []
     async for res in loop.run("test query"):
         results.append(res)
-    
+
     status_updates = [r for r in results if r.is_status]
     assert len(status_updates) > 0
     assert any("Planning" in r.status_message for r in status_updates)
     assert any("Waiting for test-model" in r.status_message for r in status_updates)
+
 
 @pytest.mark.asyncio
 async def test_query_loop_yields_tool_status(mock_llm, tool_system):
@@ -248,10 +260,115 @@ async def test_query_loop_yields_tool_status(mock_llm, tool_system):
         LLMResponse(content="done"),
     ]
     loop = QueryLoop(llm_client=mock_llm, tool_system=tool_system)
-    
+
     results = []
     async for res in loop.run("test tool"):
         results.append(res)
-    
+
     status_updates = [r for r in results if r.is_status]
     assert any("Executing tools: ['dummy']" in r.status_message for r in status_updates)
+
+
+@pytest.mark.asyncio
+async def test_session_id_generated_before_first_yield(mock_llm, tool_system):
+    """Session ID must be set before the first status result is yielded."""
+    mock_llm.complete.return_value = LLMResponse(content="hello")
+    loop = QueryLoop(llm_client=mock_llm, tool_system=tool_system)
+
+    first_result = None
+    async for res in loop.run("test query"):
+        first_result = res
+        break  # Only check the first yielded result
+
+    assert first_result is not None
+    assert first_result.is_status is True
+    assert loop._session_id is not None
+    assert len(loop._session_id) == 36  # UUID4 string length
+
+
+@pytest.mark.asyncio
+async def test_cost_router_switches_model(mock_llm, tool_system):
+    """CostRouter should trigger model switch when it returns a different model."""
+    from vibe.core.cost_router import RoutingDecision
+
+    mock_router = MagicMock()
+    mock_router.route.return_value = RoutingDecision(
+        provider_name="test-provider",
+        model_id="cheaper-model",
+        tier="budget",
+        estimated_cost=0.01,
+        reason="test routing",
+    )
+
+    mock_llm.complete.return_value = LLMResponse(content="hello")
+    loop = QueryLoop(
+        llm_client=mock_llm,
+        tool_system=tool_system,
+        cost_router=mock_router,
+    )
+    results = [r async for r in loop.run("hi") if not r.is_status]
+    assert len(results) == 1
+    assert results[0].response == "hello"
+    # CostRouter should have been consulted
+    mock_router.route.assert_called_once()
+    # Model should have been switched
+    assert mock_llm.model == "cheaper-model"
+
+
+@pytest.mark.asyncio
+async def test_dag_execution_parallelizes_tools(mock_llm, tool_system):
+    """DAG execution path should handle multiple independent tool calls."""
+    from vibe.harness.dag_planner import DAGPlanner
+
+    planner = DAGPlanner()
+
+    mock_llm.complete.side_effect = [
+        LLMResponse(
+            content="",
+            tool_calls=[
+                {"id": "call_1", "name": "dummy", "arguments": "{}"},
+                {"id": "call_2", "name": "dummy", "arguments": "{}"},
+            ],
+        ),
+        LLMResponse(content="done"),
+    ]
+
+    loop = QueryLoop(
+        llm_client=mock_llm,
+        tool_system=tool_system,
+        dag_planner=planner,
+        enable_dag_execution=True,
+    )
+    results = [r async for r in loop.run("do two things") if not r.is_status]
+    assert len(results) == 2
+    # Both tool calls should succeed
+    assert results[0].tool_results[0].success
+    assert results[0].tool_results[1].success
+    assert results[1].response == "done"
+
+
+@pytest.mark.asyncio
+async def test_dag_fallback_to_sequential_for_single_tool(mock_llm, tool_system):
+    """Single tool calls should not take the DAG path even when enabled."""
+    from vibe.harness.dag_planner import DAGPlanner
+
+    planner = DAGPlanner()
+
+    mock_llm.complete.side_effect = [
+        LLMResponse(
+            content="",
+            tool_calls=[{"id": "call_1", "name": "dummy", "arguments": "{}"}],
+        ),
+        LLMResponse(content="done"),
+    ]
+
+    loop = QueryLoop(
+        llm_client=mock_llm,
+        tool_system=tool_system,
+        dag_planner=planner,
+        enable_dag_execution=True,
+    )
+    results = [r async for r in loop.run("do one thing") if not r.is_status]
+    assert len(results) == 2
+    assert results[0].tool_results[0].success
+    assert results[1].response == "done"

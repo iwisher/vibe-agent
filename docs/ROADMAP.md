@@ -114,6 +114,16 @@ This document tracks the progress of Vibe Agent, from its core foundation to fut
 - [x] Ingestion worker to pipe chunks through the `KnowledgeExtractor` to generate structured Wiki Pages
 - [x] CLI command: `vibe memory import <path-to-dir-or-file> --type [pdf|md]`
 
+### 3.7 Preference Layer (User Feedback → Heuristics)
+- [ ] **P1 Tool Preferences**: Default argument overrides per tool (e.g., "always `git diff --stat`")
+- [ ] **P2 Approval Rules**: Learned auto-approve/deny from user decisions
+- [ ] **P3 Response Style Policy**: User-tuned system prompt (verbosity, plan format, confirm threshold)
+- [ ] **P4 Macro Sessions**: User-defined multi-step YAML workflows with Jinja2 templating
+- [ ] **P5 Recovery Rules**: Pattern-based error recovery (e.g., "on permission denied, try sudo")
+- [ ] **P6 Compaction Policy**: User-tuned context truncation strategy
+- [ ] **P7 Provider Preference Matrix**: Per-task model routing learned from overrides
+- [ ] **P8 Extraction Policy**: Wiki knowledge filtering (skip patterns, auto-tags, merge threshold)
+
 ---
 
 ## 🔮 Phase 4: Recursive Self-Improvement
@@ -274,7 +284,12 @@ Prioritized by impact × effort, based on the architectural critique above.
 **Solution**: Create a `SkillMakerPipeline` that: (1) detects recurring task patterns from wiki extractions, (2) generates a `SKILL.md` draft using the LLM, (3) sandboxes and validates it, (4) proposes installation via the approval gate.  
 **Impact**: The agent becomes self-improving — new capabilities emerge from usage patterns.
 
-### 10. ↩️ Shadow Workspace Rollbacks
+### 10. 🧠 Preference Layer (User Feedback → Heuristics)
+**Problem**: User feedback ("be concise", "always use `--stat`", "don't ask me about reads in ~/projects") is ephemeral. It lives in the current session context and is lost on restart.  
+**Solution**: Build a `PreferenceRegistry` that converts user corrections into persistent, testable, code-based heuristics. 8 preference types: tool defaults, approval rules, response style, macro sessions, recovery rules, compaction policy, provider routing, and extraction filtering. All default-disabled, opt-in via config.  
+**Impact**: The agent evolves from "tool that uses LLMs" to "self-maintaining heuristic system where LLMs are the update mechanism."
+
+### 11. ↩️ Shadow Workspace Rollbacks
 **Problem**: Complex file refactoring by the agent can leave the workspace in a broken state with no easy undo.  
 **Solution**: Before any write-heavy task, create a hidden git branch (`vibe/shadow-<session-id>`). If the task fails (state = ERROR/INCOMPLETE), offer `vibe rollback` to restore the workspace.  
 **Impact**: Removes fear of running the agent on real codebases — critical for adoption.
@@ -295,4 +310,4 @@ CLIOnly            CLIOnly             CLI + React Dashboard
 
 ---
 
-*Last updated: 2026-05-03 | Test suite: **948 tests collected, 948 passing***
+*Last updated: 2026-05-09 | Test suite: **983 tests collected, 983 passing***

@@ -197,6 +197,7 @@ class PlannerConfig(BaseModel):
     llm_routing: bool = False
     cache_ttl: int = Field(default=3600, ge=60)
     max_llm_tools: int = Field(default=10, ge=1, le=50)
+    dag_execution: bool = False
 
 
 class CostRouterConfig(BaseModel):
@@ -205,6 +206,27 @@ class CostRouterConfig(BaseModel):
     enabled: bool = False
     spend_limit: Optional[float] = None  # cost units; None = unlimited
     default_tier: str = Field(default="standard", pattern=r"^(free|budget|standard|premium|ultra)$")
+
+
+class SessionConfig(BaseModel):
+    """Session management configuration (Phase 3.2)."""
+
+    auto_resume: bool = False
+    prompt_on_resume: bool = True
+
+
+class PreferenceConfig(BaseModel):
+    """Preference layer configuration."""
+
+    enabled: bool = False  # Master switch
+    tools_enabled: bool = True
+    approval_enabled: bool = True
+    style_enabled: bool = True
+    macros_enabled: bool = True
+    recovery_enabled: bool = True
+    compaction_enabled: bool = True
+    provider_enabled: bool = True
+    extraction_enabled: bool = True
 
 
 class TraceStoreConfig(BaseModel):
@@ -483,6 +505,8 @@ class VibeConfig(BaseSettings):
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     memory: TripartiteMemoryConfig = Field(default_factory=TripartiteMemoryConfig)
     cost_router: CostRouterConfig = Field(default_factory=CostRouterConfig)
+    session: SessionConfig = Field(default_factory=SessionConfig)
+    preferences: PreferenceConfig = Field(default_factory=PreferenceConfig)
 
     # Legacy flat compat
     api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")

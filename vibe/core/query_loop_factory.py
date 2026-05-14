@@ -174,6 +174,54 @@ class QueryLoopFactory:
             kwargs["pageindex"] = pageindex
             kwargs["telemetry"] = telemetry
 
+        # Phase 3.3: Wire CostRouter when enabled
+        if self.config is not None:
+            cr_cfg = getattr(self.config, "cost_router", None)
+            if cr_cfg is not None and getattr(cr_cfg, "enabled", False):
+                try:
+                    from vibe.core.cost_router import CostRouter
+
+                    registry = getattr(self.config, "providers", None)
+                    if registry is None:
+                        from vibe.evals.model_registry import ModelRegistry
+
+                        registry = ModelRegistry.from_config(self.config)
+                    cost_router = CostRouter(
+                        provider_registry=registry,
+                        default_tier=getattr(cr_cfg, "default_tier", "standard"),
+                        spend_limit=getattr(cr_cfg, "spend_limit", None),
+                    )
+                    kwargs["cost_router"] = cost_router
+                except Exception as e:
+                    if self.logger:
+                        self.logger.warning(f"Failed to initialize CostRouter: {e}")
+
+        # Phase 3.4: Wire DAGPlanner when enabled
+        if self.config is not None:
+            planner_cfg = getattr(self.config, "planner", None)
+            if planner_cfg is not None and getattr(planner_cfg, "dag_execution", False):
+                try:
+                    from vibe.harness.dag_planner import DAGPlanner
+
+                    kwargs["dag_planner"] = DAGPlanner()
+                    kwargs["enable_dag_execution"] = True
+                except Exception as e:
+                    if self.logger:
+                        self.logger.warning(f"Failed to initialize DAGPlanner: {e}")
+
+        # Phase A: Wire ToolPreferenceRegistry when preferences enabled
+        if self.config is not None:
+            pref_cfg = getattr(self.config, "preferences", None)
+            if pref_cfg is not None and getattr(pref_cfg, "enabled", False):
+                try:
+                    from vibe.preferences.tool_prefs import ToolPreferenceRegistry
+
+                    if getattr(pref_cfg, "tools_enabled", True):
+                        kwargs["tool_prefs"] = ToolPreferenceRegistry()
+                except Exception as e:
+                    if self.logger:
+                        self.logger.warning(f"Failed to initialize ToolPreferenceRegistry: {e}")
+
         return QueryLoop(**kwargs)
 
     def _create_session_store(self) -> Any | None:
