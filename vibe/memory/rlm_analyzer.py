@@ -137,7 +137,8 @@ class RLMThresholdAnalyzer:
                         await rlm_trainer.train(train_config)
 
                     import asyncio
-                    asyncio.create_task(_background_train())
+                    # Store task reference to avoid unawaited coroutine warnings
+                    self._training_task = asyncio.create_task(_background_train())
 
                 except Exception as e:
                     logger.error(f"Failed to launch RLM training: {e}")
