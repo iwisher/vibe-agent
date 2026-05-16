@@ -139,13 +139,25 @@ Responsibilities extracted from `QueryLoop` for testability:
 2.  **FeedbackCoordinator**: Manages self-verification and retry hints. Threshold-based with max retry cap.
 3.  **CompactionCoordinator**: Triggers `ContextCompactor` logic before LLM calls.
 
-### 5.3 Tool System & Security (`vibe/tools/`)
+### 5.3 Preference Layer (`vibe/preferences/`)
+Converts user feedback into persistent, testable, code-based heuristics. All features default-disabled, opt-in via config.
+*   **Registry** (`registry.py`): SQLite WAL-backed persistence across 7 domains. Batch hit counting (in-memory, flushed on session end). INFERRED-only stale rule pruning.
+*   **Tool Preferences** (`tool_prefs.py`): Default argument overrides per tool with glob pattern matching.
+*   **Approval Rules** (`approval_rules.py`): Learned auto-approve/deny. Deny-before-allow evaluation. Path traversal protection via `Path.resolve()` + dual-match.
+*   **Style Policy** (`style_policy.py`): User-tuned system prompt injection (verbosity, plan format, confirm threshold).
+*   **Macro Sessions** (`macro_session.py`): User-defined multi-step YAML workflows with Jinja2 templating and `SandboxedEnvironment`.
+*   **Recovery Rules** (`recovery_rules.py`): Pattern-based error recovery with per-session attempt limits.
+*   **Compaction Policy** (`compaction_policy.py`): User-tuned context window management (max tokens, preserve recent N, per-tool priority).
+*   **Provider Matrix** (`provider_prefs.py`): Per-task model routing with confidence scoring and fallback chains.
+*   **Extraction Policy** (`extraction_policy.py`): Wiki knowledge filtering (skip patterns, auto-tags, merge threshold).
+
+### 5.4 Tool System & Security (`vibe/tools/`)
 *   **Bash Sandbox:** Uses `subprocess_exec` (no shell) + regex denylist (`sudo`, `rm -rf /`, etc.).
 *   **File Jail:** `_resolve_and_jail()` prevents path traversal even via symlinks.
 *   **Hook Pipeline:** 5 stages (`PRE_VALIDATE → PRE_MODIFY → PRE_ALLOW → POST_EXECUTE → POST_FIX`).
 *   **Current limitation:** Only 2 built-in hooks with ~4 patterns. 5-layer defense expansion planned.
 
-### 5.4 Skill System v2 (`vibe/harness/skills/`)
+### 5.5 Skill System v2 (`vibe/harness/skills/`)
 Native skill format with TOML frontmatter (`+++` delimited):
 *   **Parser:** `SkillParser` parses TOML frontmatter + markdown body.
 *   **Models:** Pydantic v2 validation for IDs, unique step IDs, safe formats.
@@ -155,7 +167,7 @@ Native skill format with TOML frontmatter (`+++` delimited):
 *   **Executor:** Step execution with variable substitution and verification.
 *   **Current limitation:** Naive string `.replace()` for variable substitution (planned fix).
 
-### 5.5 Memory (`vibe/harness/memory/`)
+### 5.6 Memory (`vibe/harness/memory/`)
 *   **TraceStore:** Scalable backend (SQLite, JSON, or Memory) for session persistence.
     - **Persistence:** `QueryLoop` automatically logs sessions on completion via `finally` block.
     - **Optimization:** Switched from `pickle` to `numpy` float32 for 4x smaller and faster embedding storage.
@@ -196,4 +208,4 @@ Native skill format with TOML frontmatter (`+++` delimited):
 
 ---
 
-*Last Updated: 2026-04-26 (v0.3.0-alpha)*
+*Last Updated: 2026-05-13 (v0.3.2-alpha)*

@@ -115,14 +115,14 @@ This document tracks the progress of Vibe Agent, from its core foundation to fut
 - [x] CLI command: `vibe memory import <path-to-dir-or-file> --type [pdf|md]`
 
 ### 3.7 Preference Layer (User Feedback → Heuristics)
-- [ ] **P1 Tool Preferences**: Default argument overrides per tool (e.g., "always `git diff --stat`")
-- [ ] **P2 Approval Rules**: Learned auto-approve/deny from user decisions
-- [ ] **P3 Response Style Policy**: User-tuned system prompt (verbosity, plan format, confirm threshold)
-- [ ] **P4 Macro Sessions**: User-defined multi-step YAML workflows with Jinja2 templating
-- [ ] **P5 Recovery Rules**: Pattern-based error recovery (e.g., "on permission denied, try sudo")
-- [ ] **P6 Compaction Policy**: User-tuned context truncation strategy
-- [ ] **P7 Provider Preference Matrix**: Per-task model routing learned from overrides
-- [ ] **P8 Extraction Policy**: Wiki knowledge filtering (skip patterns, auto-tags, merge threshold)
+- [x] **P1 Tool Preferences**: Default argument overrides per tool (e.g., "always `git diff --stat`")
+- [x] **P2 Approval Rules**: Learned auto-approve/deny from user decisions
+- [x] **P3 Response Style Policy**: User-tuned system prompt (verbosity, plan format, confirm threshold)
+- [x] **P4 Macro Sessions**: User-defined multi-step YAML workflows with Jinja2 templating
+- [x] **P5 Recovery Rules**: Pattern-based error recovery (e.g., "on permission denied, try sudo")
+- [x] **P6 Compaction Policy**: User-tuned context truncation strategy
+- [x] **P7 Provider Preference Matrix**: Per-task model routing learned from overrides
+- [x] **P8 Extraction Policy**: Wiki knowledge filtering (skip patterns, auto-tags, merge threshold)
 
 ---
 
@@ -310,4 +310,4 @@ CLIOnly            CLIOnly             CLI + React Dashboard
 
 ---
 
-*Last updated: 2026-05-09 | Test suite: **983 tests collected, 983 passing***
+*Last updated: 2026-05-13 | Test suite: **1056+ tests collected, 1056+ passing***

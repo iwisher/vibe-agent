@@ -27,6 +27,32 @@ Two independent improvements to the Tripartite Memory System:
 
 ### Feature 1: Vector Search Upgrade
 
+Status: **IMPLEMENTED** (see `vibe/memory/vector_index.py`)
+
+---
+
+### Feature 3: Preference Layer (Phase 3.7)
+
+Status: **IMPLEMENTED** (see `vibe/preferences/`)
+
+New module converting user feedback into persistent, testable, code-based heuristics:
+
+- **PreferenceRegistry** (`registry.py`): SQLite WAL-backed persistence across 7 domains. Batch hit counting (in-memory, flushed on session end). INFERRED-only stale rule pruning.
+- **Tool Preferences** (`tool_prefs.py`): Default argument overrides per tool with glob pattern matching.
+- **Approval Rules** (`approval_rules.py`): Learned auto-approve/deny. Deny-before-allow evaluation. Path traversal protection.
+- **Style Policy** (`style_policy.py`): User-tuned system prompt injection (verbosity, plan format, confirm threshold).
+- **Macro Sessions** (`macro_session.py`): User-defined multi-step YAML workflows with Jinja2 templating and `SandboxedEnvironment`.
+- **Recovery Rules** (`recovery_rules.py`): Pattern-based error recovery with per-session attempt limits.
+- **Compaction Policy** (`compaction_policy.py`): User-tuned context window management.
+- **Provider Matrix** (`provider_prefs.py`): Per-task model routing with confidence scoring.
+- **Extraction Policy** (`extraction_policy.py`): Wiki knowledge filtering (skip patterns, auto-tags, merge threshold).
+
+Tests: `tests/preferences/` (56 tests)
+
+---
+
+### Feature 2: Phase 3b RLM Training Pipeline
+
 ---
 
 #### [NEW] `vibe/memory/vector_index.py`
@@ -174,4 +200,4 @@ rlm = ["peft>=0.10.0", "transformers>=4.40.0", "torch>=2.0.0", "datasets>=2.18.0
 
 ---
 
-*Last updated: 2026-04-27*
+*Last updated: 2026-05-13*

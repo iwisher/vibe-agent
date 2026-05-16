@@ -29,6 +29,33 @@ All notable changes to Vibe Agent will be documented in this file.
 
 ---
 
+## [0.3.2-alpha] — 2026-05-13
+
+### Added
+- **Preference Layer (Phase 3.7)**: 8 persistent, testable, code-based heuristics converting user feedback into agent behavior:
+  - **Tool Preferences** (`ToolPreferenceRegistry`): Default argument overrides per tool with glob pattern matching (e.g., "always `git diff --stat`").
+  - **Approval Rules** (`ApprovalPolicyDB`): Learned auto-approve/deny from user decisions. Deny-before-allow evaluation for security. Path traversal protection via `Path.resolve()` + dual-match logic.
+  - **Response Style Policy** (`ResponseStylePolicy`): User-tuned system prompt injection (verbosity, plan format, confirm threshold, show commands).
+  - **Macro Sessions** (`MacroSessionRunner`): User-defined multi-step YAML workflows with Jinja2 templating and `SandboxedEnvironment` for SSTI protection.
+  - **Recovery Rules** (`RecoveryRuleDB`): Pattern-based error recovery with per-session attempt limits (tracked in session state, not persisted).
+  - **Compaction Policy** (`CompactionPolicy`): User-tuned context window management (max tokens, preserve recent N, compression ratio, per-tool priority).
+  - **Provider Preference Matrix** (`ProviderPreferenceMatrix`): Per-task model routing learned from user overrides with confidence scoring and fallback chains.
+  - **Extraction Policy** (`ExtractionPolicy`): Wiki knowledge filtering (skip patterns, auto-tags, merge threshold). Case-insensitive matching.
+- **Preference Registry** (`PreferenceRegistry`): SQLite WAL-backed persistence across 7 domains. Batch hit counting (in-memory, flushed on session end). INFERRED-only stale rule pruning (EXPLICIT rules protected).
+- **56 new preference tests** across 11 test files (`tests/preferences/`).
+
+### Changed
+- **Session Store**: Improved WAL mode reliability using `closing()` + explicit transaction context.
+- **Git Shadow**: Stash state tracking with automatic rollback on restore failure.
+- **Test Isolation**: Removed `os.chdir()` anti-pattern from shadow branch tests; use `cwd=repo` instead.
+
+### Architecture
+- New `vibe/preferences/` package with shared `PreferenceRule`/`PreferencePolicy` Pydantic models.
+- All preference features default-disabled with opt-in via config.
+- Plan: `docs/plans/2026-05-09-preference-layer.md`
+
+---
+
 ## [0.3.1-alpha] — 2026-05-02
 
 ### Added
