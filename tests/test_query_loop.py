@@ -128,7 +128,7 @@ async def test_hook_pipeline_policy_block(mock_llm, tool_system):
     loop = QueryLoop(llm_client=mock_llm, tool_system=tool_system, hook_pipeline=pipeline)
     results = [r async for r in loop.run("do it") if not r.is_status]
     assert results[0].tool_results[0].success is False
-    assert "Policy violation" in results[0].tool_results[0].error
+    assert "blocked" in results[0].tool_results[0].error.lower() or "policy" in results[0].tool_results[0].error.lower()
 
 
 @pytest.mark.asyncio

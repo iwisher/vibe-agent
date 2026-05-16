@@ -26,6 +26,12 @@ from vibe.tools._utils import extract_tool_call_arguments, extract_tool_call_nam
 from vibe.tools.mcp_bridge import MCPBridge
 from vibe.tools.tool_system import ToolResult, ToolSystem
 
+# Phase: Adaptive iteration budgets
+from vibe.core.adaptive_budget import AdaptiveBudgetAllocator, BudgetConfig, IterationBudget
+
+# Phase: Latency-aware routing
+from vibe.core.latency_tracker import LatencyAwareRouter, LatencyTracker
+
 
 class QueryState(Enum):
     IDLE = auto()
@@ -101,6 +107,9 @@ class QueryLoop:
         dag_planner: Any | None = None,
         enable_dag_execution: bool = False,
         tool_prefs: Any | None = None,
+        # Phase: Adaptive iteration budgets
+        adaptive_budget: bool = False,
+        budget_config: BudgetConfig | None = None,
     ):
         # Allow VibeConfig to override individual parameters
         if config is not None:
@@ -110,6 +119,7 @@ class QueryLoop:
                 max_feedback_retries = getattr(ql_cfg, "max_feedback_retries", max_feedback_retries)
                 max_iterations = getattr(ql_cfg, "max_iterations", max_iterations)
                 max_context_tokens = getattr(ql_cfg, "max_context_tokens", max_context_tokens)
+                adaptive_budget = getattr(ql_cfg, "adaptive_budget", adaptive_budget)
             retry_cfg = getattr(config, "retry", None)
             if retry_cfg is not None and error_recovery is None:
                 error_recovery = ErrorRecovery(
@@ -138,34 +148,37 @@ class QueryLoop:
         self.tool_executor = ToolExecutor(
             tool_system, self.hook_pipeline, mcp_bridge=mcp_bridge, tool_prefs=tool_prefs
         )
-        # Phase P5: Recovery rules for error handling
-        self._recovery_rules = None
-        self._session_state: dict[str, Any] = {}
-        # Phase 6: 5-layer security defense
-        sec_cfg = security_config
-        if sec_cfg is None and config is not None and hasattr(config, "security"):
-            sec_cfg = config.security
-        self.security_coord = None
-        if sec_cfg is not None:
-            self.security_coord = SecurityCoordinator(
-                config=sec_cfg,
-                llm_client=llm_client,
-                checkpoint_manager=checkpoint_manager,
-            )
-        self.messages: list[Message] = []
-        self._running = False
-        self._state = QueryState.IDLE
-        self._feedback_retries = 0
         self.instruction_set = instruction_set
         self.mcp_bridge = mcp_bridge
+        self.context_planner = context_planner
+        self.trace_store = trace_store
+        self.config = config
         self.logger = logger
-        self.context_planner = context_planner or ContextPlanner(trace_store=trace_store)
+        self.security_config = security_config
+        self.checkpoint_manager = checkpoint_manager
+        self.wiki = wiki
+        self.pageindex = pageindex
+        self.telemetry = telemetry
+        self.session_store = session_store
+        self.cost_router = cost_router
+        self.dag_planner = dag_planner
+        self.enable_dag_execution = enable_dag_execution
+        self.tool_prefs = tool_prefs
+
+        # Phase: Adaptive iteration budgets
+        self.adaptive_budget = adaptive_budget
+        self._budget_config = budget_config or BudgetConfig.from_config(config)
+        self._budget_allocator = AdaptiveBudgetAllocator(self._budget_config)
+        self._iteration_budget: IterationBudget | None = None
+        # Phase: Latency-aware routing
+        self.latency_tracker = LatencyTracker()
+        self.latency_router = LatencyAwareRouter(tracker=self.latency_tracker)
+        self._state = QueryState.IDLE
+        self._feedback_retries = 0
         self._plan_result: PlanResult | None = None
         self._trace_store = trace_store
         self._session_id: str | None = None
         # v4: Tripartite Memory System
-        self.wiki = wiki
-        self.pageindex = pageindex
         self._telemetry = telemetry
         self._wiki_extract_task: asyncio.Task | None = None  # Phase 1b: async extraction
         self._rlm_trigger_task: asyncio.Task | None = None  # Phase 2: RLM trigger
@@ -179,6 +192,8 @@ class QueryLoop:
         # Phase 3.4: DAG-based parallel tool execution
         self.dag_planner = dag_planner
         self.enable_dag_execution = enable_dag_execution
+        self.security_coord = SecurityCoordinator(security_config)
+        self.messages: list[Message] = []
 
     @property
     def state(self) -> QueryState:
@@ -291,16 +306,17 @@ class QueryLoop:
                     ],
                     wiki_hint=wiki_hint,  # v4: pass wiki hints via PlanRequest
                 )
-                self._plan_result = self.context_planner.plan(plan_request)
-                if self.logger:
-                    self.logger.info(
-                        f"Planner selected tools: {self._plan_result.selected_tool_names}"
-                    )
-                if self._plan_result.system_prompt_append:
-                    self.messages.insert(
-                        0,
-                        Message(role="system", content=self._plan_result.system_prompt_append),
-                    )
+                if self.context_planner is not None:
+                    self._plan_result = self.context_planner.plan(plan_request)
+                    if self.logger:
+                        self.logger.info(
+                            f"Planner selected tools: {self._plan_result.selected_tool_names}"
+                        )
+                    if self._plan_result.system_prompt_append:
+                        self.messages.insert(
+                            0,
+                            Message(role="system", content=self._plan_result.system_prompt_append),
+                        )
 
                 # Phase B: Inject response style preferences into system prompt
                 try:
@@ -315,11 +331,30 @@ class QueryLoop:
                 except Exception:
                     pass  # Non-critical: style preferences are optional
 
+            # Phase: Adaptive iteration budgets
+            if self.adaptive_budget and initial_query:
+                self._iteration_budget = self._budget_allocator.allocate(
+                    initial_query,
+                    available_tools=self.tools.get_tool_schemas()
+                    + (self.mcp_bridge.get_tool_schemas() if self.mcp_bridge else []),
+                )
+                if self.logger:
+                    self.logger.info(
+                        f"Adaptive budget: allocated={self._iteration_budget.allocated} "
+                        f"for query complexity"
+                    )
+
             iteration = self._iteration
-            max_iterations = int(self.max_iterations) if self.max_iterations is not None else 50
+            max_iterations = (
+                self._iteration_budget.allocated
+                if self.adaptive_budget and self._iteration_budget
+                else int(self.max_iterations) if self.max_iterations is not None else 50
+            )
             while self._running and iteration < max_iterations:
                 iteration += 1
                 self._iteration = iteration
+                if self._iteration_budget:
+                    self._iteration_budget.consume(1)
                 self._set_state(QueryState.PROCESSING)
                 try:
                     llm_msgs = self._build_llm_messages()
@@ -376,6 +411,35 @@ class QueryLoop:
                             state=self._state,
                         )
                         break
+
+                    # Phase: Adaptive budget — check for early exit signals
+                    if self.adaptive_budget and self._iteration_budget:
+                        # Check completion phrases
+                        sig = self._iteration_budget.check_completion_phrase(response.content or "")
+                        if sig.name != "CONTINUE":
+                            self._iteration_budget.add_signal(sig)
+                            if self.logger:
+                                self.logger.info(f"Adaptive budget: early exit signal={sig.name}")
+                            break
+
+                        # Check stagnation
+                        current_tools = sum(1 for m in self.messages if m.role == "tool")
+                        sig = self._iteration_budget.check_stagnation(current_tools, len(self.messages))
+                        if sig.name != "CONTINUE":
+                            self._iteration_budget.add_signal(sig)
+                            if self.logger:
+                                self.logger.info(f"Adaptive budget: stagnation detected")
+                            break
+
+                        # Check token pressure
+                        total_chars = sum(len(m.content) for m in self.messages if m.content)
+                        estimated_tokens = total_chars // 4
+                        sig = self._iteration_budget.check_token_pressure(estimated_tokens, self.max_context_tokens)
+                        if sig.name != "CONTINUE":
+                            self._iteration_budget.add_signal(sig)
+                            if self.logger:
+                                self.logger.info(f"Adaptive budget: token pressure")
+                            break
 
                     if response.tool_calls:
                         tool_names = [extract_tool_call_name(tc) for tc in response.tool_calls]
@@ -857,7 +921,7 @@ class QueryLoop:
 
         Returns a QueryResult if recovery was attempted, None otherwise.
         """
-        if self._recovery_rules is None:
+        if getattr(self, "_recovery_rules", None) is None:
             return None
         try:
             # Extract tool name and error message from exception
@@ -873,7 +937,7 @@ class QueryLoop:
             action = self._recovery_rules.find_recovery(
                 tool_name=tool_name or "unknown",
                 error_message=error_msg,
-                session_state=self._session_state,
+                session_state=getattr(self, "_session_state", {}),
             )
             if action is None:
                 return None
