@@ -275,10 +275,10 @@ Prioritized by impact × effort, based on the architectural critique above.
 **Solution**: ✅ FastAPI + React web UI with dark theme. `vibe dashboard start` serves stat cards, session timeline, D3.js wiki graph, Recharts telemetry, system info. Binds to 127.0.0.1, strict CORS, read-only API.  
 **Status**: Implemented in `vibe/dashboard/`. 13 tests passing.
 
-### 8. 🤖 Multi-Agent Swarm Orchestration
+### 8. 🤖 Multi-Agent Swarm Orchestration ✅ COMPLETED
 **Problem**: A single Vibe Agent instance handles all tasks. There is no delegation.  
-**Solution**: Add a `SwarmOrchestrator` that spawns specialized sub-agents (e.g., a "Research Agent" + "Coding Agent" + "Critic Agent") with a shared wiki. Implement an `AgentProtocol` message bus using `asyncio.Queue`.  
-**Impact**: Unlocks complex workflows that benefit from role specialization.
+**Solution**: ✅ `SwarmOrchestrator` with `TaskDAG` scheduler spawns specialized `SubAgent`s (Research, Coding, Critic) via `AgentProtocol` Pub/Sub message bus (`EventBroker`). Shared wiki via `SharedWiki` (read-only for agents, write-via-message to orchestrator). Broadcast deduplication, dead letter queue, agent lifecycles, concurrency semaphore.  
+**Status**: Implemented in `vibe/swarm/`. 45 tests passing.
 
 ### 9. 🛠️ Autonomous Skill Generation (Skill-Maker)
 **Problem**: Skills are written by humans. The agent cannot learn new reusable automations.  

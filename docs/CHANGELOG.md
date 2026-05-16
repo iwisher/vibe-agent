@@ -29,6 +29,51 @@ All notable changes to Vibe Agent will be documented in this file.
 
 ---
 
+## [0.3.4-alpha] — 2026-05-16
+
+### Added — React Trace Dashboard (Phase 5.1)
+- **Dashboard Server** (`vibe/dashboard/server.py`): FastAPI backend with session/wiki/skill/telemetry endpoints, WebSocket live updates, token auth.
+- **Dashboard API** (`vibe/dashboard/api.py`): Data access layer wrapping TraceStore, LLMWiki, SkillInstaller, TelemetryCollector.
+- **Dashboard Frontend** (`vibe/dashboard/static/`): React 18 + D3.js + Recharts dark-themed UI.
+  - Stat cards with gradient borders, hover lift, delta indicators
+  - Session list with avatars, badges, metadata icons
+  - Wiki knowledge graph (D3 force-directed, draggable nodes)
+  - Telemetry bar charts (Recharts with custom tooltips)
+  - System info panel with security badges
+- **CLI**: `vibe dashboard start --port 8080` wired in main.py.
+- **Security**: Binds to 127.0.0.1, strict CORS, read-only API, optional token auth.
+- **Tests**: 13 API tests in `tests/dashboard/test_api.py`.
+
+### Added — Multi-Agent Swarm Orchestration (Phase 4.2)
+- **AgentProtocol** (`vibe/swarm/protocol.py`): Pub/Sub message bus with `EventBroker`.
+  - `AgentMessage` with correlation_id for request/response tracking
+  - Topic-based routing (message type + "all" + agent-specific)
+  - Broadcast deduplication via delivered_queues set
+  - Dead Letter Queue for failed deliveries
+- **SubAgent** (`vibe/swarm/agent.py`): Role-based specialized agents.
+  - `SubAgentRole`: RESEARCH, CODING, CRITIC, PLANNER
+  - Role-specific system prompts
+  - `Scratchpad` for isolated working memory
+  - `AgentLifecycle`: SPAWNED → ACTIVE → IDLE → TERMINATED
+  - Ready event prevents message loss on startup
+- **SwarmOrchestrator** (`vibe/swarm/orchestrator.py`): DAG-based task scheduler.
+  - `TaskDAG` with prerequisite tracking and ready node detection
+  - `_decompose_task()` creates research → coding → critique pipeline
+  - `_execute_dag()` respects dependencies, runs ready nodes in parallel
+  - Semaphore-based concurrency limiting
+  - Result synthesis into markdown report
+  - Wiki update background task lifecycle
+- **SharedWiki** (`vibe/swarm/shared_wiki.py`): Read-only wiki access for agents.
+  - All sub-agents read, updates go through orchestrator
+  - `WikiUpdateRequest` for update proposals
+- **Tests**: 45 tests across 4 test files.
+
+### Changed
+- **ROADMAP.md**: Items #7 (Dashboard) and #8 (Swarm) marked COMPLETED.
+- **README.md**: Added Dashboard and Swarm to key features list.
+
+---
+
 ## [0.3.3-alpha] — 2026-05-15
 
 ### Added — Weakness Mitigations (19 total gaps closed)

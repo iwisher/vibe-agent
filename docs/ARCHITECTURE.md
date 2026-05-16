@@ -215,7 +215,48 @@ Native skill format with TOML frontmatter (`+++` delimited):
 
 ---
 
-## 7. Configuration & Quality
+## 7. Dashboard (`vibe/dashboard/`)
+
+### 7.1 Backend
+*   **FastAPI Server** (`server.py`): Session/wiki/skill/telemetry endpoints. WebSocket live updates. Token auth.
+*   **Data Layer** (`data.py`): Async wrappers around TraceStore, LLMWiki, SkillInstaller, TelemetryCollector.
+*   **API Endpoints**: `/api/sessions`, `/api/wiki/pages`, `/api/wiki/graph`, `/api/skills`, `/api/telemetry`, `/api/stats`, `/api/config`.
+*   **Security**: Binds to 127.0.0.1, strict CORS (localhost only), read-only API.
+
+### 7.2 Frontend
+*   **React 18** (CDN-loaded, no build step): Stat cards, session list, D3.js wiki graph, Recharts telemetry.
+*   **Dark Theme**: CSS custom properties, Inter + JetBrains Mono fonts.
+*   **CLI**: `vibe dashboard start --port 8080`.
+
+---
+
+## 8. Multi-Agent Swarm (`vibe/swarm/`)
+
+### 8.1 AgentProtocol
+*   **EventBroker** (`protocol.py`): Pub/Sub message bus with topic-based routing.
+    - `AgentMessage`: Immutable, correlation_id for request/response tracking.
+    - Topics: message type + "all" + agent-specific.
+    - Broadcast deduplication, Dead Letter Queue.
+*   **MessageBus**: High-level wrapper with `register_agent`/`send`/`broadcast`/`shutdown`.
+
+### 8.2 SubAgent
+*   **Roles**: RESEARCH, CODING, CRITIC, PLANNER with role-specific system prompts.
+*   **Scratchpad**: Isolated working memory per agent.
+*   **Lifecycle**: SPAWNED → ACTIVE → IDLE → TERMINATED with ready event.
+
+### 8.3 SwarmOrchestrator
+*   **TaskDAG**: Directed Acyclic Graph with prerequisite tracking.
+*   **Scheduler**: Runs ready nodes in parallel, respects dependencies via semaphore.
+*   **Decomposition**: research → coding → critique pipeline (LLM-based in production).
+*   **Synthesis**: Aggregates sub-agent outputs into markdown report.
+
+### 8.4 SharedWiki
+*   Read-only access for all sub-agents.
+*   Write-via-message: agents send `UPDATE_WIKI` requests, orchestrator applies sequentially.
+
+---
+
+## 9. Configuration & Quality
 
 *   **Hierarchical Config:** Default → `~/.vibe/config.yaml` → Environment Variables (`VIBE_*`).
 *   **Security Config:** `approval_mode` (manual/smart/auto), file safety, env sanitization, sandbox backend, audit logging.
