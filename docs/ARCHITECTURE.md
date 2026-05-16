@@ -142,14 +142,15 @@ Responsibilities extracted from `QueryLoop` for testability:
 ### 5.3 Preference Layer (`vibe/preferences/`)
 Converts user feedback into persistent, testable, code-based heuristics. All features default-disabled, opt-in via config.
 *   **Registry** (`registry.py`): SQLite WAL-backed persistence across 7 domains. Batch hit counting (in-memory, flushed on session end). INFERRED-only stale rule pruning.
-*   **Tool Preferences** (`tool_prefs.py`): Default argument overrides per tool with glob pattern matching.
-*   **Approval Rules** (`approval_rules.py`): Learned auto-approve/deny. Deny-before-allow evaluation. Path traversal protection via `Path.resolve()` + dual-match.
-*   **Style Policy** (`style_policy.py`): User-tuned system prompt injection (verbosity, plan format, confirm threshold).
-*   **Macro Sessions** (`macro_session.py`): User-defined multi-step YAML workflows with Jinja2 templating and `SandboxedEnvironment`.
-*   **Recovery Rules** (`recovery_rules.py`): Pattern-based error recovery with per-session attempt limits.
-*   **Compaction Policy** (`compaction_policy.py`): User-tuned context window management (max tokens, preserve recent N, per-tool priority).
-*   **Provider Matrix** (`provider_prefs.py`): Per-task model routing with confidence scoring and fallback chains.
-*   **Extraction Policy** (`extraction_policy.py`): Wiki knowledge filtering (skip patterns, auto-tags, merge threshold).
+*   **Tool Preferences** (`tool_prefs.py`): Default argument overrides per tool with glob pattern matching. Wired into `ToolExecutor`.
+*   **Approval Rules** (`approval_rules.py`): Learned auto-approve/deny. Deny-before-allow evaluation. Path traversal protection via `Path.resolve()` + dual-match. Wired into `SecurityCoordinator`.
+*   **Style Policy** (`style_policy.py`): User-tuned system prompt injection (verbosity, plan format, confirm threshold). Wired into `QueryLoop.run()`.
+*   **Macro Sessions** (`macro_session.py`): User-defined multi-step YAML workflows with Jinja2 templating and `SandboxedEnvironment`. Wired into `vibe macro run` CLI via `QueryLoopFactory`.
+*   **Recovery Rules** (`recovery_rules.py`): Pattern-based error recovery with per-session attempt limits. Wired into `QueryLoop` error handler.
+*   **Compaction Policy** (`compaction_policy.py`): User-tuned context window management (max tokens, preserve recent N, per-tool priority). Wired into `ContextCompactor`.
+*   **Provider Matrix** (`provider_prefs.py`): Per-task model routing with confidence scoring and fallback chains. Wired into `CostRouter.route()`.
+*   **Extraction Policy** (`extraction_policy.py`): Wiki knowledge filtering (skip patterns, auto-tags, merge threshold). Wired into `KnowledgeExtractor`.
+*   **Initialization**: All 8 preferences initialized lazily in `QueryLoopFactory.create()` with config-gated `*_enabled` flags. Graceful fallback on import/init failure.
 
 ### 5.4 Tool System & Security (`vibe/tools/`)
 *   **Bash Sandbox:** Uses `subprocess_exec` (no shell) + regex denylist (`sudo`, `rm -rf /`, etc.).
@@ -208,4 +209,4 @@ Native skill format with TOML frontmatter (`+++` delimited):
 
 ---
 
-*Last Updated: 2026-05-13 (v0.3.2-alpha)*
+*Last Updated: 2026-05-15 (v0.3.2-alpha)*

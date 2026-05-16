@@ -49,6 +49,18 @@ All notable changes to Vibe Agent will be documented in this file.
 - **Git Shadow**: Stash state tracking with automatic rollback on restore failure.
 - **Test Isolation**: Removed `os.chdir()` anti-pattern from shadow branch tests; use `cwd=repo` instead.
 
+### Wired
+- **P1-P8 Main Loop Integration**: All 8 preference types now wired into production code paths:
+  - ToolPreferences → `ToolExecutor` (default arg merging)
+  - ApprovalRules → `SecurityCoordinator` (deny-before-allow gate)
+  - StylePolicy → `QueryLoop.run()` (system prompt injection)
+  - MacroSessions → `vibe macro run` CLI (QueryLoopFactory injection for real tool execution)
+  - RecoveryRules → `QueryLoop` error handler (`_try_recovery` with session attempt tracking)
+  - CompactionPolicy → `ContextCompactor` constructor (overrides max_tokens/preserve_recent)
+  - ProviderMatrix → `CostRouter.route()` (user preference override before cost routing)
+  - ExtractionPolicy → `KnowledgeExtractor` (skip patterns + auto-tags)
+- Config-gated initialization via `QueryLoopFactory` with per-type `*_enabled` flags.
+
 ### Architecture
 - New `vibe/preferences/` package with shared `PreferenceRule`/`PreferencePolicy` Pydantic models.
 - All preference features default-disabled with opt-in via config.

@@ -123,6 +123,7 @@ This document tracks the progress of Vibe Agent, from its core foundation to fut
 - [x] **P6 Compaction Policy**: User-tuned context truncation strategy
 - [x] **P7 Provider Preference Matrix**: Per-task model routing learned from overrides
 - [x] **P8 Extraction Policy**: Wiki knowledge filtering (skip patterns, auto-tags, merge threshold)
+- [x] **Wiring**: All 8 preferences integrated into main loop via `QueryLoopFactory` (config-gated, graceful fallback)
 
 ---
 
@@ -310,4 +311,4 @@ CLIOnly            CLIOnly             CLI + React Dashboard
 
 ---
 
-*Last updated: 2026-05-13 | Test suite: **1056+ tests collected, 1056+ passing***
+*Last updated: 2026-05-15 | Test suite: **1056+ tests collected, 1056+ passing***
