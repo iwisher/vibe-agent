@@ -12,6 +12,7 @@ Vibe Agent is an open, visual-first interactive CLI agent harness. It is designe
 -   **Tripartite Memory System**: Automated async knowledge extraction, FlashLLM contradiction detection, and telemetry-triggered RLM analysis.
 -   **Secret Redaction**: Automatic stripping of API keys (OpenAI, AWS, GitHub, etc.) and passwords from trace stores and logs.
 -   **Interactive CLI**: Readline support with persistent history, token metrics display, and rich skill/wiki management commands.
+-   **React Trace Dashboard**: Web UI for session observability — timeline, wiki graph, telemetry charts, system stats. Dark theme, real-time updates.
 
 ---
 
