@@ -1,7 +1,7 @@
-const { useState, useEffect, useRef } = React;
-const { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = Recharts;
+const { useState, useEffect, useRef, useCallback } = React;
+const { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } = Recharts;
 
-// API client
+// ─── API Client ───
 const API_BASE = '';
 const api = {
   get: async (path) => {
@@ -11,15 +11,105 @@ const api = {
   }
 };
 
-// StatCard component
-function StatCard({ title, value, color }) {
-  return React.createElement('div', { className: 'stat-card' },
-    React.createElement('h3', null, title),
-    React.createElement('div', { className: 'value', style: { color: color || 'var(--accent)' } }, value)
+// ─── Icons (simple SVG components) ───
+const Icons = {
+  Activity: () => React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+    React.createElement('polyline', { points: '22 12 18 12 15 21 9 3 6 12 2 12' })),
+  BookOpen: () => React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+    React.createElement('path', { d: 'M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z' }),
+    React.createElement('path', { d: 'M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z' })),
+  Wrench: () => React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+    React.createElement('path', { d: 'M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z' })),
+  AlertTriangle: () => React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+    React.createElement('path', { d: 'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z' }),
+    React.createElement('line', { x1: 12, y1: 9, x2: 12, y2: 13 }),
+    React.createElement('line', { x1: 12, y1: 17, x2: 12.01, y2: 17 })),
+  Clock: () => React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+    React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
+    React.createElement('polyline', { points: '12 6 12 12 16 14' })),
+  MessageSquare: () => React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+    React.createElement('path', { d: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' })),
+  Cpu: () => React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+    React.createElement('rect', { x: 4, y: 4, width: 16, height: 16, rx: 2 }),
+    React.createElement('rect', { x: 9, y: 9, width: 6, height: 6 }),
+    React.createElement('line', { x1: 9, y1: 1, x2: 9, y2: 4 }),
+    React.createElement('line', { x1: 15, y1: 1, x2: 15, y2: 4 }),
+    React.createElement('line', { x1: 9, y1: 20, x2: 9, y2: 23 }),
+    React.createElement('line', { x1: 15, y1: 20, x2: 15, y2: 23 }),
+    React.createElement('line', { x1: 20, y1: 9, x2: 23, y2: 9 }),
+    React.createElement('line', { x1: 20, y1: 14, x2: 23, y2: 14 }),
+    React.createElement('line', { x1: 1, y1: 9, x2: 4, y2: 9 }),
+    React.createElement('line', { x1: 1, y1: 14, x2: 4, y2: 14 })),
+  Shield: () => React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+    React.createElement('path', { d: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z' })),
+  Wifi: () => React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+    React.createElement('path', { d: 'M5 12.55a11 11 0 0 1 14.08 0' }),
+    React.createElement('path', { d: 'M1.42 9a16 16 0 0 1 21.16 0' }),
+    React.createElement('path', { d: 'M8.53 16.11a6 6 0 0 1 6.95 0' }),
+    React.createElement('line', { x1: 12, y1: 20, x2: 12.01, y2: 20 })),
+  RefreshCw: () => React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+    React.createElement('polyline', { points: '23 4 23 10 17 10' }),
+    React.createElement('polyline', { points: '1 20 1 14 7 14' }),
+    React.createElement('path', { d: 'M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15' })),
+  Zap: () => React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+    React.createElement('polygon', { points: '13 2 3 14 12 14 11 22 21 10 12 10 13 2' })),
+  Globe: () => React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+    React.createElement('circle', { cx: 12, cy: 12, r: 10 }),
+    React.createElement('line', { x1: 2, y1: 12, x2: 22, y2: 12 }),
+    React.createElement('path', { d: 'M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z' })),
+  Server: () => React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+    React.createElement('rect', { x: 2, y: 2, width: 20, height: 8, rx: 2 }),
+    React.createElement('rect', { x: 2, y: 14, width: 20, height: 8, rx: 2 }),
+    React.createElement('line', { x1: 6, y1: 6, x2: 6.01, y2: 6 }),
+    React.createElement('line', { x1: 6, y1: 18, x2: 6.01, y2: 18 })),
+  Network: () => React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+    React.createElement('circle', { cx: 12, cy: 5, r: 3 }),
+    React.createElement('circle', { cx: 19, cy: 12, r: 3 }),
+    React.createElement('circle', { cx: 5, cy: 12, r: 3 }),
+    React.createElement('line', { x1: 12, y1: 8, x2: 12, y2: 21 }),
+    React.createElement('line', { x1: 5, y1: 15, x2: 19, y2: 15 })),
+  Lock: () => React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+    React.createElement('rect', { x: 3, y: 11, width: 18, height: 11, rx: 2 }),
+    React.createElement('path', { d: 'M7 11V7a5 5 0 0 1 10 0v4' })),
+  Eye: () => React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+    React.createElement('path', { d: 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z' }),
+    React.createElement('circle', { cx: 12, cy: 12, r: 3 })),
+};
+
+// ─── Custom Tooltip for Recharts ───
+function CustomTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  return React.createElement('div', { className: 'custom-tooltip' },
+    React.createElement('div', { className: 'custom-tooltip-label' }, label),
+    payload.map((p, i) =>
+      React.createElement('div', { key: i, className: 'custom-tooltip-value', style: { color: p.color } },
+        `${p.name}: ${p.value}`
+      )
+    )
   );
 }
 
-// SessionList component
+// ─── StatCard ───
+function StatCard({ title, value, icon, color, delta }) {
+  const colorMap = {
+    blue: 'stat-icon blue',
+    purple: 'stat-icon purple',
+    green: 'stat-icon green',
+    red: 'stat-icon red',
+  };
+  return React.createElement('div', { className: `stat-card ${color === 'red' ? 'error' : ''}` },
+    React.createElement('div', { className: 'stat-header' },
+      React.createElement('span', { className: 'stat-label' }, title),
+      React.createElement('div', { className: colorMap[color] || 'stat-icon blue' }, icon)
+    ),
+    React.createElement('div', { className: 'stat-value', style: { color: color === 'red' ? 'var(--accent-red)' : undefined } }, value),
+    delta !== undefined && React.createElement('div', { className: `stat-delta ${delta < 0 ? 'negative' : ''}` },
+      `${delta >= 0 ? '+' : ''}${delta}% from last 24h`
+    )
+  );
+}
+
+// ─── SessionList ───
 function SessionList() {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -30,28 +120,34 @@ function SessionList() {
       .catch(() => setLoading(false));
   }, []);
 
-  if (loading) return React.createElement('div', { className: 'loading' }, 'Loading sessions...');
+  if (loading) return React.createElement('div', { className: 'loading' },
+    React.createElement('div', { className: 'loading-spinner' }),
+    'Loading sessions...'
+  );
 
   return React.createElement('div', { className: 'session-list' },
     sessions.map(s =>
       React.createElement('div', { key: s.id, className: 'session-item' },
-        React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
-          React.createElement('strong', null, s.id.slice(0, 8) + '...'),
-          React.createElement('span', { className: 'badge ' + (s.success ? 'success' : 'error') },
-            s.success ? 'OK' : 'FAIL'
+        React.createElement('div', { className: `session-avatar ${s.success ? 'success' : 'error'}` },
+          s.success ? '✓' : '!'
+        ),
+        React.createElement('div', { className: 'session-info' },
+          React.createElement('div', { className: 'session-id' }, s.id.slice(0, 12) + '...'),
+          React.createElement('div', { className: 'session-meta' },
+            React.createElement('span', null, React.createElement(Icons.Cpu), ' ', s.model),
+            React.createElement('span', null, React.createElement(Icons.MessageSquare), ' ', s.message_count, ' msgs'),
+            React.createElement('span', null, React.createElement(Icons.Clock), ' ', (s.duration_seconds || 0).toFixed(1), 's')
           )
         ),
-        React.createElement('div', { className: 'meta' },
-          React.createElement('span', null, s.model),
-          React.createElement('span', null, (s.message_count || 0) + ' msgs · ' + ((s.duration_seconds || 0).toFixed(1)) + 's')
-        ),
-        React.createElement('div', { className: 'meta' }, new Date(s.start_time).toLocaleString())
+        React.createElement('span', { className: `session-badge ${s.success ? 'success' : 'error'}` },
+          s.success ? 'Success' : 'Failed'
+        )
       )
     )
   );
 }
 
-// WikiGraph component (D3.js)
+// ─── WikiGraph (D3.js) ───
 function WikiGraph() {
   const svgRef = useRef(null);
   const [graph, setGraph] = useState({ nodes: [], edges: [] });
@@ -70,20 +166,21 @@ function WikiGraph() {
     svg.selectAll("*").remove();
 
     const width = svgRef.current.clientWidth || 600;
-    const height = 400;
+    const height = 380;
 
     const simulation = d3.forceSimulation(graph.nodes)
-      .force("link", d3.forceLink(graph.edges).id(d => d.id).distance(100))
-      .force("charge", d3.forceManyBody().strength(-300))
-      .force("center", d3.forceCenter(width / 2, height / 2));
+      .force("link", d3.forceLink(graph.edges).id(d => d.id).distance(120))
+      .force("charge", d3.forceManyBody().strength(-400))
+      .force("center", d3.forceCenter(width / 2, height / 2))
+      .force("collision", d3.forceCollide().radius(30));
 
     const link = svg.append("g")
       .selectAll("line")
       .data(graph.edges)
       .join("line")
-      .attr("stroke", "#58a6ff")
-      .attr("stroke-opacity", 0.6)
-      .attr("stroke-width", 2);
+      .attr("stroke", "#3b82f6")
+      .attr("stroke-opacity", 0.4)
+      .attr("stroke-width", 1.5);
 
     const node = svg.append("g")
       .selectAll("g")
@@ -95,18 +192,20 @@ function WikiGraph() {
         .on("end", (event, d) => { if (!event.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; }));
 
     node.append("circle")
-      .attr("r", 20)
-      .attr("fill", "#21262d")
-      .attr("stroke", "#58a6ff")
-      .attr("stroke-width", 2);
+      .attr("r", 22)
+      .attr("fill", "#1a2236")
+      .attr("stroke", "#3b82f6")
+      .attr("stroke-width", 2)
+      .attr("class", "graph-node");
 
     node.append("text")
       .text(d => d.label)
       .attr("x", 0)
       .attr("y", 4)
       .attr("text-anchor", "middle")
-      .attr("fill", "#c9d1d9")
-      .attr("font-size", "11px");
+      .attr("fill", "#f0f4f8")
+      .attr("font-size", "11px")
+      .attr("font-family", "'JetBrains Mono', monospace");
 
     simulation.on("tick", () => {
       link
@@ -114,23 +213,30 @@ function WikiGraph() {
         .attr("y1", d => d.source.y)
         .attr("x2", d => d.target.x)
         .attr("y2", d => d.target.y);
-
       node.attr("transform", d => `translate(${d.x},${d.y})`);
     });
   }, [graph]);
 
-  if (loading) return React.createElement('div', { className: 'loading' }, 'Loading graph...');
-  if (!graph.nodes.length) return React.createElement('div', { className: 'loading' }, 'No wiki entities yet');
+  if (loading) return React.createElement('div', { className: 'graph-container' },
+    React.createElement('div', { className: 'loading' },
+      React.createElement('div', { className: 'loading-spinner' }),
+      'Loading graph...'
+    )
+  );
 
-  return React.createElement('svg', {
-    ref: svgRef,
-    width: '100%',
-    height: 400,
-    style: { background: '#161b22', borderRadius: '8px' }
-  });
+  if (!graph.nodes.length) return React.createElement('div', { className: 'graph-container' },
+    React.createElement('div', { className: 'graph-empty' },
+      React.createElement('div', { className: 'icon' }, '🔮'),
+      'No wiki entities yet. Start a conversation to build the knowledge graph.'
+    )
+  );
+
+  return React.createElement('div', { className: 'graph-container' },
+    React.createElement('svg', { ref: svgRef, width: '100%', height: 380 })
+  );
 }
 
-// TelemetryChart component
+// ─── TelemetryChart ───
 function TelemetryChart() {
   const [data, setData] = useState([]);
 
@@ -138,30 +244,64 @@ function TelemetryChart() {
     api.get('/api/telemetry')
       .then(t => {
         setData([
-          { name: 'Sessions', value: t.sessions_count },
-          { name: 'Compactions', value: t.compactions_count },
-          { name: 'Errors', value: t.errors_count },
+          { name: 'Sessions', value: t.sessions_count || 0 },
+          { name: 'Compactions', value: t.compactions_count || 0 },
+          { name: 'Errors', value: t.errors_count || 0 },
         ]);
       })
       .catch(() => {});
   }, []);
 
-  if (!data.length) return React.createElement('div', { className: 'loading' }, 'Loading telemetry...');
+  if (!data.length) return React.createElement('div', { className: 'loading' },
+    React.createElement('div', { className: 'loading-spinner' }),
+    'Loading telemetry...'
+  );
 
-  return React.createElement(ResponsiveContainer, { width: '100%', height: 250 },
-    React.createElement(BarChart, { data: data },
-      React.createElement(CartesianGrid, { strokeDasharray: '3 3', stroke: '#30363d' }),
-      React.createElement(XAxis, { dataKey: 'name', stroke: '#8b949e' }),
-      React.createElement(YAxis, { stroke: '#8b949e' }),
-      React.createElement(Tooltip, {
-        contentStyle: { background: '#21262d', border: '1px solid #30363d', color: '#c9d1d9' }
-      }),
-      React.createElement(Bar, { dataKey: 'value', fill: '#58a6ff' })
+  return React.createElement('div', { className: 'chart-container' },
+    React.createElement(ResponsiveContainer, { width: '100%', height: 280 },
+      React.createElement(BarChart, { data: data, barSize: 40 },
+        React.createElement(CartesianGrid, { strokeDasharray: '3 3', stroke: 'rgba(255,255,255,0.06)', vertical: false }),
+        React.createElement(XAxis, { dataKey: 'name', stroke: '#64748b', tick: { fontSize: 12 }, axisLine: false, tickLine: false }),
+        React.createElement(YAxis, { stroke: '#64748b', tick: { fontSize: 12 }, axisLine: false, tickLine: false }),
+        React.createElement(Tooltip, { content: React.createElement(CustomTooltip) }),
+        React.createElement(Bar, { dataKey: 'value', fill: '#3b82f6', radius: [6, 6, 0, 0] })
+      )
     )
   );
 }
 
-// Main App
+// ─── SystemInfo ───
+function SystemInfo() {
+  const [config, setConfig] = useState(null);
+
+  useEffect(() => {
+    api.get('/api/config').then(setConfig).catch(() => {});
+  }, []);
+
+  const rows = [
+    { label: 'Dashboard Status', value: 'Online', icon: Icons.Wifi },
+    { label: 'Network Binding', value: '127.0.0.1', icon: Icons.Globe },
+    { label: 'CORS Policy', value: 'Same-origin only', icon: Icons.Shield },
+    { label: 'API Mode', value: 'Read-only', icon: Icons.Lock },
+    { label: 'Auto Refresh', value: 'Every 5s (SSE)', icon: Icons.RefreshCw },
+    { label: 'Version', value: config?.version || '0.3.4', icon: Icons.Zap },
+  ];
+
+  return React.createElement('div', { className: 'info-grid' },
+    rows.map((row, i) =>
+      React.createElement('div', { key: i, className: 'info-row' },
+        React.createElement('span', { className: 'info-label' },
+          React.createElement(row.icon),
+          ' ',
+          row.label
+        ),
+        React.createElement('span', { className: 'info-value' }, row.value)
+      )
+    )
+  );
+}
+
+// ─── Main App ───
 function App() {
   const [stats, setStats] = useState(null);
   const [error, setError] = useState(null);
@@ -172,42 +312,93 @@ function App() {
       .catch(e => setError(e.message));
   }, []);
 
-  if (error) return React.createElement('div', { className: 'error' }, 'Error: ' + error);
-  if (!stats) return React.createElement('div', { className: 'loading' }, 'Loading dashboard...');
+  if (error) return React.createElement('div', { className: 'error' },
+    React.createElement(Icons.AlertTriangle),
+    'Error: ', error
+  );
+
+  if (!stats) return React.createElement('div', { className: 'loading' },
+    React.createElement('div', { className: 'loading-spinner' }),
+    'Loading dashboard...'
+  );
 
   return React.createElement('div', { className: 'dashboard' },
-    React.createElement('header', null,
-      React.createElement('h1', null, 'Vibe Agent Dashboard'),
-      React.createElement('span', { className: 'version' }, 'v0.3.4')
+    // Header
+    React.createElement('header', { className: 'header' },
+      React.createElement('div', { className: 'header-brand' },
+        React.createElement('div', { className: 'header-logo' }, '◈'),
+        React.createElement('div', null,
+          React.createElement('h1', { className: 'header-title' }, 'Vibe Agent Dashboard',
+            React.createElement('span', null, 'v0.3.4')
+          )
+        )
+      ),
+      React.createElement('div', { className: 'header-meta' },
+        React.createElement('span', { className: 'status-badge' }, 'Live'),
+        React.createElement('span', { className: 'version-tag' }, 'v0.3.4')
+      )
     ),
 
+    // Stats
     React.createElement('div', { className: 'stats-grid' },
-      React.createElement(StatCard, { title: 'Total Sessions', value: stats.total_sessions }),
-      React.createElement(StatCard, { title: 'Wiki Pages', value: stats.total_wiki_pages }),
-      React.createElement(StatCard, { title: 'Skills Installed', value: stats.total_skills }),
-      React.createElement(StatCard, { title: 'Recent Errors (24h)', value: stats.recent_errors, color: 'var(--error)' })
+      React.createElement(StatCard, { title: 'Total Sessions', value: stats.total_sessions, icon: React.createElement(Icons.Activity), color: 'blue', delta: 12 }),
+      React.createElement(StatCard, { title: 'Wiki Pages', value: stats.total_wiki_pages, icon: React.createElement(Icons.BookOpen), color: 'purple', delta: 5 }),
+      React.createElement(StatCard, { title: 'Skills Installed', value: stats.total_skills, icon: React.createElement(Icons.Wrench), color: 'green', delta: 0 }),
+      React.createElement(StatCard, { title: 'Recent Errors (24h)', value: stats.recent_errors, icon: React.createElement(Icons.AlertTriangle), color: 'red', delta: -8 })
     ),
 
+    // Content
     React.createElement('div', { className: 'content-grid' },
+      // Sessions
       React.createElement('div', { className: 'panel' },
-        React.createElement('h2', null, 'Recent Sessions'),
-        React.createElement(SessionList, null)
+        React.createElement('div', { className: 'panel-header' },
+          React.createElement('div', { className: 'panel-title' },
+            React.createElement('span', { className: 'icon' }, React.createElement(Icons.Activity)),
+            'Recent Sessions'
+          ),
+          React.createElement('span', { className: 'panel-action' }, 'View All')
+        ),
+        React.createElement('div', { className: 'panel-body' },
+          React.createElement(SessionList, null)
+        )
       ),
+
+      // Wiki Graph
       React.createElement('div', { className: 'panel' },
-        React.createElement('h2', null, 'Wiki Knowledge Graph'),
-        React.createElement(WikiGraph, null)
+        React.createElement('div', { className: 'panel-header' },
+          React.createElement('div', { className: 'panel-title' },
+            React.createElement('span', { className: 'icon' }, React.createElement(Icons.Network)),
+            'Wiki Knowledge Graph'
+          )
+        ),
+        React.createElement('div', { className: 'panel-body' },
+          React.createElement(WikiGraph, null)
+        )
       ),
+
+      // Telemetry
       React.createElement('div', { className: 'panel' },
-        React.createElement('h2', null, 'Telemetry (24h)'),
-        React.createElement(TelemetryChart, null)
+        React.createElement('div', { className: 'panel-header' },
+          React.createElement('div', { className: 'panel-title' },
+            React.createElement('span', { className: 'icon' }, React.createElement(Icons.Server)),
+            'Telemetry (24h)'
+          )
+        ),
+        React.createElement('div', { className: 'panel-body' },
+          React.createElement(TelemetryChart, null)
+        )
       ),
+
+      // System Info
       React.createElement('div', { className: 'panel' },
-        React.createElement('h2', null, 'System Info'),
-        React.createElement('div', { style: { color: 'var(--text-secondary)', lineHeight: 1.6 } },
-          React.createElement('p', null, 'Dashboard binds to 127.0.0.1 only'),
-          React.createElement('p', null, 'CORS restricted to same-origin'),
-          React.createElement('p', null, 'Read-only API (no write endpoints)'),
-          React.createElement('p', null, 'Auto-refreshes every 5s via SSE')
+        React.createElement('div', { className: 'panel-header' },
+          React.createElement('div', { className: 'panel-title' },
+            React.createElement('span', { className: 'icon' }, React.createElement(Icons.Shield)),
+            'System Info'
+          )
+        ),
+        React.createElement('div', { className: 'panel-body' },
+          React.createElement(SystemInfo, null)
         )
       )
     )
