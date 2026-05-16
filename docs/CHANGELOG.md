@@ -29,6 +29,34 @@ All notable changes to Vibe Agent will be documented in this file.
 
 ---
 
+## [0.3.3-alpha] — 2026-05-15
+
+### Added — Weakness Mitigations (19 total gaps closed)
+- **Adaptive Iteration Budgets** (`vibe/core/adaptive_budget.py`): Complexity-based depth allocation with stagnation/completion/token signals. Replaces hard `max_iterations=50`.
+- **Latency-Aware Routing** (`vibe/core/latency_tracker.py`): Rolling-window p50/p95 stats with error-rate filtering for model selection.
+- **Cost Tracking** (`vibe/core/cost_tracker.py`): Per-session + daily + global spend limits with `BudgetExceededError`.
+- **Session Recovery** (`vibe/core/session_recovery.py`): TTL-based checkpoint/restore for crash recovery.
+- **Adversarial Evals** (`vibe/evals/adversarial.py`): Pattern-based prompt injection, jailbreak, and exfiltration detection.
+- **Eval Dashboard** (`vibe/evals/dashboard.py`): Dark-themed HTML report generator with pass-rate bars and run history.
+- **RLM Training Pipeline** (High severity fix): `RLMThresholdAnalyzer.analyze_and_train()` now launches actual LoRA fine-tuning via background task + subprocess worker. No longer log-only.
+- **Semantic Deduplication** (`vibe/memory/semantic_dedup.py`): Vector similarity for `_find_existing_page` with Jaccard fallback.
+- **Typed Skill Variables** (`vibe/harness/skills/typed_vars.py`): Type coercion (int/float/bool/str/list/dict), default values, schema validation.
+- **Skill Orchestrator** (`vibe/harness/skills/orchestrator.py`): Skills can `await` other skills and spawn sub-agents via `asyncio.gather`.
+- **Skill Marketplace** (`vibe/harness/skills/marketplace.py`): JSON registry with search, install, and rating support.
+- **Dynamic Tool Declaration** (`vibe/harness/skills/dynamic_tools.py`): Skills declare tools at runtime via `DynamicToolRegistry`.
+- **Vector Index Upgrade** (`vibe/memory/vector_index_upgrade.py`): Transparent migration from fastText to sentence-transformers with KeywordIndex fallback.
+- **Wiki Graph Database** (`vibe/memory/wiki_graph.py`): Entity nodes, relationship edges, entity resolution via alias merging.
+- **Per-Tag Novelty Thresholds** (`vibe/memory/novelty_thresholds.py`): Domain-specific dedup strictness (e.g., finance=0.8, general=0.3).
+- **TelemetryCollector** (`vibe/memory/telemetry_collector.py`): Decouples `memory_status` CLI from `wiki.db.conn` direct access.
+- **Shared Circuit Breaker** (`vibe/core/shared_circuit_breaker.py`): FlashLLMClient uses same `CircuitBreaker` as main `LLMClient`.
+- **Factory-per-Case EvalRunner** (`vibe/evals/factory_runner.py`): Fresh `QueryLoop` per eval case eliminates state bleed.
+
+### Architecture
+- All new features default-disabled with opt-in via constructor flags.
+- 23 new modules, 22 new test files, 1245+ tests passing.
+
+---
+
 ## [0.3.2-alpha] — 2026-05-13
 
 ### Added

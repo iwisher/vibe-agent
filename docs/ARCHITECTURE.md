@@ -128,8 +128,10 @@ Efficient token usage is a core design goal, implemented through three primary l
 The gateway is the "resilience layer" for all LLM communication.
 *   **Adapters:** Supports `OpenAIAdapter` and `AnthropicAdapter` via adapter registry.
 *   **Registry-Aware Resolution:** `ProviderRegistry` dynamically resolves `base_url`, `api_key`, `adapter`, and `extra_headers` per provider.
-*   **Circuit Breaker:** Per-model state. Opens after `threshold` consecutive failures (default 5), cooldown 60s.
+*   **Circuit Breaker:** Per-model state. Opens after `threshold` consecutive failures (default 5), cooldown 60s. **Shared with FlashLLMClient** via `SharedCircuitBreaker`.
 *   **Fallback Chain:** Configurable model chain with `auto_fallback`. Rate limits (429) do NOT trigger fallback.
+*   **Cost Tracking:** `CostTracker` with per-session + daily + global spend limits and `BudgetExceededError`.
+*   **Latency Routing:** `LatencyAwareRouter` with rolling p50/p95 stats and error-rate filtering.
 *   **Structured Output:** `structured_output()` method forces JSON schema compliance with markdown cleanup.
 *   **Debug Mode:** Redacted header logging to stderr.
 
@@ -138,6 +140,8 @@ Responsibilities extracted from `QueryLoop` for testability:
 1.  **ToolExecutor**: Manages tool execution, `HookPipeline` (PRE/POST constraints), and MCP fallback. Sequential execution with exception isolation per tool call.
 2.  **FeedbackCoordinator**: Manages self-verification and retry hints. Threshold-based with max retry cap.
 3.  **CompactionCoordinator**: Triggers `ContextCompactor` logic before LLM calls.
+4.  **Session Recovery**: `SessionRecoveryManager` with TTL-based checkpoints for crash recovery.
+5.  **Adaptive Budget**: `AdaptiveBudgetAllocator` with complexity-based depth budgets replacing hard `max_iterations=50`.
 
 ### 5.3 Preference Layer (`vibe/preferences/`)
 Converts user feedback into persistent, testable, code-based heuristics. All features default-disabled, opt-in via config.
@@ -166,7 +170,10 @@ Native skill format with TOML frontmatter (`+++` delimited):
 *   **ApprovalGate:** Protocol with `CLIApprovalGate`, `AutoApproveGate`, `AutoRejectGate`.
 *   **Installer:** Atomic installation from git, tarball (zip-slip protection), or local path.
 *   **Executor:** Step execution with variable substitution and verification.
-*   **Current limitation:** Naive string `.replace()` for variable substitution (planned fix).
+*   **Typed Variables:** `TypedSkillExecutor` with type coercion (int/float/bool/str/list/dict), default values, and schema validation.
+*   **Orchestrator:** `SkillOrchestrator` enables skills to `await` other skills and spawn sub-agents via `asyncio.gather`.
+*   **Marketplace:** `SkillMarketplace` with JSON registry, search, install, and rating support.
+*   **Dynamic Tools:** `DynamicToolRegistry` allows skills to declare new tools at runtime.
 
 ### 5.6 Memory (`vibe/harness/memory/`)
 *   **TraceStore:** Scalable backend (SQLite, JSON, or Memory) for session persistence.
@@ -174,7 +181,7 @@ Native skill format with TOML frontmatter (`+++` delimited):
     - **Optimization:** Switched from `pickle` to `numpy` float32 for 4x smaller and faster embedding storage.
     - **Atomicity:** `JSONTraceStore` uses temp-file + rename pattern for corruption protection.
 *   **Embeddings Unification** (`vibe/harness/embeddings.py`):
-    - **Standard:** Unified on **fastText** (cc.en.50.bin, 50-dim, 5MB).
+    - **Standard:** Unified on **sentence-transformers** (`all-MiniLM-L6-v2`, 384-dim) with fastText fallback.
     - **Performance:** Singleton loader with 1000-entry LRU cache.
     - **Search:** Vector similarity with keyword pre-filtering to minimize search space.
 *   **Secret Redactor** (`vibe/harness/security/redactor.py`):
@@ -183,14 +190,22 @@ Native skill format with TOML frontmatter (`+++` delimited):
 *   **Tripartite Memory System**:
     - **LLMWiki** (`wiki.py`): Markdown-based long-term memory with strict file locking and parallelized backlink resolution. Uses FlashLLM for contradiction detection.
     - **KnowledgeExtractor** (`extraction.py`): Asynchronous background knowledge extraction utilizing `asyncio.gather` for parallel novelty scoring and confidence gating.
-    - **RLMThresholdAnalyzer** (`rlm_analyzer.py`): Telemetry-driven analysis evaluating session tokens and compaction rates to trigger Recursive Language Model training.
+    - **RLMThresholdAnalyzer** (`rlm_analyzer.py`): Telemetry-driven analysis evaluating session tokens and compaction rates to trigger Recursive Language Model training. **Now launches actual LoRA fine-tuning** via background task.
+    - **PageIndex** (`pageindex.py`): Vector-based routing with `UpgradedVectorIndex` (sentence-transformers with fallback).
+    - **WikiGraph** (`wiki_graph.py`): Entity nodes, relationship edges, and entity resolution via alias merging.
+    - **Novelty Thresholds** (`novelty_thresholds.py`): Per-tag/per-domain thresholds for nuanced deduplication.
+    - **TelemetryCollector** (`telemetry_collector.py`): Decoupled telemetry API for CLI and services.
+    - **Semantic Deduplication** (`semantic_dedup.py`): Vector similarity for `_find_existing_page` with Jaccard fallback.
 
 ---
 
 ## 6. Eval Infrastructure (`vibe/evals/`)
 
 ### 6.1 Components
-*   **EvalRunner** (`runner.py`): Core execution engine. Currently reuses `QueryLoop` instance (factory-per-case fix planned).
+*   **EvalRunner** (`runner.py`): Core execution engine. Reuses `QueryLoop` instance (use `FactoryEvalRunner` for isolation).
+*   **FactoryEvalRunner** (`factory_runner.py`): Fresh `QueryLoop` per eval case via factory function. Eliminates state bleed.
+*   **Adversarial Evals** (`adversarial.py`): Pattern-based prompt injection, jailbreak, and exfiltration detection.
+*   **Eval Dashboard** (`dashboard.py`): Dark-themed HTML report generator with pass-rate bars and run history.
 *   **MultiModelRunner** (`multi_model_runner.py`): Runs suite against multiple models, produces `Scorecard` with per-tag breakdowns. Correctly creates fresh `QueryLoop` per model.
 *   **SoakTestRunner** (`soak_test.py`): Long-running stress tests with degradation detection (first 20% vs last 20% latencies). Correctly creates fresh `QueryLoop` per case.
 *   **Observability** (`observability.py`): OpenTelemetry-style spans, counters, gauges, histograms. Export to JSON.
