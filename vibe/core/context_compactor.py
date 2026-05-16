@@ -46,7 +46,8 @@ class ContextCompactor:
         preserve_recent: int = 4,
         max_chars_per_msg: int = 4000,
         config: Any | None = None,
-        telemetry_collector: Any | None = None,  # TelemetryCollector instance
+        telemetry_collector: Any | None = None,
+        compaction_policy: Any | None = None,  # Phase P6: user-tuned compaction policy
     ):
         if config is not None:
             # Support passing a CompactorConfig or VibeConfig directly
@@ -62,7 +63,22 @@ class ContextCompactor:
         self.preserve_recent = preserve_recent
         self.max_chars_per_msg = max_chars_per_msg
         self._encoding = _get_encoding()
-        self._telemetry = telemetry_collector  # Phase 1a: telemetry hook
+        self._telemetry = telemetry_collector
+        # Phase P6: Apply user compaction policy preferences if provided
+        self._compaction_policy = compaction_policy
+        if compaction_policy is not None:
+            self._apply_compaction_policy()
+
+    def _apply_compaction_policy(self) -> None:
+        """Apply user compaction policy settings to this compactor."""
+        try:
+            if self._compaction_policy is None:
+                return
+            config = self._compaction_policy.get_config()
+            self.max_tokens = config.max_tokens
+            self.preserve_recent = config.preserve_recent_n
+        except Exception:
+            pass  # Non-critical: fallback to defaults
 
     def estimate_tokens(self, messages: list[dict[str, Any]]) -> int:
         if self._encoding is not None:

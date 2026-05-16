@@ -1421,7 +1421,25 @@ def macro_run(
     console.print(f"[green]Running macro:[/green] {name}")
 
     async def _run():
-        results = await runner.run(macro, variables)
+        # Phase P4: Wire macro execution through QueryLoop for real tool use
+        from vibe.core.query_loop_factory import QueryLoopFactory
+
+        factory = QueryLoopFactory(
+            base_url=DEFAULT_CONFIG.llm.base_url,
+            model=DEFAULT_CONFIG.llm.default_model,
+            api_key=DEFAULT_CONFIG.resolve_api_key(),
+            working_dir=str(Path.cwd()),
+            fallback_chain=DEFAULT_CONFIG.get_fallback_chain(),
+            config=DEFAULT_CONFIG,
+        )
+        query_loop = factory.create()
+
+        # Inject QueryLoop into runner for real execution
+        runner.factory = factory
+
+        results = runner.run(macro, variables)
+        if asyncio.iscoroutine(results):
+            results = await results
         console.print("\n[bold]Results:[/bold]")
         for k, v in results.items():
             console.print(f"  {k}: {v}")

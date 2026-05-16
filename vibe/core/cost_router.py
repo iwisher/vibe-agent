@@ -217,6 +217,7 @@ class CostRouter:
         messages: list[dict[str, Any]],
         available_tools: list[dict] | None = None,
         preferred_provider: str | None = None,
+        provider_prefs: Any | None = None,  # Phase P7: user provider preferences
     ) -> RoutingDecision:
         """Select the cheapest capable provider/model for a prompt.
 
@@ -224,12 +225,35 @@ class CostRouter:
             messages: Prompt messages.
             available_tools: Tool schemas the LLM may use.
             preferred_provider: If set, force this provider if it supports the tier.
+            provider_prefs: Optional ProviderPreferenceMatrix for learned routing.
 
         Returns:
             RoutingDecision with chosen provider, model, tier, and estimated cost.
         """
         complexity = self.scorer.score(messages, available_tools)
         target_tier = complexity.tier
+
+        # Phase P7: Check user provider preferences first
+        if provider_prefs is not None:
+            try:
+                # Build a task description from messages
+                task_text = " ".join(m.get("content", "") for m in messages[-3:])
+                pref = provider_prefs.get_preference(task_text)
+                if pref is not None:
+                    # Verify the preferred provider exists in registry
+                    provider = self.registry.get(pref.provider)
+                    if provider is not None:
+                        model_id = pref.model
+                        cost = self._estimate_cost(provider, complexity.estimated_tokens)
+                        return RoutingDecision(
+                            provider_name=pref.provider,
+                            model_id=model_id,
+                            tier=target_tier,
+                            estimated_cost=cost,
+                            reason=f"user preference: {pref.reason} (confidence={pref.confidence:.2f})",
+                        )
+            except Exception:
+                pass  # Fall through to normal routing
 
         # If spend limit exceeded, downgrade tier
         if self.spend_limit is not None:

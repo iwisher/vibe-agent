@@ -138,6 +138,9 @@ class QueryLoop:
         self.tool_executor = ToolExecutor(
             tool_system, self.hook_pipeline, mcp_bridge=mcp_bridge, tool_prefs=tool_prefs
         )
+        # Phase P5: Recovery rules for error handling
+        self._recovery_rules = None
+        self._session_state: dict[str, Any] = {}
         # Phase 6: 5-layer security defense
         sec_cfg = security_config
         if sec_cfg is None and config is not None and hasattr(config, "security"):
@@ -329,7 +332,11 @@ class QueryLoop:
 
                     # Phase 3.3: Cost-aware dynamic routing
                     if self.cost_router is not None:
-                        decision = self.cost_router.route(llm_msgs, available_tools=tools_for_llm)
+                        decision = self.cost_router.route(
+                            llm_msgs,
+                            available_tools=tools_for_llm,
+                            provider_prefs=getattr(self, "_provider_prefs", None),
+                        )
                         if decision.model_id != self.llm.model:
                             self.set_model(decision.model_id)
                             if self.logger:
@@ -390,6 +397,11 @@ class QueryLoop:
                             break
 
                 except Exception as e:
+                    # Phase P5: Try recovery rules before giving up
+                    recovery_result = await self._try_recovery(e)
+                    if recovery_result:
+                        yield recovery_result
+                        continue
                     self._set_state(QueryState.ERROR)
                     yield QueryResult(response="", error=e, state=self._state)
                     break
@@ -714,6 +726,7 @@ class QueryLoop:
                 pageindex=self.pageindex,
                 flash_client=getattr(self.wiki, "_flash_client", None),
                 config=self._config_memory,
+                extraction_policy=getattr(self, "_extraction_policy", None),  # Phase P8
             )
 
             items = await extractor.extract_from_session(messages, session_id)
@@ -838,6 +851,57 @@ class QueryLoop:
         except Exception as e:
             if self.logger:
                 self.logger.debug(f"RLM trigger analysis failed (non-fatal): {e}")
+
+    async def _try_recovery(self, error: Exception) -> QueryResult | None:
+        """Phase P5: Try recovery rules for a failed operation.
+
+        Returns a QueryResult if recovery was attempted, None otherwise.
+        """
+        if self._recovery_rules is None:
+            return None
+        try:
+            # Extract tool name and error message from exception
+            error_msg = str(error)
+            tool_name = getattr(error, "tool_name", "")
+            if not tool_name:
+                # Try to infer from error message
+                import re
+                m = re.search(r"tool ['\"]?([^'\"]+)['\"]?", error_msg, re.I)
+                if m:
+                    tool_name = m.group(1)
+
+            action = self._recovery_rules.find_recovery(
+                tool_name=tool_name or "unknown",
+                error_message=error_msg,
+                session_state=self._session_state,
+            )
+            if action is None:
+                return None
+
+            # Execute recovery tool
+            if self.logger:
+                self.logger.info(
+                    f"Recovery: attempting {action.recovery_tool} for {tool_name} "
+                    f"(attempt {self._session_state.get(f'recovery_attempts:{action.error_pattern}', 0)}/{action.max_attempts})"
+                )
+
+            recovery_result = await self.tools.execute_tool(
+                action.recovery_tool, **action.recovery_args
+            )
+
+            if recovery_result.success:
+                return QueryResult(
+                    response=f"Recovered from {tool_name} error using {action.recovery_tool}",
+                    state=QueryState.PROCESSING,
+                )
+            else:
+                return QueryResult(
+                    response=f"Recovery failed: {recovery_result.error}",
+                    error=Exception(recovery_result.error),
+                    state=QueryState.ERROR,
+                )
+        except Exception:
+            return None
 
     def stop(self) -> None:
         self._running = False

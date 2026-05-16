@@ -71,12 +71,14 @@ class KnowledgeExtractor:
         pageindex: Any | None = None,
         flash_client: Any | None = None,
         config: Any | None = None,
+        extraction_policy: Any | None = None,  # Phase P8: user extraction preferences
     ) -> None:
         self.llm_client = llm_client
         self.wiki = wiki
         self.pageindex = pageindex
         self.flash_client = flash_client
         self.config = config
+        self.extraction_policy = extraction_policy
 
     # ------------------------------------------------------------------
     # Public API
@@ -96,6 +98,16 @@ class KnowledgeExtractor:
             Empty list on any error (never raises).
         """
         try:
+            # Phase P8: Check extraction policy — skip if content matches skip patterns
+            if self.extraction_policy is not None:
+                transcript_text = " ".join(
+                    getattr(m, "content", "") for m in messages
+                    if getattr(m, "role", "") in ("user", "assistant")
+                )
+                if self.extraction_policy.should_skip(transcript_text):
+                    logger.debug("Extraction skipped: matches skip pattern")
+                    return []
+
             transcript = self._build_transcript(messages, session_id)
             if not transcript.strip():
                 logger.debug("Extraction skipped: empty transcript")
@@ -109,6 +121,17 @@ class KnowledgeExtractor:
                 return []
 
             items = self._parse_extraction_response(response, session_id)
+
+            # Phase P8: Apply auto-tags from extraction policy
+            if self.extraction_policy is not None and items:
+                transcript_lower = transcript.lower()
+                auto_tags = self.extraction_policy.get_tags(transcript_lower)
+                for item in items:
+                    existing_tags = set(item.get("tags", []))
+                    for tag in auto_tags:
+                        if tag not in existing_tags:
+                            item["tags"].append(tag)
+
             logger.debug("Extracted %d knowledge items from session %s", len(items), session_id)
             return items
         except Exception as e:

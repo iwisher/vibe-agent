@@ -210,6 +210,7 @@ class QueryLoopFactory:
                         self.logger.warning(f"Failed to initialize DAGPlanner: {e}")
 
         # Phase A: Wire ToolPreferenceRegistry when preferences enabled
+        # Phase P7: Wire ProviderPreferenceMatrix when preferences enabled
         if self.config is not None:
             pref_cfg = getattr(self.config, "preferences", None)
             if pref_cfg is not None and getattr(pref_cfg, "enabled", False):
@@ -221,6 +222,42 @@ class QueryLoopFactory:
                 except Exception as e:
                     if self.logger:
                         self.logger.warning(f"Failed to initialize ToolPreferenceRegistry: {e}")
+
+                try:
+                    from vibe.preferences.provider_prefs import ProviderPreferenceMatrix
+
+                    if getattr(pref_cfg, "provider_enabled", True):
+                        kwargs["_provider_prefs"] = ProviderPreferenceMatrix()
+                except Exception as e:
+                    if self.logger:
+                        self.logger.warning(f"Failed to initialize ProviderPreferenceMatrix: {e}")
+
+                try:
+                    from vibe.preferences.recovery_rules import RecoveryRuleDB
+
+                    if getattr(pref_cfg, "recovery_enabled", True):
+                        kwargs["_recovery_rules"] = RecoveryRuleDB()
+                except Exception as e:
+                    if self.logger:
+                        self.logger.warning(f"Failed to initialize RecoveryRuleDB: {e}")
+
+                try:
+                    from vibe.preferences.compaction_policy import CompactionPolicy
+
+                    if getattr(pref_cfg, "compaction_enabled", True):
+                        kwargs["compaction_policy"] = CompactionPolicy()
+                except Exception as e:
+                    if self.logger:
+                        self.logger.warning(f"Failed to initialize CompactionPolicy: {e}")
+
+                try:
+                    from vibe.preferences.extraction_policy import ExtractionPolicy
+
+                    if getattr(pref_cfg, "extraction_enabled", True):
+                        kwargs["_extraction_policy"] = ExtractionPolicy()
+                except Exception as e:
+                    if self.logger:
+                        self.logger.warning(f"Failed to initialize ExtractionPolicy: {e}")
 
         return QueryLoop(**kwargs)
 
