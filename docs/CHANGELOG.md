@@ -29,6 +29,49 @@ All notable changes to Vibe Agent will be documented in this file.
 
 ---
 
+## [0.3.5-alpha] — 2026-05-16
+
+### Added — Autonomous Skill Generation (Phase 4.2)
+- **SkillMakerPipeline** (`vibe/harness/skills/maker.py`): Self-improving skill generation.
+  - `detect_patterns()`: Scans LLMWiki for recurring tags above frequency threshold.
+  - `generate_skill()`: LLM generates SKILL.md drafts with prompt injection sanitization (`_sanitize_for_prompt`).
+  - `validate_skill()`: Runs through `SkillParser` + `SkillValidator` security sandbox.
+  - `propose_installation()`: Presents validated skill via `ApprovalGate` (CLI interactive or auto-approve).
+  - `run_once()`: End-to-end pipeline callable as background task.
+- **SkillMakerConfig** (`vibe/harness/skills/maker_config.py`): Pydantic config with `enabled` (default false), `min_pattern_frequency`, `confidence_threshold`, `max_skills_per_session`, `excluded_tags`.
+- **QueryLoop Integration**: Spawns `skill_maker.run_once()` as background `asyncio.Task` on session COMPLETED. Guarded by `_skill_maker_task` state to prevent concurrent runs. Proper task lifecycle with cancellation on teardown.
+- **QueryLoopFactory Wiring**: Auto-wires `SkillMakerPipeline` when `skill_maker.enabled=True`. Passes `wiki` and `llm_client` references.
+- **Tests**: 12 tests in `tests/harness/skills/test_maker.py` covering pattern detection, generation, validation, proposal, reset, and concurrent task safety.
+
+### Added — Shadow Workspace Rollbacks (Phase 5.2)
+- **ShadowBranchManager** (`vibe/tools/git_shadow.py`): Git-based workspace safety net.
+  - `create_shadow(session_id)`: Creates hidden `vibe/shadow-<session-id>` branch, stashes uncommitted changes.
+  - `restore_shadow(session_id)`: Checks out shadow branch, resets to original state, restores original branch.
+  - `list_shadows()`: Returns all shadow branches with metadata (original branch, creation time, uncommitted changes flag).
+  - `clean_shadows(older_than_days)`: Removes old shadows based on reflog timestamps.
+  - `is_write_heavy_operation(tool_name, args)`: Detects `write_file`, `delete_file`, `edit_file`, `bash`, `shell`, `execute`, `git_commit`, and destructive bash patterns.
+- **ToolExecutor Integration**: Auto-creates shadow on first write-heavy operation per session (once, gated by `_shadow_created` flag). Passes `session_id` through execute path.
+- **QueryLoop Integration**: Logs rollback hint (`vibe shadow restore <session-id>`) in `finally` block when session ends in ERROR/INCOMPLETE.
+- **QueryLoopFactory Wiring**: Auto-wires `ShadowBranchManager` when `shadow_workspace.enabled=True`.
+- **ShadowWorkspaceConfig** (`vibe/core/config.py`): Pydantic config with `enabled` (default false) and `auto_rollback`.
+- **NoOpShadowManager**: Non-git environments get no-op fallback (no shadow protection, no errors).
+- **Tests**: 21 unit tests with mocked subprocess in `tests/tools/test_git_shadow.py` + 5 integration tests with real tmp git repos in `tests/tools/test_git_shadow_integration.py`.
+
+### Added — Configuration Schema Extensions
+- `VibeConfig` extended with `shadow_workspace: ShadowWorkspaceConfig` field.
+- `QueryLoop.copy()` now preserves `shadow_manager` across copies (fixes eval/test isolation).
+
+### Fixed
+- **Tool Name Discrepancy**: `is_write_heavy_operation` now uses correct tool names (`write_file`, `delete_file`, `edit_file`) matching `vibe/tools/file.py` definitions.
+- **Skill-Maker Async Task Lifecycle**: `_skill_maker_task` tracked as instance field with proper cancellation on `QueryLoop` teardown.
+
+### Architecture
+- All new features default-disabled with opt-in via config flags.
+- 38 new tests (12 maker + 26 shadow), 1420+ total tests passing.
+- Zero regressions against existing 1380+ test suite.
+
+---
+
 ## [0.3.4-alpha] — 2026-05-16
 
 ### Added — React Trace Dashboard (Phase 5.1)

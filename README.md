@@ -4,37 +4,48 @@ Vibe Agent is an open, visual-first interactive CLI agent harness. It is designe
 
 ## 🚀 Key Features
 
--   **Multi-Provider Fallback**: Seamlessly switch between OpenAI, Anthropic, and other providers (via OpenRouter or Ollama) when primary models fail.
--   **Secure Tool Execution**: Sandboxed Bash and File system tools with three-layer security defense and path jailing.
--   **Context Management**: Automated compaction and summarization to handle long-running conversations within token limits.
--   **Eval-Driven Development**: A built-in suite of 50+ evaluation cases to ensure every update maintains performance and stability.
--   **Phase 2 Skill System**: Native vibe skill format with TOML frontmatter, markdown body, validation, security scanning, and atomic installation.
--   **Tripartite Memory System**: Automated async knowledge extraction, FlashLLM contradiction detection, and telemetry-triggered RLM analysis.
--   **Secret Redaction**: Automatic stripping of API keys (OpenAI, AWS, GitHub, etc.) and passwords from trace stores and logs.
--   **Interactive CLI**: Readline support with persistent history, token metrics display, and rich skill/wiki management commands.
--   **React Trace Dashboard**: Web UI for session observability — timeline, wiki graph, telemetry charts, system stats. Dark theme, real-time updates.
+- **Multi-Provider Fallback**: Seamlessly switch between OpenAI, Anthropic, Kimi, and other providers (via OpenRouter or Ollama) when primary models fail. Circuit breaker + latency-aware routing + cost tracking.
+- **Secure Tool Execution**: 5-layer security defense (pattern scanning, file safety, human approval, smart approver, checkpoints) with sandboxed Bash and jailed File tools.
+- **Context Management**: Automated compaction with 4 strategies (TRUNCATE, LLM_SUMMARIZE, OFFLOAD, DROP), plus adaptive iteration budgets based on task complexity.
+- **Eval-Driven Development**: 50+ built-in eval cases, adversarial testing, multi-model scorecards, soak tests with degradation detection, and factory-per-case isolation.
+- **Phase 2 Skill System**: Native vibe skill format with TOML frontmatter, validation, security scanning, atomic installation, typed variables, orchestration, marketplace, and dynamic tool declaration.
+- **Skill-Maker (Self-Improving)**: Automatically detects recurring task patterns from wiki extractions, generates SKILL.md drafts via LLM, validates through sandbox, and proposes installation via approval gate.
+- **Tripartite Memory System**: Automated async knowledge extraction, FlashLLM contradiction detection, telemetry-triggered RLM analysis, vector search with sentence-transformers, wiki graph database, and per-tag novelty thresholds.
+- **Shadow Workspace Rollbacks**: Auto-creates hidden git branch (`vibe/shadow-<session-id>`) before write-heavy operations. One-command restore if the session fails.
+- **Multi-Agent Swarm**: DAG-based orchestration of specialized sub-agents (Research, Coding, Critic, Planner) with Pub/Sub message bus, broadcast deduplication, and shared wiki.
+- **React Trace Dashboard**: Web UI for session observability — timeline, wiki graph, telemetry charts, system stats. Dark theme, real-time WebSocket updates.
+- **Preference Layer**: 8 persistent heuristics converting user feedback into agent behavior — tool defaults, approval rules, style, macros, recovery, compaction, provider routing, extraction.
+- **Secret Redaction**: Automatic stripping of API keys (OpenAI, AWS, GitHub, etc.) and passwords from trace stores and logs.
+- **Interactive CLI**: Readline support with persistent history, token metrics display, and rich skill/wiki/memory management commands.
 
 ---
 
 ## 🏗️ System Architecture
 
-![Vibe Agent Architecture](docs/architecture_diagram.png)
+![Vibe Agent Architecture](docs/assets/system_architecture.html)
 
-The system is built on a modular **Harness** pattern. The **Query Loop State Machine** is the central orchestrator that connects the **Model Gateway** (for multi-provider LLM access), the **Tool Executor** (for secure sandboxed actions), and the **Tripartite Memory System** (for long-term knowledge persistence).
+The system is built on a modular **Harness** pattern. The **Query Loop State Machine** is the central orchestrator that connects the **Model Gateway** (for multi-provider LLM access), the **Tool Executor** (for secure sandboxed actions), and the **Tripartite Memory System** (for long-term knowledge persistence). New capabilities — **Skill-Maker**, **Shadow Workspace**, **Swarm Orchestration**, and **Preference Layer** — all integrate through the same harness hooks.
 
 ```
-User CLI
+User CLI / Dashboard
   │
   ▼
 Query Loop State Machine (IDLE → PLANNING → TOOL_EXECUTION → SYNTHESIZING → COMPLETED)
-  ├── Model Gateway ──► Providers (OpenRouter / Anthropic / Ollama)
-  ├── Context Planner / Compactor
+  ├── Model Gateway ──► Providers (OpenRouter / Anthropic / Ollama / Kimi)
+  │   ├── Circuit Breaker + Latency Router + Cost Tracker
+  │   └── Fallback Chain (auto_fallback across providers)
+  ├── Context Planner / Compactor (adaptive budgets)
   ├── Tool Executor ──► Bash & File (Jailed Sandbox)
-  │                ──► Skill System
+  │                ──► Skill System + Skill-Maker Pipeline
+  │                ──► Shadow Workspace (git branch backup)
+  ├── Security Coordinator (5-layer defense)
+  ├── Preference Layer (8 heuristics)
+  ├── Swarm Orchestrator (multi-agent DAG)
   └── Tripartite Memory System
        ├── LLMWiki + PageIndex + SharedDB (SQLite)
        ├── Knowledge Extractor (async background)
-       └── RLM Threshold Analyzer (telemetry-triggered)
+       ├── RLM Threshold Analyzer (telemetry-triggered LoRA training)
+       └── WikiGraph + Semantic Deduplication
 ```
 
 Read more in the [Architecture Document](docs/ARCHITECTURE.md).
@@ -60,9 +71,20 @@ models:
 fallback:
   enabled: true
   chain: ["primary", "backup-model"]
+
+# Enable self-improving skill generation
+skill_maker:
+  enabled: true
+  min_pattern_frequency: 3
+  confidence_threshold: 0.75
+
+# Enable shadow workspace rollbacks
+shadow_workspace:
+  enabled: true
+  auto_rollback: false
 ```
 
-See the [Configuration Guide](docs/CONFIGURATION.md) for full details on setting up providers, multi-model fallback, and the tripartite memory system.
+See the [Configuration Guide](docs/CONFIGURATION.md) for full details on setting up providers, multi-model fallback, tripartite memory, skill-maker, and shadow workspace.
 
 ---
 
@@ -124,6 +146,29 @@ python -m vibe --model qwen3:8b "What is the 52-week high of QQQ?"
 
 # With debug logging
 python -m vibe --debug
+```
+
+### 4. Launch the dashboard
+
+```bash
+# Start the React trace dashboard
+vibe dashboard start --port 8080
+
+# Open http://localhost:8080 in your browser
+```
+
+### 5. Shadow workspace (safety net)
+
+```bash
+# Shadow is auto-created on write-heavy ops when enabled in config.
+# If something goes wrong, restore the workspace:
+vibe shadow restore <session-id>
+
+# List available shadows
+vibe shadow list
+
+# Clean old shadows
+vibe shadow clean --older-than-days 7
 ```
 
 ---
@@ -257,6 +302,7 @@ vibe skill uninstall my-skill
 | `ApprovalGate` | Protocol supporting CLI interactive approval, `AutoApprove`, and `AutoReject` modes |
 | `SkillInstaller` | Atomic installation from git clone, tarball download, or local path with rollback support |
 | `SkillExecutor` | Variable substitution, BashTool delegation, and step-by-step verification |
+| `SkillMakerPipeline` | **NEW** — Auto-detects recurring patterns, generates SKILL.md drafts, validates, proposes installation |
 
 ---
 
@@ -270,7 +316,7 @@ vibe memory status
 vibe memory wiki list
 vibe memory wiki list --tag investing --status verified
 
-# Search the wiki (BM25 full-text search)
+# Search the wiki (BM25 full-text search + vector similarity)
 vibe memory wiki search "QQQ moving average"
 
 # Show a specific page
@@ -281,6 +327,18 @@ vibe memory wiki expire --days 30
 
 # Rebuild the routing index
 vibe memory wiki index rebuild
+```
+
+---
+
+## 🤖 Swarm Commands
+
+```bash
+# Run a task through the multi-agent swarm
+vibe swarm "Research the latest React Server Components, then code a demo"
+
+# List active swarm agents
+vibe swarm status
 ```
 
 ---
@@ -305,12 +363,12 @@ vibe eval update-baseline
 
 ## 📚 Documentation Index
 
--   [Architecture](docs/ARCHITECTURE.md)
--   [Configuration Guide](docs/CONFIGURATION.md)
--   [Roadmap & Plans](docs/ROADMAP.md)
--   [Evaluation Suite](docs/EVALUATION.md)
--   [Changelog](docs/CHANGELOG.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Configuration Guide](docs/CONFIGURATION.md)
+- [Roadmap & Plans](docs/ROADMAP.md)
+- [Evaluation Suite](docs/EVALUATION.md)
+- [Changelog](docs/CHANGELOG.md)
 
 ---
 
-*Vibe Agent is currently in Phase 2e (Tripartite Memory System). See the [Roadmap](docs/ROADMAP.md) for what's next. Test suite: **899 tests passing**.*
+*Vibe Agent is currently in Phase 4.2 (Self-Improving Skill-Maker) + Phase 5.2 (Shadow Workspace). See the [Roadmap](docs/ROADMAP.md) for what's next. Test suite: **1420+ tests passing**.*

@@ -1,15 +1,17 @@
 # Vibe Agent Architecture Wiki
 
-Vibe Agent is a high-performance, resilient, and secure agent harness. Unlike many agent frameworks that focus on the model, Vibe Agent treats the **harness** as the primary product—ensuring that the LLM is managed with rigorous error recovery, safety constraints, and automated evaluation.
+Vibe Agent is a high-performance, resilient, and secure agent harness. Unlike many agent frameworks that focus on the model, Vibe Agent treats the **harness** as the primary product—ensuring that the LLM is managed with rigorous error recovery, safety constraints, automated evaluation, self-improvement, and multi-agent orchestration.
 
 ---
 
 ## 1. System Philosophy
 
-*   **Model Agnosticism**: Hop between models and providers (OpenAI, Anthropic, Ollama, OpenRouter, Kimi) seamlessly via adapter-based gateway.
-*   **Zero-Trust Tools**: All tools (Bash, File) are "jailed" and subjected to multi-layer validation before execution.
-*   **Stability over Speed**: Built-in circuit breakers, exponential backoff, and provider fallback ensure the agent remains stable even when remote APIs are flailing.
-*   **Empirical Progress**: Every architectural change must be validated against the `vibe eval` suite. 30+ built-in evals, multi-model scorecards, and soak tests.
+*   **Model Agnosticism**: Hop between models and providers (OpenAI, Anthropic, Ollama, OpenRouter, Kimi) seamlessly via adapter-based gateway with circuit breakers and latency-aware routing.
+*   **Zero-Trust Tools**: All tools (Bash, File) are "jailed" and subjected to 5-layer validation before execution.
+*   **Stability over Speed**: Built-in circuit breakers, exponential backoff, provider fallback, cost tracking, and shadow workspace rollbacks ensure the agent remains stable even when remote APIs are flailing or tasks fail.
+*   **Empirical Progress**: Every architectural change must be validated against the `vibe eval` suite. 50+ built-in evals, adversarial testing, multi-model scorecards, and soak tests.
+*   **Self-Improvement**: The agent detects recurring patterns from its own usage and generates new skills automatically via the Skill-Maker pipeline.
+*   **Collective Intelligence**: Multi-agent swarm with specialized sub-agents (Research, Coding, Critic, Planner) coordinated via DAG-based scheduling.
 
 ---
 
@@ -19,31 +21,41 @@ Vibe Agent is a high-performance, resilient, and secure agent harness. Unlike ma
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    User Interface (CLI)                                 │
-│    (Typer + Rich, interactive mode with readline history)               │
-└────────────────────────────┬────────────────────────────────────────────┘
-                             │
-                             ▼
+│                    User Interface Layer                                 │
+│    (Typer CLI + Rich  │  React Dashboard  │  Swarm Orchestrator)       │
+└────────────────────────┬────────────────────┬───────────────────────────┘
+                         │                    │
+                         ▼                    ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                      Query Loop                                         │
-│   (State Machine, Context Compactor, Hook Pipeline, Planners)           │
+│                      Query Loop (State Machine)                         │
+│   (Context Planner, Compactor, Hook Pipeline, Security, Preferences)    │
 └──────────────┬─────────────┬─────────────┬────────────────┬─────────────┘
                │             │             │                │
                ▼             ▼             ▼                ▼
 ┌───────────────────┐ ┌─────────────┐ ┌────────────────┐ ┌───────────────┐
-│   Model Gateway   │ │ Tool System │ │ Instruction Set│ │   Memory      │
-│ (Multi-Provider,  │ │ (Bash, File,│ │ (Skills,       │ │ (TraceStore,  │
-│  Fallback, CB)    │ │  MCP Bridge)│ │  AGENTS.md)    │ │  Wiki, Eval)  │
+│   Model Gateway   │ │ Tool System │ │  Memory Stack  │ │   Swarm       │
+│ (Multi-Provider,  │ │ (Bash, File,│ │ (TraceStore,   │ │ (SubAgents,   │
+│  Fallback, CB,    │ │  Skills,    │ │  Wiki, Eval,   │ │  TaskDAG,     │
+│  Cost Router)     │ │  MCP Bridge)│ │  Telemetry)    │ │  EventBroker) │
 └───────────────────┘ └─────────────┘ └────────────────┘ └───────────────┘
+        │                                              │
+        ▼                                              ▼
+┌───────────────────┐                      ┌───────────────────────────┐
+│  Skill-Maker      │                      │  Shadow Workspace         │
+│  (Pattern Detect, │                      │  (Git shadow branches,    │
+│   LLM Generate,   │                      │   auto-restore on fail)   │
+│   Validate,       │                      └───────────────────────────┘
+│   Propose)        │
+└───────────────────┘
 ```
 
-![System Architecture](assets/system_architecture.png)
+![System Architecture](assets/system_architecture.html)
 
 ---
 
 ## 3. Query Loop Flow
 
-The `QueryLoop` is a state-machine-driven async generator (`vibe/core/query_loop.py`, ~370 lines) that manages the agent's "thought-action" cycle.
+The `QueryLoop` is a state-machine-driven async generator (`vibe/core/query_loop.py`, ~1170 lines) that manages the agent's "thought-action" cycle.
 
 ### 3.1 States
 
@@ -65,11 +77,16 @@ class QueryState(Enum):
 ```mermaid
 graph TD
     Start((Start Query)) --> Planning[PLANNING: ContextPlanner selects tools/skills]
-    Planning --> LoopStart{Iteration < Max?}
+    Planning --> ShadowCheck{Write-heavy ops?}
+    ShadowCheck -- Yes --> CreateShadow[Create vibe/shadow-<session-id>]
+    ShadowCheck -- No --> LoopStart
+    CreateShadow --> LoopStart
     
-    LoopStart -- Yes --> Compaction[PROCESSING: CompactionCoordinator checks token budget]
+    LoopStart{Iteration < Max?} -- Yes --> Compaction[PROCESSING: CompactionCoordinator checks token budget]
     Compaction --> ToolSelection[Select tools filtered by Planner]
-    ToolSelection --> LLMCall[LLM Call via ModelGateway]
+    ToolSelection --> Security[SECURITY: 5-layer defense check]
+    Security -- Blocked --> LoopStart
+    Security -- Allowed --> LLMCall[LLM Call via ModelGateway]
     
     LLMCall --> CheckResponse{Response Type?}
     
@@ -82,6 +99,7 @@ graph TD
     
     LoopStart -- No --> Incomplete((INCOMPLETE))
     LLMCall -- Error --> ErrorState((ERROR))
+    ErrorState --> OfferRollback[Log: vibe shadow restore <session-id>]
 ```
 
 ### 3.3 Key Behaviors
@@ -92,9 +110,12 @@ graph TD
     3. **LLM Router** (if configured).
     4. **Safety fallback** (return all tools).
 - **Compaction:** Triggered before every LLM call if estimated tokens exceed threshold. Four strategies: `TRUNCATE` (default), `LLM_SUMMARIZE`, `OFFLOAD`, `DROP`.
-- **Feedback:** `FeedbackCoordinator` evaluates content responses via `FeedbackEngine`. Score below threshold (default 0.7) → inject retry hint and continue loop. Currently silently returns `score=0.5` on any exception (planned fix).
-- **Iteration limit:** `max_iterations` (default 50) with `INCOMPLETE` state on exhaustion.
-- **Background Extraction & Telemetry:** Upon loop completion, asynchronous knowledge extraction is spawned along with an RLM threshold analyzer that evaluates telemetry metrics.
+- **Security:** `SecurityCoordinator` evaluates every tool call through 5 layers: pattern scanning, file safety, learned approval rules, human approval gates, smart approver, and checkpoints.
+- **Feedback:** `FeedbackCoordinator` evaluates content responses via `FeedbackEngine`. Score below threshold (default 0.7) → inject retry hint and continue loop.
+- **Shadow Protection:** `ToolExecutor` auto-creates a git shadow branch before the first write-heavy operation per session. On ERROR/INCOMPLETE, `QueryLoop` logs a rollback hint.
+- **Skill-Maker:** On COMPLETED, spawns background `SkillMakerPipeline.run_once()` to detect patterns and propose new skills.
+- **Iteration limit:** `max_iterations` (default 50) with adaptive budget allocation based on task complexity.
+- **Background Extraction & Telemetry:** Upon loop completion, async knowledge extraction + RLM threshold analyzer + skill-maker all spawn as fire-and-forget tasks.
 
 ---
 
@@ -110,15 +131,16 @@ Efficient token usage is a core design goal, implemented through three primary l
 ### 4.2 Automated Context Compaction
 `CompactionCoordinator` (`vibe/core/coordinators.py`) monitors token usage before every LLM call.
 - **Strategies:** `TRUNCATE` (default), `LLM_SUMMARIZE`, `OFFLOAD`, `DROP`.
-- **Current default:** Placeholder summary (`[Context summarized: N messages omitted]`). Real LLM summarization planned.
+- **Current default:** Placeholder summary (`[Context summarized: N messages omitted]`). Real LLM summarization wired when LLM client available.
 - **Estimation:** Uses `tiktoken` (cl100k_base) when available; falls back to chars/4.
 - **Message capping:** Individual tool results capped at `max_chars_per_msg` (default 4000).
+- **Adaptive Budgets:** Complexity-based depth allocation replaces hard `max_iterations=50`.
 
 ### 4.3 Feedback Loops (Turn Reduction)
 `FeedbackCoordinator` acts as a quality gate.
 - Catches malformed or low-quality responses locally via `FeedbackEngine`.
 - Provides specific fix hints to prevent hallucination loops.
-- **Current limitation:** Silent degradation on exceptions masks real failures.
+- **Status enum:** `OK`, `BELOW_THRESHOLD`, `ENGINE_ERROR`, `VALIDATION_ERROR` — explicit failure mode tracking.
 
 ---
 
@@ -137,11 +159,12 @@ The gateway is the "resilience layer" for all LLM communication.
 
 ### 5.2 Coordinators (`vibe/core/coordinators.py`)
 Responsibilities extracted from `QueryLoop` for testability:
-1.  **ToolExecutor**: Manages tool execution, `HookPipeline` (PRE/POST constraints), and MCP fallback. Sequential execution with exception isolation per tool call.
+1.  **ToolExecutor**: Manages tool execution, `HookPipeline` (PRE/POST constraints), MCP fallback, and **shadow workspace auto-creation** on write-heavy ops. Sequential execution with exception isolation per tool call.
 2.  **FeedbackCoordinator**: Manages self-verification and retry hints. Threshold-based with max retry cap.
 3.  **CompactionCoordinator**: Triggers `ContextCompactor` logic before LLM calls.
-4.  **Session Recovery**: `SessionRecoveryManager` with TTL-based checkpoints for crash recovery.
-5.  **Adaptive Budget**: `AdaptiveBudgetAllocator` with complexity-based depth budgets replacing hard `max_iterations=50`.
+4.  **SecurityCoordinator**: 5-layer defense (pattern scanning → file safety → learned rules → human approval → smart approver → checkpoints).
+5.  **Session Recovery**: `SessionRecoveryManager` with TTL-based checkpoints for crash recovery.
+6.  **Adaptive Budget**: `AdaptiveBudgetAllocator` with complexity-based depth budgets replacing hard `max_iterations=50`.
 
 ### 5.3 Preference Layer (`vibe/preferences/`)
 Converts user feedback into persistent, testable, code-based heuristics. All features default-disabled, opt-in via config.
@@ -160,7 +183,13 @@ Converts user feedback into persistent, testable, code-based heuristics. All fea
 *   **Bash Sandbox:** Uses `subprocess_exec` (no shell) + regex denylist (`sudo`, `rm -rf /`, etc.).
 *   **File Jail:** `_resolve_and_jail()` prevents path traversal even via symlinks.
 *   **Hook Pipeline:** 5 stages (`PRE_VALIDATE → PRE_MODIFY → PRE_ALLOW → POST_EXECUTE → POST_FIX`).
-*   **Current limitation:** Only 2 built-in hooks with ~4 patterns. 5-layer defense expansion planned.
+*   **SecurityCoordinator:** 5-layer defense with `SecurityCheckResult` per layer.
+    - Layer 1: PatternEngine scans for dangerous commands.
+    - Layer 2: FileSafetyGuard validates paths against safe_root.
+    - Layer 3: HumanApprover with manual/smart/auto/strict modes.
+    - Layer 4: SmartApprover with LLM-based risk assessment.
+    - Layer 5: CheckpointManager creates rollback points before destructive ops.
+*   **Shadow Workspace** (`git_shadow.py`): `ShadowBranchManager` creates hidden git branches before write-heavy operations. `NoOpShadowManager` for non-git environments. Auto-detects write-heavy ops (`write_file`, `delete_file`, `bash` with destructive patterns, etc.).
 
 ### 5.5 Skill System v2 (`vibe/harness/skills/`)
 Native skill format with TOML frontmatter (`+++` delimited):
@@ -174,6 +203,13 @@ Native skill format with TOML frontmatter (`+++` delimited):
 *   **Orchestrator:** `SkillOrchestrator` enables skills to `await` other skills and spawn sub-agents via `asyncio.gather`.
 *   **Marketplace:** `SkillMarketplace` with JSON registry, search, install, and rating support.
 *   **Dynamic Tools:** `DynamicToolRegistry` allows skills to declare new tools at runtime.
+*   **Skill-Maker** (`maker.py`): **NEW** — Self-improving pipeline:
+    - `detect_patterns()`: Scans wiki for recurring tags above frequency threshold.
+    - `generate_skill()`: LLM generates SKILL.md draft with prompt injection sanitization.
+    - `validate_skill()`: Runs through `SkillValidator` sandbox.
+    - `propose_installation()`: Presents to user via `ApprovalGate`.
+    - `run_once()`: End-to-end pipeline callable from `QueryLoop` background task.
+    - Config: `SkillMakerConfig` with `enabled`, `min_pattern_frequency`, `confidence_threshold`, `max_skills_per_session`.
 
 ### 5.6 Memory (`vibe/harness/memory/`)
 *   **TraceStore:** Scalable backend (SQLite, JSON, or Memory) for session persistence.
@@ -190,7 +226,7 @@ Native skill format with TOML frontmatter (`+++` delimited):
 *   **Tripartite Memory System**:
     - **LLMWiki** (`wiki.py`): Markdown-based long-term memory with strict file locking and parallelized backlink resolution. Uses FlashLLM for contradiction detection.
     - **KnowledgeExtractor** (`extraction.py`): Asynchronous background knowledge extraction utilizing `asyncio.gather` for parallel novelty scoring and confidence gating.
-    - **RLMThresholdAnalyzer** (`rlm_analyzer.py`): Telemetry-driven analysis evaluating session tokens and compaction rates to trigger Recursive Language Model training. **Now launches actual LoRA fine-tuning** via background task.
+    - **RLMThresholdAnalyzer** (`rlm_analyzer.py`): Telemetry-driven analysis evaluating session tokens and compaction rates to trigger Recursive Language Model training. **Launches actual LoRA fine-tuning** via background task + subprocess worker.
     - **PageIndex** (`pageindex.py`): Vector-based routing with `UpgradedVectorIndex` (sentence-transformers with fallback).
     - **WikiGraph** (`wiki_graph.py`): Entity nodes, relationship edges, and entity resolution via alias merging.
     - **Novelty Thresholds** (`novelty_thresholds.py`): Per-tag/per-domain thresholds for nuanced deduplication.
@@ -256,13 +292,45 @@ Native skill format with TOML frontmatter (`+++` delimited):
 
 ---
 
-## 9. Configuration & Quality
+## 9. Shadow Workspace (`vibe/tools/git_shadow.py`)
+
+### 9.1 ShadowBranchManager
+*   **Create**: `create_shadow(session_id)` → creates `vibe/shadow-<session-id>` branch, stashes uncommitted changes, stores metadata in git config.
+*   **Restore**: `restore_shadow(session_id)` → checks out shadow branch, resets to original state, restores original branch.
+*   **List**: `list_shadows()` → returns all shadow branches with metadata (original branch, creation time, uncommitted changes flag).
+*   **Clean**: `clean_shadows(older_than_days)` → removes shadows older than threshold based on reflog timestamps.
+*   **Write-Heavy Detection**: `is_write_heavy_operation(tool_name, args)` → detects `write_file`, `delete_file`, `bash` with destructive patterns, shell redirections, etc.
+
+### 9.2 Integration Points
+*   **ToolExecutor**: Auto-creates shadow on first write-heavy operation per session (once, gated by `_shadow_created` flag).
+*   **QueryLoop**: Logs rollback hint in `finally` block when session ends in ERROR/INCOMPLETE.
+*   **QueryLoopFactory**: Auto-wires `ShadowBranchManager` when `shadow_workspace.enabled=True`.
+*   **Config**: `ShadowWorkspaceConfig` with `enabled` and `auto_rollback` fields.
+
+---
+
+## 10. Skill-Maker Pipeline (`vibe/harness/skills/maker.py`)
+
+### 10.1 Pipeline Stages
+1.  **Detect**: Scans `LLMWiki` for tags with frequency ≥ `min_pattern_frequency`. Returns `DetectedPattern` with tag, page titles, suggested tools, confidence score.
+2.  **Generate**: Builds sanitized prompt from pattern summary. LLM generates SKILL.md draft with TOML frontmatter. Prompt injection protection via `_sanitize_for_prompt()`.
+3.  **Validate**: Parses generated markdown via `SkillParser`. Runs `SkillValidator` security scan. Returns `ValidationResult`.
+4.  **Propose**: Creates `SkillProposal` with install command. Presents to user via `ApprovalGate` (`AutoApproveGate` in headless mode).
+
+### 10.2 Integration Points
+*   **QueryLoop**: Spawns `skill_maker.run_once()` as background `asyncio.Task` on session COMPLETED. Guarded by `_skill_maker_task` state to prevent concurrent runs.
+*   **QueryLoopFactory**: Auto-wires `SkillMakerPipeline` when `skill_maker.enabled=True`. Passes `wiki` and `llm_client` references.
+*   **Config**: `SkillMakerConfig` with `enabled`, `min_pattern_frequency`, `confidence_threshold`, `max_skills_per_session`, `excluded_tags`.
+
+---
+
+## 11. Configuration & Quality
 
 *   **Hierarchical Config:** Default → `~/.vibe/config.yaml` → Environment Variables (`VIBE_*`).
 *   **Security Config:** `approval_mode` (manual/smart/auto), file safety, env sanitization, sandbox backend, audit logging.
-*   **Evaluation Suite:** 30+ built-in cases in `vibe/evals/builtin/`.
+*   **Evaluation Suite:** 50+ built-in cases in `vibe/evals/builtin/`.
 *   **Scorecards:** JSON + Markdown performance reports generated per model run.
 
 ---
 
-*Last Updated: 2026-05-15 (v0.3.2-alpha)*
+*Last Updated: 2026-05-16 (v0.3.5-alpha)*
