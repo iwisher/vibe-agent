@@ -50,7 +50,11 @@ class TestFactoryEvalRunner:
         ]
 
         import asyncio
-        results = asyncio.get_event_loop().run_until_complete(runner.run_all(cases))
+        loop = asyncio.new_event_loop()
+        try:
+            results = loop.run_until_complete(runner.run_all(cases))
+        finally:
+            loop.close()
 
         assert len(results) == 2
         # Each case should have gotten a different loop instance
@@ -64,7 +68,11 @@ class TestFactoryEvalRunner:
         case = EvalCase(id="case_1", tags=[], input={"prompt": "test"}, expected={})
 
         import asyncio
-        asyncio.get_event_loop().run_until_complete(runner.run_case(case))
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(runner.run_case(case))
+        finally:
+            loop.close()
 
         # The loop should be closed after the case
         # (We can't directly check since it's local to run_case, but we verify no exception)
@@ -91,7 +99,11 @@ class TestFactoryEvalRunner:
         ]
 
         import asyncio
-        asyncio.get_event_loop().run_until_complete(runner.run_all(cases))
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(runner.run_all(cases))
+        finally:
+            loop.close()
 
         # All 5 cases should have created their own loop
         assert created_count == 5
@@ -128,7 +140,11 @@ class TestFactoryEvalRunner:
         ]
 
         import asyncio
-        asyncio.get_event_loop().run_until_complete(runner.run_all(cases))
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(runner.run_all(cases))
+        finally:
+            loop.close()
 
         # Each loop should have its own local_counter value
         # (0 and 1, since they're created sequentially)

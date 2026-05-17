@@ -49,4 +49,8 @@ class FactoryEvalRunner:
 
     def run_all_sync(self, cases: list[EvalCase]) -> list[EvalResult]:
         """Synchronous wrapper for run_all."""
-        return asyncio.get_event_loop().run_until_complete(self.run_all(cases))
+        loop = asyncio.new_event_loop()
+        try:
+            return loop.run_until_complete(self.run_all(cases))
+        finally:
+            loop.close()

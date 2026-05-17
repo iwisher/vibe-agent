@@ -34,7 +34,8 @@ class PreferenceRegistry:
         self._pending_hit_counts: dict[str, dict[str, int]] = {}  # domain -> {rule_id: count}
 
     def _init_db(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        conn = sqlite3.connect(self.db_path)
+        try:
             conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS preference_policies (
@@ -44,20 +45,28 @@ class PreferenceRegistry:
                     updated_at TEXT
                 );
             """)
+            conn.commit()
+        finally:
+            conn.close()
 
     def save_policy(self, policy: PreferencePolicy) -> None:
         """Save or update a policy."""
-        with sqlite3.connect(self.db_path) as conn:
+        conn = sqlite3.connect(self.db_path)
+        try:
             conn.execute(
                 """INSERT OR REPLACE INTO preference_policies
                    (domain, policy_json, enabled, updated_at)
                    VALUES (?, ?, ?, datetime('now'))""",
                 (policy.domain, json.dumps(policy.model_dump()), int(policy.enabled)),
             )
+            conn.commit()
+        finally:
+            conn.close()
 
     def load_policy(self, domain: str) -> PreferencePolicy | None:
         """Load a policy by domain. Returns None if not found."""
-        with sqlite3.connect(self.db_path) as conn:
+        conn = sqlite3.connect(self.db_path)
+        try:
             row = conn.execute(
                 "SELECT policy_json FROM preference_policies WHERE domain = ?",
                 (domain,),
@@ -65,23 +74,32 @@ class PreferenceRegistry:
             if row is None:
                 return None
             return PreferencePolicy(**json.loads(row[0]))
+        finally:
+            conn.close()
 
     def list_domains(self) -> list[str]:
         """List all domains with saved policies."""
-        with sqlite3.connect(self.db_path) as conn:
+        conn = sqlite3.connect(self.db_path)
+        try:
             rows = conn.execute(
                 "SELECT domain FROM preference_policies WHERE enabled = 1"
             ).fetchall()
             return [r[0] for r in rows]
+        finally:
+            conn.close()
 
     def delete_policy(self, domain: str) -> bool:
         """Delete a policy. Returns True if deleted."""
-        with sqlite3.connect(self.db_path) as conn:
+        conn = sqlite3.connect(self.db_path)
+        try:
             cursor = conn.execute(
                 "DELETE FROM preference_policies WHERE domain = ?",
                 (domain,),
             )
+            conn.commit()
             return cursor.rowcount > 0
+        finally:
+            conn.close()
 
     def batch_hit(self, domain: str, rule_id: str) -> None:
         """Record a hit in memory (not persisted yet)."""

@@ -72,9 +72,11 @@ class TestPatchFlashClient:
 
         # Should work normally
         import asyncio
-        result = asyncio.get_event_loop().run_until_complete(
-            flash.complete("test")
-        )
+        loop = asyncio.new_event_loop()
+        try:
+            result = loop.run_until_complete(flash.complete("test"))
+        finally:
+            loop.close()
         assert result.content == "hello"
         assert flash.complete_called is True
 
@@ -99,9 +101,11 @@ class TestPatchFlashClient:
         patch_flash_client_with_shared_cb(flash, cb)
 
         import asyncio
-        result = asyncio.get_event_loop().run_until_complete(
-            flash.complete("test")
-        )
+        loop = asyncio.new_event_loop()
+        try:
+            result = loop.run_until_complete(flash.complete("test"))
+        finally:
+            loop.close()
         assert result.success is False
         assert result.error == "circuit_breaker_open"
 
@@ -118,9 +122,11 @@ class TestPatchFlashClient:
         patch_flash_client_with_shared_cb(flash, cb)
 
         import asyncio
-        with pytest.raises(RuntimeError):
-            asyncio.get_event_loop().run_until_complete(
-                flash.complete("test")
-            )
+        loop = asyncio.new_event_loop()
+        try:
+            with pytest.raises(RuntimeError):
+                loop.run_until_complete(flash.complete("test"))
+        finally:
+            loop.close()
         assert cb.is_open("phi3:mini") is False  # 1 failure, threshold=2
         assert cb._state("phi3:mini").consecutive_failures == 1
