@@ -31,6 +31,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # Re-exported from provider_registry for convenience
 # ---------------------------------------------------------------------------
 from vibe.core.provider_registry import ProviderProfile, ProviderRegistry  # noqa: F401
+from vibe.harness.skills.maker_config import SkillMakerConfig
+
+
+class ShadowWorkspaceConfig(BaseModel):
+    """Shadow workspace rollback configuration (Phase 5.2)."""
+
+    enabled: bool = False
+    auto_rollback: bool = False  # If True, auto-restore on ERROR/INCOMPLETE without user prompt
+
 
 # ---------------------------------------------------------------------------
 # Parse helpers (legacy env-var API)
@@ -507,6 +516,8 @@ class VibeConfig(BaseSettings):
     cost_router: CostRouterConfig = Field(default_factory=CostRouterConfig)
     session: SessionConfig = Field(default_factory=SessionConfig)
     preferences: PreferenceConfig = Field(default_factory=PreferenceConfig)
+    skill_maker: SkillMakerConfig = Field(default_factory=SkillMakerConfig)
+    shadow_workspace: ShadowWorkspaceConfig = Field(default_factory=ShadowWorkspaceConfig)
 
     # Legacy flat compat
     api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")

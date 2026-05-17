@@ -168,11 +168,44 @@ class QueryLoopFactory:
 
         # v4: Conditionally create wiki/pageindex when tripartite_enabled
         mem_cfg = getattr(self.config, "memory", None) if self.config is not None else None
+        wiki = None
         if mem_cfg is not None and getattr(mem_cfg, "enabled", False):
             wiki, pageindex, telemetry = self._create_tripartite(mem_cfg)
             kwargs["wiki"] = wiki
             kwargs["pageindex"] = pageindex
             kwargs["telemetry"] = telemetry
+
+        # Phase A: Wire SkillMakerPipeline when enabled
+        if self.config is not None:
+            sm_cfg = getattr(self.config, "skill_maker", None)
+            if sm_cfg is not None and getattr(sm_cfg, "enabled", False):
+                try:
+                    from vibe.harness.skills.maker import SkillMakerPipeline
+                    from vibe.harness.skills.maker_config import SkillMakerConfig
+
+                    if not isinstance(sm_cfg, SkillMakerConfig):
+                        sm_cfg = SkillMakerConfig(**(sm_cfg if isinstance(sm_cfg, dict) else {}))
+                    skill_maker = SkillMakerPipeline(
+                        config=sm_cfg,
+                        wiki=wiki,
+                        llm_client=llm,
+                    )
+                    kwargs["skill_maker"] = skill_maker
+                except Exception as e:
+                    if self.logger:
+                        self.logger.warning(f"Failed to initialize SkillMakerPipeline: {e}")
+
+        # Phase 5.2: Wire ShadowBranchManager when enabled
+        if self.config is not None:
+            shadow_cfg = getattr(self.config, "shadow_workspace", None)
+            if shadow_cfg is not None and getattr(shadow_cfg, "enabled", False):
+                try:
+                    from vibe.tools.git_shadow import ShadowBranchManager
+
+                    kwargs["shadow_manager"] = ShadowBranchManager()
+                except Exception as e:
+                    if self.logger:
+                        self.logger.warning(f"Failed to initialize ShadowBranchManager: {e}")
 
         # Phase 3.3: Wire CostRouter when enabled
         if self.config is not None:

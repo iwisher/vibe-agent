@@ -123,10 +123,10 @@ class TestShadowBranchManager:
         """Write-heavy detection should identify destructive operations."""
         manager = ShadowBranchManager()
 
-        assert manager.is_write_heavy_operation("file_write", {}) is True
+        assert manager.is_write_heavy_operation("write_file", {}) is True
         assert manager.is_write_heavy_operation("bash", {"command": "rm -rf /tmp/test"}) is True
         assert manager.is_write_heavy_operation("bash", {"command": "echo hello"}) is False
-        assert manager.is_write_heavy_operation("file_read", {}) is False
+        assert manager.is_write_heavy_operation("read_file", {}) is False
 
     def test_write_heavy_false_positives(self):
         """Previously over-broad patterns should not flag benign commands."""

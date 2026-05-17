@@ -290,9 +290,12 @@ class ShadowBranchManager:
             True if the operation should be shadowed.
         """
         write_tools = {
-            "file_write",
-            "file_edit",
+            "write_file",
+            "delete_file",
+            "edit_file",
             "bash",
+            "shell",
+            "execute",
             "git_commit",
             "git_push",
             "git_checkout",

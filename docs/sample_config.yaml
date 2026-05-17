@@ -111,3 +111,16 @@ security:
     log_path: "~/.vibe/logs/security.log"
     max_events: 10000
     redact_in_logs: true
+
+# 11. Skill Maker
+skill_maker:
+  enabled: false
+  min_pattern_frequency: 3
+  max_skills_per_session: 1
+  sandbox_timeout_seconds: 30
+  auto_install_approved: false
+  llm_model: ""
+  excluded_tags:
+    - session
+    - telemetry
+    - system

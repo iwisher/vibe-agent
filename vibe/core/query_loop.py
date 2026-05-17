@@ -110,6 +110,10 @@ class QueryLoop:
         # Phase: Adaptive iteration budgets
         adaptive_budget: bool = False,
         budget_config: BudgetConfig | None = None,
+        # Phase A: Skill-Maker pipeline
+        skill_maker: Any | None = None,
+        # Phase 5.2: Shadow workspace rollback
+        shadow_manager: Any | None = None,
     ):
         # Allow VibeConfig to override individual parameters
         if config is not None:
@@ -146,7 +150,11 @@ class QueryLoop:
             feedback_engine, feedback_threshold, max_feedback_retries
         )
         self.tool_executor = ToolExecutor(
-            tool_system, self.hook_pipeline, mcp_bridge=mcp_bridge, tool_prefs=tool_prefs
+            tool_system,
+            self.hook_pipeline,
+            mcp_bridge=mcp_bridge,
+            tool_prefs=tool_prefs,
+            shadow_manager=shadow_manager,
         )
         self.instruction_set = instruction_set
         self.mcp_bridge = mcp_bridge
@@ -164,6 +172,8 @@ class QueryLoop:
         self.dag_planner = dag_planner
         self.enable_dag_execution = enable_dag_execution
         self.tool_prefs = tool_prefs
+        self.skill_maker = skill_maker
+        self.shadow_manager = shadow_manager
 
         # Phase: Adaptive iteration budgets
         self.adaptive_budget = adaptive_budget
@@ -182,6 +192,7 @@ class QueryLoop:
         self._telemetry = telemetry
         self._wiki_extract_task: asyncio.Task | None = None  # Phase 1b: async extraction
         self._rlm_trigger_task: asyncio.Task | None = None  # Phase 2: RLM trigger
+        self._skill_maker_task: asyncio.Task | None = None  # Phase A: skill maker
         self._session_start_time: float = 0.0
         self._config_memory = getattr(config, "tripartite", None) if config else None
         # Phase 3.2: Session checkpointing for durable suspension/resumption
@@ -521,6 +532,18 @@ class QueryLoop:
                     if self.logger:
                         self.logger.debug(f"RLM trigger task spawn failed (non-fatal): {e}")
 
+            # Phase A: Spawn background skill-maker pattern detection (non-blocking)
+            if (
+                self.skill_maker is not None
+                and self._state == QueryState.COMPLETED
+                and (self._skill_maker_task is None or self._skill_maker_task.done())
+            ):
+                try:
+                    self._skill_maker_task = asyncio.create_task(self.skill_maker.run_once())
+                except Exception as e:
+                    if self.logger:
+                        self.logger.debug(f"SkillMaker task spawn failed (non-fatal): {e}")
+
             # Log session to trace store if available
             if self._trace_store and self._session_id:
                 try:
@@ -553,6 +576,25 @@ class QueryLoop:
                     self._session_store.delete_checkpoint(self._session_id)
                 except Exception:
                     pass
+
+            # Phase 5.2: Offer rollback if shadow exists and session ended in error/incomplete
+            if self.shadow_manager is not None and self._session_id:
+                if self._state in (QueryState.ERROR, QueryState.INCOMPLETE):
+                    try:
+                        shadows = self.shadow_manager.list_shadows()
+                        matching = [s for s in shadows if s.session_id == self._session_id]
+                        if matching:
+                            # We can't yield here (outside async generator), but we can log
+                            if self.logger:
+                                self.logger.info(
+                                    "Shadow backup available for session %s. "
+                                    "Run `vibe shadow restore %s` to rollback.",
+                                    self._session_id[:16],
+                                    self._session_id,
+                                )
+                    except Exception as e:
+                        if self.logger:
+                            self.logger.debug("Failed to list shadows for rollback offer: %s", e)
 
     async def _maybe_compact(self, llm_msgs: list[dict]) -> QueryResult | None:
         """Compact context if needed. Returns a QueryResult if compaction occurred."""
@@ -628,7 +670,9 @@ class QueryLoop:
         allowed_calls, allowed_indices, results = self._filter_tool_calls(tool_calls)
 
         if allowed_calls:
-            executed = await self.tool_executor.execute(allowed_calls)
+            executed = await self.tool_executor.execute(
+                allowed_calls, session_id=self._session_id
+            )
             for idx, result in zip(allowed_indices, executed):
                 results[idx] = result
 
@@ -644,7 +688,9 @@ class QueryLoop:
         if not allowed_calls or len(allowed_calls) <= 1:
             # Not enough calls for DAG parallelism — use sequential
             if allowed_calls:
-                executed = await self.tool_executor.execute(allowed_calls)
+                executed = await self.tool_executor.execute(
+                    allowed_calls, session_id=self._session_id
+                )
                 for idx, result in zip(allowed_indices, executed):
                     results[idx] = result
             return [r for r in results if r is not None]
@@ -657,7 +703,9 @@ class QueryLoop:
                     f"DAG fallback: valid={dag.is_valid}, depth={dag.max_depth}, "
                     f"nodes={dag.node_count}"
                 )
-            executed = await self.tool_executor.execute(allowed_calls)
+            executed = await self.tool_executor.execute(
+                allowed_calls, session_id=self._session_id
+            )
             for idx, result in zip(allowed_indices, executed):
                 results[idx] = result
             return [r for r in results if r is not None]
@@ -742,7 +790,7 @@ class QueryLoop:
 
     async def _execute_tool_calls(self, tool_calls: list) -> list[ToolResult]:
         """Deprecated: delegates to ToolExecutor."""
-        return await self.tool_executor.execute(tool_calls)
+        return await self.tool_executor.execute(tool_calls, session_id=self._session_id)
 
     def _build_llm_messages(self) -> list[dict]:
         return [
@@ -999,6 +1047,7 @@ class QueryLoop:
         new_loop._session_start_time = 0.0
         new_loop._wiki_extract_task = None
         new_loop._rlm_trigger_task = None
+        new_loop._skill_maker_task = None
         new_loop._iteration = 0
         # Fresh coordinators to prevent state bleed across copies
         new_loop.feedback_coord = FeedbackCoordinator(
@@ -1018,6 +1067,7 @@ class QueryLoop:
                 self.tool_executor.hook_pipeline,
                 getattr(self.tool_executor, "mcp_bridge", None),
                 getattr(self.tool_executor, "tool_prefs", None),
+                getattr(self.tool_executor, "shadow_manager", None),
             )
             # Copy registered handlers to new executor
             if hasattr(self.tool_executor, "_handlers"):
@@ -1102,8 +1152,8 @@ class QueryLoop:
                 except Exception:
                     pass
 
-        # Cancel any pending background tasks (Phase 1b + Phase 2)
-        for task_attr in ("_wiki_extract_task", "_rlm_trigger_task"):
+        # Cancel any pending background tasks (Phase 1b + Phase 2 + Phase A)
+        for task_attr in ("_wiki_extract_task", "_rlm_trigger_task", "_skill_maker_task"):
             task = getattr(self, task_attr, None)
             if task is not None and not task.done():
                 task.cancel()

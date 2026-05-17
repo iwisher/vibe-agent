@@ -136,9 +136,13 @@ This document tracks the progress of Vibe Agent, from its core foundation to fut
 - [ ] A/B test fine-tuned vs base model on eval suite
 
 ### 4.2 Autonomous Skill Generation (Skill-Maker)
-- [ ] `SkillMakerPipeline` detecting recurring task patterns from wiki
-- [ ] LLM-generated `SKILL.md` drafts
-- [ ] Sandbox validation and approval gate
+- [x] `SkillMakerPipeline` detecting recurring task patterns from wiki
+- [x] LLM-generated `SKILL.md` drafts with prompt injection sanitization
+- [x] Sandbox validation and approval gate (`AutoApproveGate` / `AutoRejectGate`)
+- [x] `QueryLoop` integration: background `run_once()` on session COMPLETED
+- [x] `QueryLoopFactory` auto-wires when `skill_maker.enabled=True`
+- [x] Config model: `SkillMakerConfig` with frequency/confidence thresholds
+- [x] 12 tests: pattern detection, tool extraction, generation, validation, installation, session limits
 
 ### 4.3 Multi-Agent Swarm Orchestration
 - [ ] `SwarmOrchestrator` spawning specialized sub-agents
@@ -157,6 +161,11 @@ This document tracks the progress of Vibe Agent, from its core foundation to fut
 ### 5.2 Shadow Workspace Rollbacks
 - [x] Hidden git branch `vibe/shadow-<session-id>` before write-heavy tasks
 - [x] `vibe rollback` to restore on ERROR/INCOMPLETE
+- [x] `ToolExecutor` auto-creates shadow on first write-heavy operation per session
+- [x] `QueryLoop` logs rollback hint when session ends in ERROR/INCOMPLETE
+- [x] `QueryLoopFactory` auto-wires when `shadow_workspace.enabled=True`
+- [x] `ShadowWorkspaceConfig` Pydantic model with `auto_rollback` option
+- [x] 26 tests: 21 unit (mocked git) + 5 integration (real repos)
 
 ### 5.3 CI/CD Integration
 - [x] GitHub Action for eval suite with regression gate
@@ -280,20 +289,20 @@ Prioritized by impact × effort, based on the architectural critique above.
 **Solution**: ✅ `SwarmOrchestrator` with `TaskDAG` scheduler spawns specialized `SubAgent`s (Research, Coding, Critic) via `AgentProtocol` Pub/Sub message bus (`EventBroker`). Shared wiki via `SharedWiki` (read-only for agents, write-via-message to orchestrator). Broadcast deduplication, dead letter queue, agent lifecycles, concurrency semaphore.  
 **Status**: Implemented in `vibe/swarm/`. 45 tests passing.
 
-### 9. 🛠️ Autonomous Skill Generation (Skill-Maker)
+### 9. 🛠️ Autonomous Skill Generation (Skill-Maker) ✅ COMPLETED
 **Problem**: Skills are written by humans. The agent cannot learn new reusable automations.  
-**Solution**: Create a `SkillMakerPipeline` that: (1) detects recurring task patterns from wiki extractions, (2) generates a `SKILL.md` draft using the LLM, (3) sandboxes and validates it, (4) proposes installation via the approval gate.  
-**Impact**: The agent becomes self-improving — new capabilities emerge from usage patterns.
+**Solution**: ✅ `SkillMakerPipeline` detects recurring task patterns from wiki extractions, generates `SKILL.md` drafts via LLM (with prompt injection sanitization), validates via sandbox + approval gate, and proposes installation. Integrated into `QueryLoop` as background task on session completion.  
+**Status**: Implemented in `vibe/harness/skills/maker.py`. 12 tests passing. Config via `SkillMakerConfig`.
 
 ### 10. 🧠 Preference Layer (User Feedback → Heuristics) ✅ COMPLETED
 **Problem**: User feedback is ephemeral — lost on restart.  
 **Solution**: ✅ `PreferenceRegistry` with 8 preference types (tool defaults, approval rules, style, macros, recovery, compaction, provider routing, extraction). SQLite WAL-backed.  
 **Status**: Implemented in `vibe/preferences/`. 56+ tests passing.
 
-### 11. ↩️ Shadow Workspace Rollbacks
+### 11. ↩️ Shadow Workspace Rollbacks ✅ COMPLETED
 **Problem**: Complex file refactoring by the agent can leave the workspace in a broken state with no easy undo.  
-**Solution**: Before any write-heavy task, create a hidden git branch (`vibe/shadow-<session-id>`). If the task fails (state = ERROR/INCOMPLETE), offer `vibe rollback` to restore the workspace.  
-**Impact**: Removes fear of running the agent on real codebases — critical for adoption.
+**Solution**: ✅ `ShadowBranchManager` creates hidden git branch (`vibe/shadow-<session-id>`) before write-heavy tasks. `ToolExecutor` auto-detects write-heavy operations and creates shadow once per session. On ERROR/INCOMPLETE, `QueryLoop` logs rollback hint. `vibe shadow restore <session-id>` CLI available. Config via `ShadowWorkspaceConfig` with `auto_rollback` option.  
+**Status**: Implemented in `vibe/tools/git_shadow.py`. 26 tests passing (21 unit + 5 integration).
 
 ---
 
@@ -311,4 +320,4 @@ CLIOnly            CLIOnly             CLI + React Dashboard
 
 ---
 
-*Last updated: 2026-05-15 | Test suite: **1056+ tests collected, 1056+ passing***
+*Last updated: 2026-05-16 | Test suite: **1420+ tests collected, 1420+ passing***

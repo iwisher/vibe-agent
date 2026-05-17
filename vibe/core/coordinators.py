@@ -45,11 +45,14 @@ class ToolExecutor:
         hook_pipeline: HookPipeline,
         mcp_bridge: MCPBridge | None = None,
         tool_prefs: Any | None = None,
+        shadow_manager: Any | None = None,
     ):
         self.tools = tool_system
         self.hook_pipeline = hook_pipeline
         self.mcp_bridge = mcp_bridge
         self.tool_prefs = tool_prefs
+        self.shadow_manager = shadow_manager
+        self._shadow_created = False
         self._handlers: dict[str, Callable] = {}
 
     def register_handler(self, tool_name: str, handler: Callable) -> None:
@@ -65,8 +68,32 @@ class ToolExecutor:
         ]
         return filtered if filtered else all_schemas
 
-    async def execute(self, tool_calls: list) -> list[ToolResult]:
-        """Execute a batch of tool calls with hooks and fallback."""
+    async def execute(self, tool_calls: list, session_id: str | None = None) -> list[ToolResult]:
+        """Execute a batch of tool calls with hooks, fallback, and optional shadow backup."""
+        # Phase 5.2: Auto-create shadow before write-heavy operations
+        shadow_created = False
+        if (
+            self.shadow_manager is not None
+            and session_id
+            and not getattr(self, "_shadow_created", False)
+        ):
+            for call in tool_calls:
+                call_name = (
+                    call.get("function", {}).get("name")
+                    if isinstance(call, dict)
+                    else getattr(call, "name", None)
+                )
+                args = (
+                    call.get("function", {}).get("arguments", {})
+                    if isinstance(call, dict)
+                    else getattr(call, "arguments", {})
+                )
+                if self.shadow_manager.is_write_heavy_operation(call_name or "", args):
+                    self.shadow_manager.create_shadow(session_id)
+                    self._shadow_created = True
+                    shadow_created = True
+                    break
+
         results = []
         for call in tool_calls:
             try:
