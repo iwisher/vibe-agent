@@ -498,6 +498,20 @@ function App() {
   // ─── Wiki Detail View ───
   if (view === 'wiki-detail' && selectedWikiSlug) {
     return React.createElement('div', { className: 'dashboard' },
+      React.createElement('header', { className: 'header' },
+        React.createElement('div', { className: 'header-brand' },
+          React.createElement('div', { className: 'header-logo' }, '\u25C8'),
+          React.createElement('div', null,
+            React.createElement('h1', { className: 'header-title' }, 'Vibe Agent Dashboard',
+              React.createElement('span', null, 'v0.3.5')
+            )
+          )
+        ),
+        React.createElement('div', { className: 'header-meta' },
+          React.createElement('span', { className: 'status-badge' }, 'Live'),
+          React.createElement('span', { className: 'version-tag' }, 'v0.3.5')
+        )
+      ),
       React.createElement(WikiPageDetail, { 
         slug: selectedWikiSlug, 
         onBack: handleBackToDashboard 
