@@ -170,9 +170,18 @@ function WikiPageDetail({ slug, onBack }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let active = true;
     api.get(`/api/wiki/${slug}`)
-      .then(data => { setPage(data); setLoading(false); })
-      .catch(() => setLoading(false));
+      .then(data => {
+        if (active) {
+          setPage(data);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
   }, [slug]);
 
   if (loading) return React.createElement('div', { className: 'loading' },
@@ -243,15 +252,31 @@ function WikiGraph({ onPageClick }) {
           x: 0, 
           y: 0 
         }));
+        
+        // Build edges using inverted tag index for O(N*T) instead of O(N²)
+        const tagMap = {};
+        pages.forEach((p, i) => {
+          (p.tags || []).forEach(t => {
+            if (!tagMap[t]) tagMap[t] = [];
+            tagMap[t].push(i);
+          });
+        });
+        
+        const edgeSet = new Set();
         const edges = [];
-        for (let i = 0; i < pages.length; i++) {
-          for (let j = i + 1; j < pages.length; j++) {
-            const shared = (pages[i].tags || []).filter(t => (pages[j].tags || []).includes(t));
-            if (shared.length > 0) {
-              edges.push({ source: i, target: j });
+        Object.values(tagMap).forEach(indices => {
+          for (let i = 0; i < indices.length; i++) {
+            for (let j = i + 1; j < indices.length; j++) {
+              const u = indices[i], v = indices[j];
+              const edgeId = u < v ? `${u}-${v}` : `${v}-${u}`;
+              if (!edgeSet.has(edgeId)) {
+                edgeSet.add(edgeId);
+                edges.push({ source: u, target: v });
+              }
             }
           }
-        }
+        });
+        
         setGraph({ nodes, edges });
         setLoading(false);
       })
@@ -542,7 +567,10 @@ function App() {
             className: 'panel-action', 
             onClick: (e) => {
               e.stopPropagation();
-              fetch('/api/wiki/regenerate', { method: 'POST' })
+              fetch('/api/wiki/regenerate', { 
+                method: 'POST',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
+              })
                 .then(r => {
                   if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`);
                   return r.json();

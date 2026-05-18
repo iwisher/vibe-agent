@@ -445,7 +445,12 @@ async def get_wiki_page(slug: str, request: Request) -> dict[str, Any]:
     if not md_file.exists():
         return {"error": "Page not found"}
 
-    content = md_file.read_text(encoding="utf-8")
+    # Read file in thread pool to avoid blocking event loop
+    try:
+        content = await asyncio.to_thread(md_file.read_text, encoding="utf-8")
+    except UnicodeDecodeError:
+        return {"error": "File is not valid UTF-8 text"}
+    
     title = md_file.stem
     tags: list[str] = []
     status = "unverified"
@@ -468,6 +473,13 @@ async def get_wiki_page(slug: str, request: Request) -> dict[str, Any]:
         except ValueError:
             body = content
 
+    # Get stat in thread pool
+    try:
+        stat = await asyncio.to_thread(md_file.stat)
+        mtime = stat.st_mtime
+    except OSError:
+        mtime = 0
+
     return {
         "slug": slug,
         "title": title,
@@ -475,7 +487,7 @@ async def get_wiki_page(slug: str, request: Request) -> dict[str, Any]:
         "verification_status": status,
         "content": body.strip(),
         "updated_at": datetime.fromtimestamp(
-            md_file.stat().st_mtime, tz=timezone.utc
+            mtime, tz=timezone.utc
         ).isoformat(),
         "word_count": len(body.split()),
     }
@@ -488,6 +500,13 @@ async def regenerate_wiki(request: Request) -> dict[str, Any]:
     Scans sessions database for tool invocations and memory writes
     that could be turned into wiki pages.
     """
+    # CSRF protection: require custom header
+    if request.headers.get("x-requested-with") != "XMLHttpRequest":
+        return JSONResponse(
+            {"error": "CSRF protection: missing X-Requested-With header"},
+            status_code=403
+        )
+    
     state = get_state(request)
     
     # Ensure wiki directory exists
@@ -506,10 +525,15 @@ async def regenerate_wiki(request: Request) -> dict[str, Any]:
     def _generate_pages():
         nonlocal pages_created, pages_updated
         for session in sessions:
-            session_id = session.get("session_id", "unknown")
+            raw_id = session.get("session_id")
             
-            # Skip sessions with missing IDs to avoid overwriting
-            if session_id == "unknown":
+            # Skip sessions with missing or invalid IDs
+            if not raw_id:
+                continue
+            
+            # Sanitize session_id to prevent path traversal
+            session_id = re.sub(r'[^a-zA-Z0-9_-]', '', str(raw_id))
+            if not session_id:
                 continue
             
             # Check if there's already a wiki page for this session topic
@@ -517,9 +541,11 @@ async def regenerate_wiki(request: Request) -> dict[str, Any]:
             slug = f"session-{session_id[:8]}"
             md_file = state.wiki_dir / f"{slug}.md"
             
-            if not md_file.exists():
-                # Create a new wiki page from session data
-                content = f"""---
+            # Use atomic file creation to avoid TOCTOU race condition
+            try:
+                with open(md_file, "x", encoding="utf-8") as f:
+                    # Create a new wiki page from session data
+                    content = f"""---
 title: Session Summary {session_id[:8]}
 tags: [auto-generated, session]
 status: draft
@@ -535,8 +561,10 @@ status: draft
 
 This page was auto-generated from session data.
 """
-                md_file.write_text(content, encoding="utf-8")
+                    f.write(content)
                 pages_created += 1
+            except FileExistsError:
+                pass
     
     # Run file generation in thread pool to avoid blocking event loop
     await asyncio.to_thread(_generate_pages)
