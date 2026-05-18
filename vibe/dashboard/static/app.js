@@ -188,7 +188,7 @@ function WikiPageDetail({ slug, onBack }) {
     React.createElement('div', { className: 'wiki-detail-header' },
       React.createElement('button', { className: 'back-button', onClick: onBack },
         React.createElement(Icons.ArrowLeft),
-        ' Back to Wiki'
+        ' Back to Dashboard'
       ),
       React.createElement('h2', { className: 'wiki-detail-title' }, page.title),
       React.createElement('div', { className: 'wiki-detail-meta' },
@@ -231,7 +231,8 @@ function WikiGraph({ onPageClick }) {
   const [graph, setGraph] = useState({ nodes: [], edges: [] });
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const loadGraph = useCallback(() => {
+    setLoading(true);
     api.get('/api/wiki')
       .then(data => {
         const pages = data || [];
@@ -256,6 +257,10 @@ function WikiGraph({ onPageClick }) {
       })
       .catch(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    loadGraph();
+  }, [loadGraph]);
 
   useEffect(() => {
     if (!graph.nodes.length || !svgRef.current) return;
@@ -286,6 +291,7 @@ function WikiGraph({ onPageClick }) {
       .join("g")
       .style("cursor", onPageClick ? "pointer" : "default")
       .on("click", (event, d) => {
+        event.stopPropagation();
         if (onPageClick && d.slug) {
           onPageClick(d.slug);
         }
@@ -439,15 +445,16 @@ function App() {
       .catch(e => setError(e.message));
   }, []);
 
-  const handleWikiPageClick = (slug) => {
+  const handleWikiPageClick = useCallback((slug) => {
+    console.log('Wiki page clicked:', slug);
     setSelectedWikiSlug(slug);
     setView('wiki-detail');
-  };
+  }, []);
 
-  const handleBackToDashboard = () => {
+  const handleBackToDashboard = useCallback(() => {
     setView('dashboard');
     setSelectedWikiSlug(null);
-  };
+  }, []);
 
   if (error) return React.createElement('div', { className: 'error' },
     React.createElement(Icons.AlertTriangle),
@@ -459,6 +466,7 @@ function App() {
     'Loading dashboard...'
   );
 
+  // ─── Wiki Detail View ───
   if (view === 'wiki-detail' && selectedWikiSlug) {
     return React.createElement('div', { className: 'dashboard' },
       React.createElement(WikiPageDetail, { 
@@ -468,6 +476,7 @@ function App() {
     );
   }
 
+  // ─── Dashboard View ───
   return React.createElement('div', { className: 'dashboard' },
     // Header
     React.createElement('header', { className: 'header' },
@@ -494,7 +503,10 @@ function App() {
         icon: React.createElement(Icons.BookOpen), 
         color: 'purple', 
         delta: 5,
-        onClick: () => setView('wiki-detail')
+        onClick: () => {
+          console.log('Wiki stat card clicked');
+          setView('wiki-list');
+        }
       }),
       React.createElement(StatCard, { title: 'Skills Installed', value: stats.total_skills, icon: React.createElement(Icons.Wrench), color: 'green', delta: 0 }),
       React.createElement(StatCard, { title: 'Recent Errors (24h)', value: stats.recent_errors, icon: React.createElement(Icons.AlertTriangle), color: 'red', delta: -8 })
@@ -526,7 +538,7 @@ function App() {
           React.createElement('span', { 
             className: 'panel-action', 
             onClick: () => {
-              // Trigger page reload to regenerate graph
+              console.log('Regenerate clicked');
               window.location.reload();
             }
           }, 'Regenerate')
