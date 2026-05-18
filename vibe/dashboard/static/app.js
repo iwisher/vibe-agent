@@ -82,6 +82,18 @@ const Icons = {
   Tag: () => React.createElement('svg', { width: 12, height: 12, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
     React.createElement('path', { d: 'M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z' }),
     React.createElement('line', { x1: 7, y1: 7, x2: 7.01, y2: 7 })),
+  ZoomIn: () => React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+    React.createElement('circle', { cx: 11, cy: 11, r: 8 }),
+    React.createElement('line', { x1: 21, y1: 21, x2: 16.65, y2: 16.65 }),
+    React.createElement('line', { x1: 11, y1: 8, x2: 11, y2: 14 }),
+    React.createElement('line', { x1: 8, y1: 11, x2: 14, y2: 11 })),
+  ZoomOut: () => React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+    React.createElement('circle', { cx: 11, cy: 11, r: 8 }),
+    React.createElement('line', { x1: 21, y1: 21, x2: 16.65, y2: 16.65 }),
+    React.createElement('line', { x1: 8, y1: 11, x2: 14, y2: 11 })),
+  RotateCcw: () => React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+    React.createElement('polyline', { points: '1 4 1 10 7 10' }),
+    React.createElement('path', { d: 'M3.51 15a9 9 0 1 0 2.13-9.36L1 10' })),
 };
 
 // ─── Custom Tooltip for Recharts ───
@@ -164,6 +176,81 @@ function SessionList() {
   );
 }
 
+// ─── WikiList (shows all wiki pages with summaries) ───
+function WikiList({ onPageClick, onBack }) {
+  const [pages, setPages] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    api.get('/api/wiki')
+      .then(data => {
+        if (active) {
+          setPages(data || []);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
+  }, []);
+
+  // Extract summary (first non-empty paragraph after frontmatter)
+  const getSummary = (content) => {
+    if (!content) return 'No summary available.';
+    const lines = content.split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (trimmed && !trimmed.startsWith('#') && !trimmed.startsWith('-') && !trimmed.startsWith('---')) {
+        return trimmed.length > 120 ? trimmed.slice(0, 120) + '...' : trimmed;
+      }
+    }
+    return 'No summary available.';
+  };
+
+  if (loading) return React.createElement('div', { className: 'loading' },
+    React.createElement('div', { className: 'loading-spinner' }),
+    'Loading wiki pages...'
+  );
+
+  return React.createElement('div', { className: 'wiki-list' },
+    React.createElement('div', { className: 'wiki-list-header' },
+      React.createElement('button', { className: 'back-button', onClick: onBack },
+        React.createElement(Icons.ArrowLeft),
+        ' Back to Dashboard'
+      ),
+      React.createElement('h2', { className: 'wiki-list-title' }, 'Wiki Pages'),
+      React.createElement('span', { className: 'wiki-list-count' }, pages.length, ' pages')
+    ),
+    React.createElement('div', { className: 'wiki-list-grid' },
+      pages.map(page =>
+        React.createElement('div', { 
+          key: page.slug, 
+          className: 'wiki-list-card',
+          onClick: () => onPageClick(page.slug)
+        },
+          React.createElement('h3', { className: 'wiki-list-card-title' }, page.title || page.slug),
+          React.createElement('p', { className: 'wiki-list-card-summary' }, getSummary(page.content)),
+          React.createElement('div', { className: 'wiki-list-card-meta' },
+            page.tags?.length > 0 && React.createElement('div', { className: 'wiki-tags' },
+              page.tags.slice(0, 3).map(tag =>
+                React.createElement('span', { key: tag, className: 'wiki-tag' },
+                  React.createElement(Icons.Tag),
+                  ' ',
+                  tag
+                )
+              )
+            ),
+            React.createElement('span', { className: `wiki-status wiki-status-${page.verification_status}` }, page.verification_status),
+            React.createElement('span', { className: 'wiki-wordcount' }, page.word_count, ' words')
+          )
+        )
+      )
+    )
+  );
+}
+
 // ─── WikiPageDetail ───
 function WikiPageDetail({ slug, onBack }) {
   const [page, setPage] = useState(null);
@@ -239,6 +326,7 @@ function WikiGraph({ onPageClick }) {
   const svgRef = useRef(null);
   const [graph, setGraph] = useState({ nodes: [], edges: [] });
   const [loading, setLoading] = useState(true);
+  const zoomRef = useRef(1);
 
   const loadGraph = useCallback(() => {
     setLoading(true);
@@ -296,13 +384,26 @@ function WikiGraph({ onPageClick }) {
     const width = svgRef.current.clientWidth || 600;
     const height = 380;
 
-    const simulation = d3.forceSimulation(graph.nodes)
-      .force("link", d3.forceLink(graph.edges).id(d => d.id).distance(120))
-      .force("charge", d3.forceManyBody().strength(-400))
-      .force("center", d3.forceCenter(width / 2, height / 2))
-      .force("collision", d3.forceCollide().radius(30));
+    // Create a group for zoomable content
+    const g = svg.append("g");
 
-    const link = svg.append("g")
+    // Zoom behavior
+    const zoom = d3.zoom()
+      .scaleExtent([0.3, 3])
+      .on("zoom", (event) => {
+        zoomRef.current = event.transform.k;
+        g.attr("transform", event.transform);
+      });
+
+    svg.call(zoom);
+
+    const simulation = d3.forceSimulation(graph.nodes)
+      .force("link", d3.forceLink(graph.edges).id(d => d.id).distance(100))
+      .force("charge", d3.forceManyBody().strength(-300))
+      .force("center", d3.forceCenter(width / 2, height / 2))
+      .force("collision", d3.forceCollide().radius(35));
+
+    const link = g.append("g")
       .selectAll("line")
       .data(graph.edges)
       .join("line")
@@ -310,7 +411,7 @@ function WikiGraph({ onPageClick }) {
       .attr("stroke-opacity", 0.4)
       .attr("stroke-width", 1.5);
 
-    const node = svg.append("g")
+    const node = g.append("g")
       .selectAll("g")
       .data(graph.nodes)
       .join("g")
@@ -327,19 +428,19 @@ function WikiGraph({ onPageClick }) {
         .on("end", (event, d) => { if (!event.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; }));
 
     node.append("circle")
-      .attr("r", 22)
+      .attr("r", 20)
       .attr("fill", "#1a2236")
       .attr("stroke", "#3b82f6")
       .attr("stroke-width", 2)
       .attr("class", "graph-node");
 
     node.append("text")
-      .text(d => d.label)
+      .text(d => d.label.length > 12 ? d.label.slice(0, 12) + '...' : d.label)
       .attr("x", 0)
       .attr("y", 4)
       .attr("text-anchor", "middle")
       .attr("fill", "#f0f4f8")
-      .attr("font-size", "11px")
+      .attr("font-size", "10px")
       .attr("font-family", "'JetBrains Mono', monospace");
 
     simulation.on("tick", () => {
@@ -357,6 +458,34 @@ function WikiGraph({ onPageClick }) {
     };
   }, [graph, onPageClick]);
 
+  const handleZoomIn = () => {
+    if (svgRef.current) {
+      d3.select(svgRef.current).transition().call(
+        d3.zoom().transform,
+        d3.zoomTransform(svgRef.current).scale(zoomRef.current * 1.3)
+      );
+    }
+  };
+
+  const handleZoomOut = () => {
+    if (svgRef.current) {
+      d3.select(svgRef.current).transition().call(
+        d3.zoom().transform,
+        d3.zoomTransform(svgRef.current).scale(zoomRef.current / 1.3)
+      );
+    }
+  };
+
+  const handleReset = () => {
+    if (svgRef.current) {
+      d3.select(svgRef.current).transition().call(
+        d3.zoom().transform,
+        d3.zoomIdentity
+      );
+      zoomRef.current = 1;
+    }
+  };
+
   if (loading) return React.createElement('div', { className: 'graph-container' },
     React.createElement('div', { className: 'loading' },
       React.createElement('div', { className: 'loading-spinner' }),
@@ -372,6 +501,17 @@ function WikiGraph({ onPageClick }) {
   );
 
   return React.createElement('div', { className: 'graph-container' },
+    React.createElement('div', { className: 'graph-controls' },
+      React.createElement('button', { className: 'graph-control-btn', onClick: handleZoomIn, title: 'Zoom In' },
+        React.createElement(Icons.ZoomIn)
+      ),
+      React.createElement('button', { className: 'graph-control-btn', onClick: handleZoomOut, title: 'Zoom Out' },
+        React.createElement(Icons.ZoomOut)
+      ),
+      React.createElement('button', { className: 'graph-control-btn', onClick: handleReset, title: 'Reset View' },
+        React.createElement(Icons.RotateCcw)
+      )
+    ),
     React.createElement('svg', { ref: svgRef, width: '100%', height: 380 })
   );
 }
@@ -485,6 +625,11 @@ function App() {
     setSelectedWikiSlug(null);
   }, []);
 
+  const handleShowWikiList = useCallback(() => {
+    setView('wiki-list');
+    setSelectedWikiSlug(null);
+  }, []);
+
   if (error) return React.createElement('div', { className: 'error' },
     React.createElement(Icons.AlertTriangle),
     'Error: ', error
@@ -494,6 +639,30 @@ function App() {
     React.createElement('div', { className: 'loading-spinner' }),
     'Loading dashboard...'
   );
+
+  // ─── Wiki List View ───
+  if (view === 'wiki-list') {
+    return React.createElement('div', { className: 'dashboard' },
+      React.createElement('header', { className: 'header' },
+        React.createElement('div', { className: 'header-brand' },
+          React.createElement('div', { className: 'header-logo' }, '\u25C8'),
+          React.createElement('div', null,
+            React.createElement('h1', { className: 'header-title' }, 'Vibe Agent Dashboard',
+              React.createElement('span', null, 'v0.3.5')
+            )
+          )
+        ),
+        React.createElement('div', { className: 'header-meta' },
+          React.createElement('span', { className: 'status-badge' }, 'Live'),
+          React.createElement('span', { className: 'version-tag' }, 'v0.3.5')
+        )
+      ),
+      React.createElement(WikiList, { 
+        onPageClick: handleWikiPageClick,
+        onBack: handleBackToDashboard
+      })
+    );
+  }
 
   // ─── Wiki Detail View ───
   if (view === 'wiki-detail' && selectedWikiSlug) {
@@ -546,18 +715,7 @@ function App() {
         icon: React.createElement(Icons.BookOpen), 
         color: 'purple', 
         delta: 5,
-        onClick: () => {
-          // Show first wiki page detail when clicking stat card
-          api.get('/api/wiki')
-            .then(data => {
-              const pages = data || [];
-              if (pages.length > 0 && pages[0].slug) {
-                setSelectedWikiSlug(pages[0].slug);
-                setView('wiki-detail');
-              }
-            })
-            .catch(err => console.error('Failed to load wiki pages:', err));
-        }
+        onClick: handleShowWikiList
       }),
       React.createElement(StatCard, { title: 'Skills Installed', value: stats.total_skills, icon: React.createElement(Icons.Wrench), color: 'green', delta: 0 }),
       React.createElement(StatCard, { title: 'Recent Errors (24h)', value: stats.recent_errors, icon: React.createElement(Icons.AlertTriangle), color: 'red', delta: -8 })
