@@ -6,7 +6,10 @@ const API_BASE = '';
 const api = {
   get: async (path) => {
     const res = await fetch(`${API_BASE}${path}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`HTTP ${res.status}: ${text}`);
+    }
     return res.json();
   }
 };
@@ -115,8 +118,8 @@ function SessionList() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/api/sessions?limit=20')
-      .then(data => { setSessions(data.sessions || []); setLoading(false); })
+    api.get('/api/sessions')
+      .then(data => { setSessions(data || []); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
 
@@ -125,17 +128,21 @@ function SessionList() {
     'Loading sessions...'
   );
 
+  if (!sessions.length) return React.createElement('div', { className: 'empty-state' },
+    'No sessions yet. Start a conversation to see it here.'
+  );
+
   return React.createElement('div', { className: 'session-list' },
     sessions.map(s =>
-      React.createElement('div', { key: s.id, className: 'session-item' },
+      React.createElement('div', { key: s.session_id || s.id, className: 'session-item' },
         React.createElement('div', { className: `session-avatar ${s.success ? 'success' : 'error'}` },
           s.success ? '✓' : '!'
         ),
         React.createElement('div', { className: 'session-info' },
-          React.createElement('div', { className: 'session-id' }, s.id.slice(0, 12) + '...'),
+          React.createElement('div', { className: 'session-id' }, (s.session_id || s.id || 'unknown').slice(0, 12) + '...'),
           React.createElement('div', { className: 'session-meta' },
-            React.createElement('span', null, React.createElement(Icons.Cpu), ' ', s.model),
-            React.createElement('span', null, React.createElement(Icons.MessageSquare), ' ', s.message_count, ' msgs'),
+            React.createElement('span', null, React.createElement(Icons.Cpu), ' ', s.model || 'unknown'),
+            React.createElement('span', null, React.createElement(Icons.MessageSquare), ' ', s.message_count || 0, ' msgs'),
             React.createElement('span', null, React.createElement(Icons.Clock), ' ', (s.duration_seconds || 0).toFixed(1), 's')
           )
         ),
@@ -154,8 +161,24 @@ function WikiGraph() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get('/api/wiki/graph')
-      .then(data => { setGraph(data); setLoading(false); })
+    api.get('/api/wiki')
+      .then(data => {
+        // Build graph from wiki pages
+        const pages = data || [];
+        const nodes = pages.map((p, i) => ({ id: i, label: p.title || p.slug || 'untitled', x: 0, y: 0 }));
+        const edges = [];
+        // Simple: connect pages that share tags
+        for (let i = 0; i < pages.length; i++) {
+          for (let j = i + 1; j < pages.length; j++) {
+            const shared = (pages[i].tags || []).filter(t => (pages[j].tags || []).includes(t));
+            if (shared.length > 0) {
+              edges.push({ source: i, target: j });
+            }
+          }
+        }
+        setGraph({ nodes, edges });
+        setLoading(false);
+      })
       .catch(() => setLoading(false));
   }, []);
 
@@ -226,7 +249,7 @@ function WikiGraph() {
 
   if (!graph.nodes.length) return React.createElement('div', { className: 'graph-container' },
     React.createElement('div', { className: 'graph-empty' },
-      React.createElement('div', { className: 'icon' }, '🔮'),
+      React.createElement('div', { className: 'icon' }, '\uD83D\uDD2E'),
       'No wiki entities yet. Start a conversation to build the knowledge graph.'
     )
   );
@@ -243,10 +266,18 @@ function TelemetryChart() {
   useEffect(() => {
     api.get('/api/telemetry')
       .then(t => {
+        const metrics = t.metrics || [];
+        // Group by metric name
+        const byName = {};
+        metrics.forEach(m => {
+          if (!byName[m.metric_name]) byName[m.metric_name] = 0;
+          byName[m.metric_name]++;
+        });
         setData([
-          { name: 'Sessions', value: t.sessions_count || 0 },
-          { name: 'Compactions', value: t.compactions_count || 0 },
-          { name: 'Errors', value: t.errors_count || 0 },
+          { name: 'Sessions', value: byName['session'] || 0 },
+          { name: 'Compactions', value: byName['compaction'] || 0 },
+          { name: 'Errors', value: byName['error'] || 0 },
+          { name: 'Tool Calls', value: byName['tool_call'] || 0 },
         ]);
       })
       .catch(() => {});
@@ -284,7 +315,7 @@ function SystemInfo() {
     { label: 'CORS Policy', value: 'Same-origin only', icon: Icons.Shield },
     { label: 'API Mode', value: 'Read-only', icon: Icons.Lock },
     { label: 'Auto Refresh', value: 'Every 5s (SSE)', icon: Icons.RefreshCw },
-    { label: 'Version', value: config?.version || '0.3.4', icon: Icons.Zap },
+    { label: 'Version', value: config?.version || '0.3.5', icon: Icons.Zap },
   ];
 
   return React.createElement('div', { className: 'info-grid' },
@@ -307,8 +338,23 @@ function App() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    api.get('/api/stats')
-      .then(setStats)
+    // Aggregate stats from multiple endpoints
+    Promise.all([
+      api.get('/api/sessions').catch(() => []),
+      api.get('/api/wiki').catch(() => []),
+      api.get('/api/skills').catch(() => []),
+      api.get('/api/telemetry').catch(() => ({ metrics: [] })),
+    ])
+      .then(([sessions, wiki, skills, telemetry]) => {
+        const metrics = telemetry.metrics || [];
+        const recentErrors = metrics.filter(m => m.metric_name === 'error').length;
+        setStats({
+          total_sessions: (sessions || []).length,
+          total_wiki_pages: (wiki || []).length,
+          total_skills: (skills || []).length,
+          recent_errors: recentErrors,
+        });
+      })
       .catch(e => setError(e.message));
   }, []);
 
@@ -326,16 +372,16 @@ function App() {
     // Header
     React.createElement('header', { className: 'header' },
       React.createElement('div', { className: 'header-brand' },
-        React.createElement('div', { className: 'header-logo' }, '◈'),
+        React.createElement('div', { className: 'header-logo' }, '\u25C8'),
         React.createElement('div', null,
           React.createElement('h1', { className: 'header-title' }, 'Vibe Agent Dashboard',
-            React.createElement('span', null, 'v0.3.4')
+            React.createElement('span', null, 'v0.3.5')
           )
         )
       ),
       React.createElement('div', { className: 'header-meta' },
         React.createElement('span', { className: 'status-badge' }, 'Live'),
-        React.createElement('span', { className: 'version-tag' }, 'v0.3.4')
+        React.createElement('span', { className: 'version-tag' }, 'v0.3.5')
       )
     ),
 

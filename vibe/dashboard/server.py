@@ -316,6 +316,61 @@ async def session_timeline(session_id: str, request: Request) -> list[dict[str, 
     return await asyncio.to_thread(_load_timeline_sync, db_path, session_id)
 
 
+@app.get("/api/config")
+async def get_config(request: Request) -> dict[str, Any]:
+    """Get dashboard configuration."""
+    return {"version": "0.3.5", "auth_enabled": DASHBOARD_TOKEN is not None}
+
+
+@app.get("/api/stats")
+async def get_stats(request: Request) -> dict[str, Any]:
+    """Get aggregated dashboard stats."""
+    state = get_state(request)
+    
+    # Count sessions
+    sessions = []
+    db_path = state._db_path("sessions.db")
+    if os.path.exists(db_path):
+        sessions = await asyncio.to_thread(_load_sessions_sync, db_path)
+    
+    # Count wiki pages
+    wiki_pages = []
+    if state.wiki_dir.exists():
+        for md_file in state.wiki_dir.rglob("*.md"):
+            content = md_file.read_text(encoding="utf-8")
+            title = md_file.stem
+            if content.startswith("---"):
+                try:
+                    _, frontmatter, _ = content.split("---", 2)
+                    for line in frontmatter.strip().split("\n"):
+                        if line.startswith("title:"):
+                            title = line.split(":", 1)[1].strip().strip('"')
+                except ValueError:
+                    pass
+            wiki_pages.append({"slug": md_file.stem, "title": title})
+    
+    # Count skills
+    skills = []
+    skills_dir = state.project_root / "skills"
+    if skills_dir.exists():
+        for skill_file in skills_dir.rglob("SKILL.md"):
+            skills.append({"name": skill_file.parent.name})
+    
+    # Count recent errors from telemetry
+    recent_errors = 0
+    telemetry_db = state._db_path("telemetry.db")
+    if os.path.exists(telemetry_db):
+        telemetry = await asyncio.to_thread(_load_telemetry_sync, telemetry_db)
+        recent_errors = len([m for m in telemetry.get("metrics", []) if m.get("metric_name") == "error"])
+    
+    return {
+        "total_sessions": len(sessions),
+        "total_wiki_pages": len(wiki_pages),
+        "total_skills": len(skills),
+        "recent_errors": recent_errors,
+    }
+
+
 @app.get("/api/wiki")
 async def list_wiki(request: Request) -> list[dict[str, Any]]:
     """List wiki pages."""
@@ -485,7 +540,11 @@ async def websocket_endpoint(websocket: WebSocket):
 
 static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
-    app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+    # Serve index.html at root
+    @app.get("/")
+    async def root():
+        return HTMLResponse(content=(static_dir / "index.html").read_text())
 
 # ────────────────────────────────
 # Helpers
@@ -508,29 +567,16 @@ def run_server(
 ) -> tuple[str, str | None]:
     """Start the dashboard server.
 
-    Args:
-        host: Host to bind to.
-        port: Port to listen on.
-        enable_auth: If True, generates a one-time token printed to CLI.
-
-    Returns:
-        Tuple of (url, token) where token may be None if auth disabled.
+    Returns (url, token) where token is None if auth is disabled.
     """
     global DASHBOARD_TOKEN
-
-    token = None
     if enable_auth:
-        token = _generate_dashboard_token()
-        DASHBOARD_TOKEN = token
+        DASHBOARD_TOKEN = _generate_dashboard_token()
+    else:
+        DASHBOARD_TOKEN = None
 
     url = f"http://{host}:{port}"
-    if token:
-        url += f"/?token={token}"
+    if DASHBOARD_TOKEN:
+        url += f"/?token={DASHBOARD_TOKEN}"
 
-    return url, token
-
-
-if __name__ == "__main__":
-    import uvicorn
-
-    uvicorn.run(app, host="127.0.0.1", port=8080, log_level="info")
+    return url, DASHBOARD_TOKEN
