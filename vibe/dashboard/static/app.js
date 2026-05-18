@@ -133,10 +133,11 @@ function SessionList() {
   );
 
   return React.createElement('div', { className: 'session-list' },
-    sessions.map(s =>
-      React.createElement('div', { key: s.session_id || s.id, className: 'session-item' },
-        React.createElement('div', { className: `session-avatar ${s.success ? 'success' : 'error'}` },
-          s.success ? '✓' : '!'
+    sessions.map(s => {
+      const isSuccess = s.success === true || s.state === 'COMPLETED';
+      return React.createElement('div', { key: s.session_id || s.id, className: 'session-item' },
+        React.createElement('div', { className: `session-avatar ${isSuccess ? 'success' : 'error'}` },
+          isSuccess ? '✓' : '!'
         ),
         React.createElement('div', { className: 'session-info' },
           React.createElement('div', { className: 'session-id' }, (s.session_id || s.id || 'unknown').slice(0, 12) + '...'),
@@ -146,11 +147,11 @@ function SessionList() {
             React.createElement('span', null, React.createElement(Icons.Clock), ' ', (s.duration_seconds || 0).toFixed(1), 's')
           )
         ),
-        React.createElement('span', { className: `session-badge ${s.success ? 'success' : 'error'}` },
-          s.success ? 'Success' : 'Failed'
+        React.createElement('span', { className: `session-badge ${isSuccess ? 'success' : 'error'}` },
+          isSuccess ? 'Success' : 'Failed'
         )
-      )
-    )
+      );
+    })
   );
 }
 
