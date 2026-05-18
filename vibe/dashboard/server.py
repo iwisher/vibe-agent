@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import sqlite3
 from contextlib import asynccontextmanager
 from dataclasses import asdict, dataclass
@@ -428,7 +429,19 @@ async def get_wiki_page(slug: str, request: Request) -> dict[str, Any]:
     if not state.wiki_dir.exists():
         return {"error": "Wiki directory not found"}
 
-    md_file = state.wiki_dir / f"{slug}.md"
+    # Validate slug to prevent path traversal
+    if not re.match(r'^[a-zA-Z0-9_-]+$', slug):
+        return {"error": "Invalid slug format"}
+
+    md_file = (state.wiki_dir / f"{slug}.md").resolve()
+    wiki_dir_resolved = state.wiki_dir.resolve()
+    
+    # Ensure the resolved path is within wiki_dir
+    try:
+        md_file.relative_to(wiki_dir_resolved)
+    except ValueError:
+        return {"error": "Access denied"}
+    
     if not md_file.exists():
         return {"error": "Page not found"}
 
@@ -490,17 +503,23 @@ async def regenerate_wiki(request: Request) -> dict[str, Any]:
     pages_updated = 0
     
     # For each session, extract potential wiki content
-    for session in sessions:
-        session_id = session.get("session_id", "unknown")
-        
-        # Check if there's already a wiki page for this session topic
-        # For now, create a summary page if it doesn't exist
-        slug = f"session-{session_id[:8]}"
-        md_file = state.wiki_dir / f"{slug}.md"
-        
-        if not md_file.exists():
-            # Create a new wiki page from session data
-            content = f"""---
+    def _generate_pages():
+        nonlocal pages_created, pages_updated
+        for session in sessions:
+            session_id = session.get("session_id", "unknown")
+            
+            # Skip sessions with missing IDs to avoid overwriting
+            if session_id == "unknown":
+                continue
+            
+            # Check if there's already a wiki page for this session topic
+            # For now, create a summary page if it doesn't exist
+            slug = f"session-{session_id[:8]}"
+            md_file = state.wiki_dir / f"{slug}.md"
+            
+            if not md_file.exists():
+                # Create a new wiki page from session data
+                content = f"""---
 title: Session Summary {session_id[:8]}
 tags: [auto-generated, session]
 status: draft
@@ -516,8 +535,11 @@ status: draft
 
 This page was auto-generated from session data.
 """
-            md_file.write_text(content, encoding="utf-8")
-            pages_created += 1
+                md_file.write_text(content, encoding="utf-8")
+                pages_created += 1
+    
+    # Run file generation in thread pool to avoid blocking event loop
+    await asyncio.to_thread(_generate_pages)
     
     return {
         "success": True,

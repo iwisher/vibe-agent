@@ -325,6 +325,11 @@ function WikiGraph({ onPageClick }) {
         .attr("y2", d => d.target.y);
       node.attr("transform", d => `translate(${d.x},${d.y})`);
     });
+
+    // Cleanup simulation on unmount or graph change
+    return () => {
+      simulation.stop();
+    };
   }, [graph, onPageClick]);
 
   if (loading) return React.createElement('div', { className: 'graph-container' },
@@ -446,7 +451,6 @@ function App() {
   }, []);
 
   const handleWikiPageClick = useCallback((slug) => {
-    console.log('Wiki page clicked:', slug);
     setSelectedWikiSlug(slug);
     setView('wiki-detail');
   }, []);
@@ -504,7 +508,6 @@ function App() {
         color: 'purple', 
         delta: 5,
         onClick: () => {
-          console.log('Wiki stat card clicked');
           setView('wiki-list');
         }
       }),
@@ -539,11 +542,12 @@ function App() {
             className: 'panel-action', 
             onClick: (e) => {
               e.stopPropagation();
-              console.log('Regenerate clicked - calling API');
               fetch('/api/wiki/regenerate', { method: 'POST' })
-                .then(r => r.json())
+                .then(r => {
+                  if (!r.ok) throw new Error(`HTTP ${r.status}: ${r.statusText}`);
+                  return r.json();
+                })
                 .then(data => {
-                  console.log('Regenerate result:', data);
                   alert(`Regenerated! Created ${data.pages_created} new wiki pages.`);
                   window.location.reload();
                 })
