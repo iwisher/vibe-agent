@@ -522,7 +522,14 @@ function App() {
           React.createElement('div', { className: 'panel-title' },
             React.createElement('span', { className: 'icon' }, React.createElement(Icons.Network)),
             'Wiki Knowledge Graph'
-          )
+          ),
+          React.createElement('span', { 
+            className: 'panel-action', 
+            onClick: () => {
+              // Trigger page reload to regenerate graph
+              window.location.reload();
+            }
+          }, 'Regenerate')
         ),
         React.createElement('div', { className: 'panel-body' },
           React.createElement(WikiGraph, { onPageClick: handleWikiPageClick })
