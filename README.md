@@ -22,7 +22,8 @@ Vibe Agent is an open, visual-first interactive CLI agent harness. It is designe
 
 ## 🏗️ System Architecture
 
-![Vibe Agent Architecture](docs/assets/system_architecture.html)
+> [!TIP]
+> **Interactive Version Available:** View the [Interactive System Architecture Diagram](docs/assets/system_architecture.html) directly in your browser to explore detailed component breakdowns, hover effects, and the complete tech stack.
 
 The system is built on a modular **Harness** pattern. The **Query Loop State Machine** is the central orchestrator that connects the **Model Gateway** (for multi-provider LLM access), the **Tool Executor** (for secure sandboxed actions), and the **Tripartite Memory System** (for long-term knowledge persistence). New capabilities — **Skill-Maker**, **Shadow Workspace**, **Swarm Orchestration**, and **Preference Layer** — all integrate through the same harness hooks.
 

@@ -49,7 +49,8 @@ Vibe Agent is a high-performance, resilient, and secure agent harness. Unlike ma
 └───────────────────┘
 ```
 
-![System Architecture](assets/system_architecture.html)
+> [!TIP]
+> **Interactive Version Available:** View the [Interactive System Architecture Diagram](assets/system_architecture.html) directly in your browser to explore detailed component breakdowns, hover effects, and the complete tech stack.
 
 ---
 
