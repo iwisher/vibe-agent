@@ -77,6 +77,11 @@ const Icons = {
   Eye: () => React.createElement('svg', { width: 14, height: 14, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
     React.createElement('path', { d: 'M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z' }),
     React.createElement('circle', { cx: 12, cy: 12, r: 3 })),
+  ArrowLeft: () => React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+    React.createElement('path', { d: 'M19 12H5M12 19l-7-7 7-7' })),
+  Tag: () => React.createElement('svg', { width: 12, height: 12, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+    React.createElement('path', { d: 'M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z' }),
+    React.createElement('line', { x1: 7, y1: 7, x2: 7.01, y2: 7 })),
 };
 
 // ─── Custom Tooltip for Recharts ───
@@ -93,14 +98,18 @@ function CustomTooltip({ active, payload, label }) {
 }
 
 // ─── StatCard ───
-function StatCard({ title, value, icon, color, delta }) {
+function StatCard({ title, value, icon, color, delta, onClick }) {
   const colorMap = {
     blue: 'stat-icon blue',
     purple: 'stat-icon purple',
     green: 'stat-icon green',
     red: 'stat-icon red',
   };
-  return React.createElement('div', { className: `stat-card ${color === 'red' ? 'error' : ''}` },
+  return React.createElement('div', { 
+    className: `stat-card ${color === 'red' ? 'error' : ''} ${onClick ? 'clickable' : ''}`,
+    onClick: onClick,
+    style: onClick ? { cursor: 'pointer' } : undefined
+  },
     React.createElement('div', { className: 'stat-header' },
       React.createElement('span', { className: 'stat-label' }, title),
       React.createElement('div', { className: colorMap[color] || 'stat-icon blue' }, icon)
@@ -155,8 +164,69 @@ function SessionList() {
   );
 }
 
+// ─── WikiPageDetail ───
+function WikiPageDetail({ slug, onBack }) {
+  const [page, setPage] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get(`/api/wiki/${slug}`)
+      .then(data => { setPage(data); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [slug]);
+
+  if (loading) return React.createElement('div', { className: 'loading' },
+    React.createElement('div', { className: 'loading-spinner' }),
+    'Loading page...'
+  );
+
+  if (!page || page.error) return React.createElement('div', { className: 'empty-state' },
+    page?.error || 'Page not found.'
+  );
+
+  return React.createElement('div', { className: 'wiki-detail' },
+    React.createElement('div', { className: 'wiki-detail-header' },
+      React.createElement('button', { className: 'back-button', onClick: onBack },
+        React.createElement(Icons.ArrowLeft),
+        ' Back to Wiki'
+      ),
+      React.createElement('h2', { className: 'wiki-detail-title' }, page.title),
+      React.createElement('div', { className: 'wiki-detail-meta' },
+        page.tags?.length > 0 && React.createElement('div', { className: 'wiki-tags' },
+          page.tags.map(tag =>
+            React.createElement('span', { key: tag, className: 'wiki-tag' },
+              React.createElement(Icons.Tag),
+              ' ',
+              tag
+            )
+          )
+        ),
+        React.createElement('span', { className: `wiki-status wiki-status-${page.verification_status}` }, page.verification_status),
+        React.createElement('span', { className: 'wiki-wordcount' }, page.word_count, ' words')
+      )
+    ),
+    React.createElement('div', { className: 'wiki-detail-content' },
+      page.content.split('\n').map((line, i) => {
+        if (line.startsWith('# ')) {
+          return React.createElement('h1', { key: i }, line.slice(2));
+        } else if (line.startsWith('## ')) {
+          return React.createElement('h2', { key: i }, line.slice(3));
+        } else if (line.startsWith('### ')) {
+          return React.createElement('h3', { key: i }, line.slice(4));
+        } else if (line.startsWith('- ')) {
+          return React.createElement('li', { key: i }, line.slice(2));
+        } else if (line.trim() === '') {
+          return React.createElement('br', { key: i });
+        } else {
+          return React.createElement('p', { key: i }, line);
+        }
+      })
+    )
+  );
+}
+
 // ─── WikiGraph (D3.js) ───
-function WikiGraph() {
+function WikiGraph({ onPageClick }) {
   const svgRef = useRef(null);
   const [graph, setGraph] = useState({ nodes: [], edges: [] });
   const [loading, setLoading] = useState(true);
@@ -164,11 +234,15 @@ function WikiGraph() {
   useEffect(() => {
     api.get('/api/wiki')
       .then(data => {
-        // Build graph from wiki pages
         const pages = data || [];
-        const nodes = pages.map((p, i) => ({ id: i, label: p.title || p.slug || 'untitled', x: 0, y: 0 }));
+        const nodes = pages.map((p, i) => ({ 
+          id: i, 
+          label: p.title || p.slug || 'untitled', 
+          slug: p.slug,
+          x: 0, 
+          y: 0 
+        }));
         const edges = [];
-        // Simple: connect pages that share tags
         for (let i = 0; i < pages.length; i++) {
           for (let j = i + 1; j < pages.length; j++) {
             const shared = (pages[i].tags || []).filter(t => (pages[j].tags || []).includes(t));
@@ -210,6 +284,12 @@ function WikiGraph() {
       .selectAll("g")
       .data(graph.nodes)
       .join("g")
+      .style("cursor", onPageClick ? "pointer" : "default")
+      .on("click", (event, d) => {
+        if (onPageClick && d.slug) {
+          onPageClick(d.slug);
+        }
+      })
       .call(d3.drag()
         .on("start", (event, d) => { if (!event.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
         .on("drag", (event, d) => { d.fx = event.x; d.fy = event.y; })
@@ -239,7 +319,7 @@ function WikiGraph() {
         .attr("y2", d => d.target.y);
       node.attr("transform", d => `translate(${d.x},${d.y})`);
     });
-  }, [graph]);
+  }, [graph, onPageClick]);
 
   if (loading) return React.createElement('div', { className: 'graph-container' },
     React.createElement('div', { className: 'loading' },
@@ -268,7 +348,6 @@ function TelemetryChart() {
     api.get('/api/telemetry')
       .then(t => {
         const metrics = t.metrics || [];
-        // Group by metric name
         const byName = {};
         metrics.forEach(m => {
           if (!byName[m.metric_name]) byName[m.metric_name] = 0;
@@ -337,9 +416,10 @@ function SystemInfo() {
 function App() {
   const [stats, setStats] = useState(null);
   const [error, setError] = useState(null);
+  const [view, setView] = useState('dashboard');
+  const [selectedWikiSlug, setSelectedWikiSlug] = useState(null);
 
   useEffect(() => {
-    // Aggregate stats from multiple endpoints
     Promise.all([
       api.get('/api/sessions').catch(() => []),
       api.get('/api/wiki').catch(() => []),
@@ -359,6 +439,16 @@ function App() {
       .catch(e => setError(e.message));
   }, []);
 
+  const handleWikiPageClick = (slug) => {
+    setSelectedWikiSlug(slug);
+    setView('wiki-detail');
+  };
+
+  const handleBackToDashboard = () => {
+    setView('dashboard');
+    setSelectedWikiSlug(null);
+  };
+
   if (error) return React.createElement('div', { className: 'error' },
     React.createElement(Icons.AlertTriangle),
     'Error: ', error
@@ -368,6 +458,15 @@ function App() {
     React.createElement('div', { className: 'loading-spinner' }),
     'Loading dashboard...'
   );
+
+  if (view === 'wiki-detail' && selectedWikiSlug) {
+    return React.createElement('div', { className: 'dashboard' },
+      React.createElement(WikiPageDetail, { 
+        slug: selectedWikiSlug, 
+        onBack: handleBackToDashboard 
+      })
+    );
+  }
 
   return React.createElement('div', { className: 'dashboard' },
     // Header
@@ -389,7 +488,14 @@ function App() {
     // Stats
     React.createElement('div', { className: 'stats-grid' },
       React.createElement(StatCard, { title: 'Total Sessions', value: stats.total_sessions, icon: React.createElement(Icons.Activity), color: 'blue', delta: 12 }),
-      React.createElement(StatCard, { title: 'Wiki Pages', value: stats.total_wiki_pages, icon: React.createElement(Icons.BookOpen), color: 'purple', delta: 5 }),
+      React.createElement(StatCard, { 
+        title: 'Wiki Pages', 
+        value: stats.total_wiki_pages, 
+        icon: React.createElement(Icons.BookOpen), 
+        color: 'purple', 
+        delta: 5,
+        onClick: () => setView('wiki-detail')
+      }),
       React.createElement(StatCard, { title: 'Skills Installed', value: stats.total_skills, icon: React.createElement(Icons.Wrench), color: 'green', delta: 0 }),
       React.createElement(StatCard, { title: 'Recent Errors (24h)', value: stats.recent_errors, icon: React.createElement(Icons.AlertTriangle), color: 'red', delta: -8 })
     ),
@@ -419,7 +525,7 @@ function App() {
           )
         ),
         React.createElement('div', { className: 'panel-body' },
-          React.createElement(WikiGraph, null)
+          React.createElement(WikiGraph, { onPageClick: handleWikiPageClick })
         )
       ),
 

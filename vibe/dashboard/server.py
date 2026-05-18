@@ -421,6 +421,53 @@ async def list_wiki(request: Request) -> list[dict[str, Any]]:
     return sorted(pages, key=lambda p: p["updated_at"], reverse=True)
 
 
+@app.get("/api/wiki/{slug}")
+async def get_wiki_page(slug: str, request: Request) -> dict[str, Any]:
+    """Get a single wiki page by slug."""
+    state = get_state(request)
+    if not state.wiki_dir.exists():
+        return {"error": "Wiki directory not found"}
+
+    md_file = state.wiki_dir / f"{slug}.md"
+    if not md_file.exists():
+        return {"error": "Page not found"}
+
+    content = md_file.read_text(encoding="utf-8")
+    title = md_file.stem
+    tags: list[str] = []
+    status = "unverified"
+    body = content
+
+    if content.startswith("---"):
+        try:
+            _, frontmatter, body = content.split("---", 2)
+            for line in frontmatter.strip().split("\n"):
+                if line.startswith("title:"):
+                    title = line.split(":", 1)[1].strip().strip('"')
+                elif line.startswith("tags:"):
+                    tags = [
+                        t.strip()
+                        for t in line.split(":", 1)[1].strip(" []").split(",")
+                        if t.strip()
+                    ]
+                elif line.startswith("status:"):
+                    status = line.split(":", 1)[1].strip()
+        except ValueError:
+            body = content
+
+    return {
+        "slug": slug,
+        "title": title,
+        "tags": tags,
+        "verification_status": status,
+        "content": body.strip(),
+        "updated_at": datetime.fromtimestamp(
+            md_file.stat().st_mtime, tz=timezone.utc
+        ).isoformat(),
+        "word_count": len(body.split()),
+    }
+
+
 def _load_telemetry_sync(db_path: str) -> dict[str, Any]:
     """Synchronous helper to load telemetry from SQLite."""
     metrics = []
