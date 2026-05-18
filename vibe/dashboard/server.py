@@ -468,6 +468,66 @@ async def get_wiki_page(slug: str, request: Request) -> dict[str, Any]:
     }
 
 
+@app.post("/api/wiki/regenerate")
+async def regenerate_wiki(request: Request) -> dict[str, Any]:
+    """Regenerate wiki pages from session data.
+    
+    Scans sessions database for tool invocations and memory writes
+    that could be turned into wiki pages.
+    """
+    state = get_state(request)
+    
+    # Ensure wiki directory exists
+    state.wiki_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Load sessions to extract knowledge
+    sessions = []
+    db_path = state._db_path("sessions.db")
+    if os.path.exists(db_path):
+        sessions = await asyncio.to_thread(_load_sessions_sync, db_path)
+    
+    pages_created = 0
+    pages_updated = 0
+    
+    # For each session, extract potential wiki content
+    for session in sessions:
+        session_id = session.get("session_id", "unknown")
+        
+        # Check if there's already a wiki page for this session topic
+        # For now, create a summary page if it doesn't exist
+        slug = f"session-{session_id[:8]}"
+        md_file = state.wiki_dir / f"{slug}.md"
+        
+        if not md_file.exists():
+            # Create a new wiki page from session data
+            content = f"""---
+title: Session Summary {session_id[:8]}
+tags: [auto-generated, session]
+status: draft
+---
+
+# Session Summary
+
+- **Session ID**: {session_id}
+- **Model**: {session.get('model', 'unknown')}
+- **State**: {session.get('state', 'unknown')}
+- **Messages**: {session.get('message_count', 0)}
+- **Duration**: {session.get('duration_seconds', 0):.1f}s
+
+This page was auto-generated from session data.
+"""
+            md_file.write_text(content, encoding="utf-8")
+            pages_created += 1
+    
+    return {
+        "success": True,
+        "pages_created": pages_created,
+        "pages_updated": pages_updated,
+        "total_sessions_scanned": len(sessions),
+        "wiki_dir": str(state.wiki_dir),
+    }
+
+
 def _load_telemetry_sync(db_path: str) -> dict[str, Any]:
     """Synchronous helper to load telemetry from SQLite."""
     metrics = []

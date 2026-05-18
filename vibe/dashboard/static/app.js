@@ -537,9 +537,20 @@ function App() {
           ),
           React.createElement('span', { 
             className: 'panel-action', 
-            onClick: () => {
-              console.log('Regenerate clicked');
-              window.location.reload();
+            onClick: (e) => {
+              e.stopPropagation();
+              console.log('Regenerate clicked - calling API');
+              fetch('/api/wiki/regenerate', { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                  console.log('Regenerate result:', data);
+                  alert(`Regenerated! Created ${data.pages_created} new wiki pages.`);
+                  window.location.reload();
+                })
+                .catch(err => {
+                  console.error('Regenerate failed:', err);
+                  alert('Regeneration failed: ' + err.message);
+                });
             }
           }, 'Regenerate')
         ),
