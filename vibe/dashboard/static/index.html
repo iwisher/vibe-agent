@@ -15,9 +15,43 @@
     <script src="https://cdn.jsdelivr.net/npm/recharts/umd/Recharts.min.js"></script>
     <!-- D3.js (fixed URL) -->
     <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>
+    <style>
+        #root:empty::before {
+            content: 'Loading dashboard...';
+            display: block;
+            text-align: center;
+            padding: 100px 20px;
+            color: #64748b;
+            font-family: 'Inter', sans-serif;
+        }
+        #root:empty::after {
+            content: 'If this persists, check browser console (F12) for JavaScript errors';
+            display: block;
+            text-align: center;
+            padding: 10px 20px;
+            color: #475569;
+            font-size: 12px;
+            font-family: 'Inter', sans-serif;
+        }
+    </style>
 </head>
 <body>
     <div id="root"></div>
+    <script>
+        // Global error handler to catch JS errors
+        window.onerror = function(msg, url, line, col, error) {
+            var root = document.getElementById('root');
+            root.innerHTML = '<div style="padding:40px;font-family:Inter,sans-serif;color:#f0f4f8;">' +
+                '<h2 style="color:#ef4444;margin-bottom:16px;">Dashboard Error</h2>' +
+                '<pre style="background:#1a2236;padding:16px;border-radius:8px;overflow:auto;font-size:12px;line-height:1.5;">' +
+                'Error: ' + msg + '\n' +
+                'URL: ' + url + '\n' +
+                'Line: ' + line + ':' + col + '\n' +
+                (error && error.stack ? 'Stack: ' + error.stack : '') +
+                '</pre></div>';
+            return false;
+        };
+    </script>
     <script src="/static/app.js"></script>
 </body>
 </html>
