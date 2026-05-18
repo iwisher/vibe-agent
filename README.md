@@ -152,10 +152,13 @@ python -m vibe --debug
 ### 4. Launch the dashboard
 
 ```bash
-# Start the React trace dashboard
+# Start the React trace dashboard (with auth token)
 vibe dashboard start --port 8080
 
-# Open http://localhost:8080 in your browser
+# Or start without authentication (dev mode)
+vibe dashboard start --port 8080 --no-auth
+
+# Then open http://localhost:8080 in your browser
 ```
 
 ### 5. Shadow workspace (safety net)
