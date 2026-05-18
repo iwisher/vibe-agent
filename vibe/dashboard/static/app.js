@@ -547,7 +547,16 @@ function App() {
         color: 'purple', 
         delta: 5,
         onClick: () => {
-          setView('wiki-list');
+          // Show first wiki page detail when clicking stat card
+          api.get('/api/wiki')
+            .then(data => {
+              const pages = data || [];
+              if (pages.length > 0 && pages[0].slug) {
+                setSelectedWikiSlug(pages[0].slug);
+                setView('wiki-detail');
+              }
+            })
+            .catch(err => console.error('Failed to load wiki pages:', err));
         }
       }),
       React.createElement(StatCard, { title: 'Skills Installed', value: stats.total_skills, icon: React.createElement(Icons.Wrench), color: 'green', delta: 0 }),
