@@ -31,3 +31,4 @@ vibe/**/__pycache__/
 
 # Git worktrees
 .worktrees/
+logs/*.log

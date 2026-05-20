@@ -885,7 +885,12 @@ class QueryLoop:
                         )
                         created += 1
                 except Exception as e:
-                    logger.debug("Wiki write failed for item '%s': %s", item.get("title", ""), e)
+                    if self.logger:
+                        self.logger.debug(
+                            "Wiki write failed for item '%s': %s",
+                            item.get("title", ""),
+                            e,
+                        )
 
             if self.logger:
                 self.logger.info(

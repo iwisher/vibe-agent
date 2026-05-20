@@ -36,12 +36,28 @@ class IngestionWorker:
             elif hasattr(self.extractor, "wiki"):
                 # Fallback: Just write the chunk directly as a draft Wiki page
                 slug = f"{source_path.stem.lower()}-chunk-{index}"
-                page = await self.extractor.wiki.update_page(
-                    slug=slug,
-                    content=chunk,
-                    status="draft",
-                    metadata={"source": str(source_path), "chunk_index": index, "type": "document"}
-                )
+                title = f"{source_path.stem} Chunk {index}"
+                citations = [{
+                    "session": "document_ingestion",
+                    "source": str(source_path),
+                    "chunk_index": index,
+                }]
+                wiki = self.extractor.wiki
+                existing = await wiki.get_page_by_slug(slug)
+                if existing:
+                    await wiki.update_page(
+                        page_id=existing.id,
+                        content=chunk,
+                        citations=citations,
+                    )
+                else:
+                    await wiki.create_page(
+                        title=title,
+                        content=chunk,
+                        tags=["document-chunk"],
+                        citations=citations,
+                        status="draft",
+                    )
                 return 1
             return 0
 

@@ -361,3 +361,109 @@ class KnowledgeExtractor:
                     return 0.1  # Near-duplicate
 
         return 1.0  # Different enough
+
+    async def extract_from_text(
+        self,
+        text: str,
+        source: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> list[WikiPage]:
+        """Extract structured knowledge items from raw text and save to the wiki.
+
+        Args:
+            text: The raw text content to extract from.
+            source: Source identifier (e.g., filename/path).
+            metadata: Additional metadata to append to citations.
+
+        Returns:
+            List of created or updated WikiPage objects.
+        """
+        try:
+            # 1. pack the text into a mock Message to reuse session extraction logic
+            class MockMessage:
+                def __init__(self, role: str, content: str):
+                    self.role = role
+                    self.content = content
+
+            messages = [MockMessage(role="user", content=text)]
+            session_id = source or "document_ingestion"
+
+            # 2. Extract items
+            items = await self.extract_from_session(messages, session_id)
+            if not items:
+                return []
+
+            # 3. Filter through quality gates
+            approved = await self.apply_gates(items)
+            if not approved:
+                return []
+
+            created_pages = []
+            for item in approved:
+                title = item.get("title", "")
+                content = item.get("content", "")
+                tags = item.get("tags", [])
+                citations = item.get("citations", [])
+
+                # Add source metadata to citations if available
+                if metadata:
+                    for cit in citations:
+                        cit.update(metadata)
+
+                try:
+                    # Check if page already exists to either update or create
+                    existing = await self._find_existing_page(title)
+                    if existing:
+                        page = await self.wiki.update_page(
+                            page_id=existing.id,
+                            content=content,
+                            citations=citations,
+                        )
+                    else:
+                        page = await self.wiki.create_page(
+                            title=title,
+                            content=content,
+                            tags=tags,
+                            citations=citations,
+                            status="draft",
+                        )
+
+                    # Update PageIndex if available
+                    if self.pageindex is not None and hasattr(self.pageindex, "add_page"):
+                        try:
+                            await self.pageindex.add_page(page)
+                        except Exception as idx_err:
+                            logger.debug("Failed to index page '%s': %s", title, idx_err)
+
+                    created_pages.append(page)
+                except Exception as write_err:
+                    logger.debug("Wiki write failed for item '%s': %s", title, write_err)
+
+            return created_pages
+        except Exception as e:
+            logger.warning("extract_from_text failed (non-fatal): %s", e)
+            return []
+
+    async def _find_existing_page(self, title: str) -> Any | None:
+        """Find an existing wiki page with matching or similar title."""
+        if self.wiki is None:
+            return None
+        try:
+            results = await self.wiki.search_pages(title, limit=5)
+            title_lower = title.lower()
+            for page in results:
+                if hasattr(page, "title") and page.title.lower() == title_lower:
+                    return page
+            for page in results:
+                if hasattr(page, "title"):
+                    page_words = set(page.title.lower().split())
+                    query_words = set(title_lower.split())
+                    if page_words and query_words:
+                        overlap = len(page_words & query_words) / max(
+                            len(page_words), len(query_words)
+                        )
+                        if overlap > 0.7:
+                            return page
+            return None
+        except Exception:
+            return None

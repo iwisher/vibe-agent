@@ -899,7 +899,7 @@ def import_cmd(
         raise typer.Exit(1)
 
     try:
-        from vibe.memory.knowledge_extractor import KnowledgeExtractor
+        from vibe.memory.extraction import KnowledgeExtractor
         from vibe.memory.ingestion.worker import IngestionWorker
     except ImportError as e:
         console.print(f"[red]Missing dependencies: {e}[/red]")
