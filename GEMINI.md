@@ -41,7 +41,7 @@ Vibe Agent's architecture decouples critical coordinator concerns from the orche
 ```
 
 ### 1. The Query Loop State Machine (`vibe/core/query_loop.py`)
-Drives the thought-action loop using the `ConversationStateMachine` with validated transitions (`StateTransitionError` is raised on invalid jumps).
+Drives the thought-action loop using `QueryState` transitions inside `QueryLoop`.
 *   **QueryState Enum**: `IDLE` → `PLANNING` → `PROCESSING` → `TOOL_EXECUTION` → `SYNTHESIZING` → `COMPLETED | INCOMPLETE` (max iterations exhausted) | `STOPPED` | `ERROR`.
 *   **Three Coordinators** manage discrete components:
     *   **`ToolExecutor`**: Executes tool calls sequentially with exception isolation, applying the `HookPipeline` (`PRE_VALIDATE → PRE_MODIFY → PRE_ALLOW → POST_EXECUTE → POST_FIX`). Auto-creates shadow workspaces on write-heavy tasks.

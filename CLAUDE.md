@@ -51,11 +51,9 @@ CI runs lint → unit tests (Py 3.11/3.12/3.13) → eval suite with regression c
 
 ## Architecture
 
-### Query loop = state machine, with an explicit ConversationStateMachine on top
+### Query loop = state machine
 
-`vibe/core/query_loop.py` (~370 lines) drives `IDLE → PLANNING → PROCESSING → TOOL_EXECUTION → SYNTHESIZING → COMPLETED|INCOMPLETE|STOPPED|ERROR`. Iteration cap (`max_iterations`, default 50) ends in `INCOMPLETE` — distinct from `COMPLETED`. Don't conflate them.
-
-The new `vibe/harness/conversation_state.py` (`ConversationStateMachine`, `ConversationState`, `StateTransitionError`, `ConversationBranch`) sits alongside this with **validated** transitions — invalid jumps raise `StateTransitionError`. It also tracks per-state timeouts (planning 30s, tool 120s, user input 300s), `request_interrupt()` flag, branching for parallel tool execution, and a full transition history for debugging. The legacy `QueryState` enum is preserved for back-compat; new behavior should drive the explicit machine.
+`vibe/core/query_loop.py` drives the thought-action loop from `IDLE → PLANNING → PROCESSING → TOOL_EXECUTION → SYNTHESIZING → COMPLETED|INCOMPLETE|STOPPED|ERROR` transitions using the `QueryState` enum. Iteration cap (`max_iterations`, default 50) ends in `INCOMPLETE` — distinct from `COMPLETED`. Don't conflate them.
 
 Three coordinators (`vibe/core/coordinators.py`) own pieces extracted from the loop:
 - **`ToolExecutor`** — runs `HookPipeline` (PRE_VALIDATE → PRE_MODIFY → PRE_ALLOW → POST_EXECUTE → POST_FIX) around tool calls; sequential with per-call exception isolation. Now delegates MCP calls to `MCPRouter` when configured.
