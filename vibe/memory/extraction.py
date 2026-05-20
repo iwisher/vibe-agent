@@ -18,6 +18,17 @@ from vibe.memory.models import WikiPage  # noqa: F401 — re-exported for conven
 
 logger = logging.getLogger(__name__)
 
+
+class _MockMessage:
+    """Lightweight stand-in for conversation messages when extracting from plain text."""
+
+    __slots__ = ("role", "content")
+
+    def __init__(self, role: str, content: str) -> None:
+        self.role = role
+        self.content = content
+
+
 # ---------------------------------------------------------------------------
 # Extraction prompt
 # ---------------------------------------------------------------------------
@@ -380,12 +391,7 @@ class KnowledgeExtractor:
         """
         try:
             # 1. pack the text into a mock Message to reuse session extraction logic
-            class MockMessage:
-                def __init__(self, role: str, content: str):
-                    self.role = role
-                    self.content = content
-
-            messages = [MockMessage(role="user", content=text)]
+            messages = [_MockMessage(role="user", content=text)]
             session_id = source or "document_ingestion"
 
             # 2. Extract items
@@ -405,10 +411,9 @@ class KnowledgeExtractor:
                 tags = item.get("tags", [])
                 citations = item.get("citations", [])
 
-                # Add source metadata to citations if available
+                # Add source metadata to citations if available (defensive copy)
                 if metadata:
-                    for cit in citations:
-                        cit.update(metadata)
+                    citations = [{**cit, **metadata} for cit in citations]
 
                 try:
                     # Check if page already exists to either update or create

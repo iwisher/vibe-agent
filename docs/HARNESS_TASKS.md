@@ -122,7 +122,6 @@
 ### Modified Files
 - `vibe/harness/memory/trace_store.py` - Signatures, raw blobs
 - `vibe/harness/memory/eval_store.py` - diff_score column
-- `vibe/harness/memory/wiki.py` - Compiler, pending dirs
 - `vibe/harness/feedback.py` - FeedbackStatus, structured errors
 - `vibe/harness/skills/executor.py` - Env-var passing
 - `vibe/harness/skills/validator.py` - Invisible unicode checks
