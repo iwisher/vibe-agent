@@ -14,7 +14,7 @@ For a quick start, run `python -m vibe` once — it will auto-create `~/.vibe/co
 
 | Section | Key Fields | Env Override |
 |---------|-----------|-------------|
-| `llm` | `default_model`, `base_url`, `timeout` | `VIBE_MODEL`, `VIBE_BASE_URL` |
+| `llm` | `default_model`, `base_url`, `timeout`, `stream`, `show_reasoning` | `VIBE_MODEL`, `VIBE_BASE_URL`, `VIBE_STREAM`, `VIBE_SHOW_REASONING` |
 | `providers` | `base_url`, `adapter`, `api_key_env_var` | — |
 | `models` | `provider`, `model_id` | — |
 | `fallback` | `enabled`, `chain`, `circuit_breaker_*` | `VIBE_FALLBACK_ENABLED` |
@@ -35,9 +35,11 @@ llm:
   base_url: "http://localhost:11434"   # Fallback base URL if no provider is matched
   api_key_env_var: "LLM_API_KEY"       # Env var containing the API key
   timeout: 120.0                        # Seconds before request timeout
+  stream: false                        # Enable token-by-token response streaming
+  show_reasoning: false                # Render internal thinking/reasoning traces
 ```
 
-**Environment overrides:** `VIBE_MODEL`, `VIBE_BASE_URL`, `VIBE_API_KEY_ENV_VAR`, `VIBE_TIMEOUT`
+**Environment overrides:** `VIBE_MODEL`, `VIBE_BASE_URL`, `VIBE_API_KEY_ENV_VAR`, `VIBE_TIMEOUT`, `VIBE_STREAM` (boolean), `VIBE_SHOW_REASONING` (boolean)
 
 ---
 
@@ -416,6 +418,8 @@ llm:
   default_model: "local-fast"
   base_url: "http://localhost:11434"
   timeout: 120.0
+  stream: false
+  show_reasoning: false
 
 providers:
   ollama:
@@ -445,4 +449,4 @@ memory:
 
 ---
 
-*Last updated: 2026-04-27 | [Back to README](../README.md)*
+*Last updated: 2026-05-23 | [Back to README](../README.md)*

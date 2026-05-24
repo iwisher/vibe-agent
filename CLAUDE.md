@@ -66,48 +66,170 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
-## Rule 5 — Use the model only for judgment calls
+## Rule 5 — Use the Model Only for Judgment Calls
 
-Use for: classification, drafting, summarization, extraction.
-Do NOT use for: routing, retries, deterministic transforms.
-If code can answer, code answers.
+**If code can answer, code answers. Don't burn tokens on确定性 work.**
 
-## Rule 6 — Token budgets are not advisory
+Appropriate uses:
+- Classification — "Is this error retryable?"
+- Drafting — "Generate a docstring from this signature"
+- Summarization — "Condense this 500-line diff to 3 bullets"
+- Extraction — "Pull the error message from this traceback"
+
+Inappropriate uses:
+- Routing — "Which handler should process this?" → Use a dict lookup
+- Retries — "Should I retry this request?" → Use exponential backoff with status-code rules
+- Deterministic transforms — "Convert this JSON to CSV" → Use `json` + `csv` modules
+- Parsing — "Extract the domain from this URL" → Use `urllib.parse`
+
+The test: If you can write a 10-line function that handles it deterministically, don't ask the model.
+
+## Rule 6 — Token Budgets Are Hard Limits, Not Suggestions
+
+**Surface the breach. Do not silently overrun.**
 
 Per-task: 8,000 tokens. Per-session: 60,000 tokens.
-If approaching budget, summarize and start fresh.
-Surface the breach. Do not silently overrun.
 
-## Rule 7 — Surface conflicts, don't average them
+When approaching budget:
+1. Stop. Summarize what you've done and what's left.
+2. Surface the breach to the user: "At 7,200 tokens. Remaining: X, Y, Z. Continue or split?"
+3. If continuing, start fresh with a compacted context — not by appending to an already-long thread.
 
-If two patterns contradict, pick one (more recent / more tested).
-Explain why. Flag the other for cleanup.
+Never:
+- Append "one more thing" to an already-overlong message
+- Hide token usage in a wall of text
+- Pretend a 15,000-token response fits in an 8,000-token budget
 
-## Rule 8 — Read before you write
+Token discipline is respect for the user's time and money.
 
-Before adding code, read exports, immediate callers, shared utilities.
-If unsure why existing code is structured a certain way, ask.
+## Rule 7 — Surface Conflicts, Don't Average Them
 
-## Rule 9 — Tests verify intent, not just behavior
+**Pick one. Explain why. Flag the other.**
 
-Tests must encode WHY behavior matters, not just WHAT it does.
-A test that can't fail when business logic changes is wrong.
+When you encounter contradictory patterns:
+- Don't blend them into a compromise that satisfies neither.
+- Don't alternate between them based on mood.
+- Pick the one that is more recent, more tested, or more widely used.
+- Explain your choice in a comment or commit message.
+- Flag the losing pattern for cleanup: `TODO: migrate X to Y pattern (see <link>)`.
 
-## Rule 10 — Checkpoint after every significant step
+Examples:
+- Two error-handling styles → Pick the one with tests. Flag the other.
+- Two naming conventions → Pick the one in the majority of files. Flag the minority.
+- Two ways to do the same import → Pick the one in `ruff` config. Flag the other.
 
-Summarize what was done, what's verified, what's left.
-Don't continue from a state you can't describe back.
+A codebase with one consistent pattern and explicit TODOs is better than a codebase with two half-patterns and silent confusion.
 
-## Rule 11 — Match the codebase's conventions, even if you disagree
+## Rule 8 — Read Before You Write
 
-Conformance > taste inside the codebase.
-If you think a convention is harmful, surface it. Don't fork silently.
+**Understand the terrain before you build on it.**
 
-## Rule 12 — Fail loud
+Before adding code:
+1. Read the module's exports. What's the public API?
+2. Read the immediate callers. How is this function actually used?
+3. Read shared utilities. Does something already do what you need?
+4. Read the test file. What behavior is already verified?
 
-"Completed" is wrong if anything was skipped silently.
-"Tests pass" is wrong if any were skipped.
+If you find code that looks wrong or weird:
+- Don't assume it's a mistake. It might be handling an edge case you haven't seen.
+- Check `git blame` or commit history for context.
+- If still unsure, ask: "This pattern in `X.py` looks unusual — is it handling a specific case?"
+
+The test: Can you explain why the existing code is structured the way it is? If not, you haven't read enough.
+
+## Rule 9 — Tests Verify Intent, Not Just Behavior
+
+**A test that can't fail when business logic changes is wrong.**
+
+Every test must encode WHY the behavior matters:
+
+Bad:
+```python
+def test_calculate():
+    assert calculate(2, 3) == 5  # What is calculate? Why 5?
+```
+
+Good:
+```python
+def test_calculate_applies_discount_to_subtotal():
+    # User gets 10% off orders over $50
+    assert calculate(subtotal=60, discount_code="SAVE10") == 54
+```
+
+Rules:
+- Test names describe the intent, not the mechanics.
+- Assertions check outcomes that matter to the user, not internal state.
+- If the business rule changes (e.g., discount drops to 5%), the test should fail.
+- If the implementation changes (e.g., caching added) but the outcome is the same, the test should pass.
+
+A test suite that only checks "did it run without crashing" is a test suite that will let bugs through.
+
+## Rule 10 — Checkpoint After Every Significant Step
+
+**Don't continue from a state you can't describe back.**
+
+After every significant chunk of work:
+1. Summarize what was done.
+2. Summarize what's verified (tests pass, manual checks done).
+3. Summarize what's left.
+4. Surface blockers or uncertainties.
+
+Example:
+```
+Done:
+- Refactored `parse_config()` into `ConfigParser` class
+- Added validation for missing required keys
+
+Verified:
+- `pytest tests/test_config.py` passes (12/12)
+- Manual test: `python -m vibe --config broken.yaml` shows clean error
+
+Left:
+- Update CLI help text for new validation errors
+- Add eval case for config validation
+
+Blockers:
+- None
+```
+
+The test: If the session crashed right now, could you resume from your last checkpoint without losing work or context?
+
+## Rule 11 — Match the Codebase's Conventions, Even If You Disagree
+
+**Conformance > taste inside the codebase.**
+
+When in Rome:
+- Use the existing import style (absolute vs. relative, `from X import Y` vs. `import X`).
+- Use the existing naming convention (`snake_case` vs. `camelCase`, `ClsName` vs. `cls_name`).
+- Use the existing error-handling pattern (exceptions vs. result types vs. error codes).
+- Use the existing testing style (`pytest` fixtures vs. `unittest` classes).
+
+If you think a convention is harmful:
+- Surface it: "This codebase uses `except Exception:` broadly. Should we tighten to specific exceptions?"
+- Don't silently deviate: your one file with different style creates cognitive load for every future reader.
+- Don't refactor the whole codebase to match your preference unless explicitly asked.
+
+The test: Would a code reviewer say "Why is this file different?" If yes, conform.
+
+## Rule 12 — Fail Loud
+
+**"Completed" is wrong if anything was skipped silently.**
+
 Default to surfacing uncertainty, not hiding it.
+
+When something goes wrong:
+- Surface the error immediately. Don't bury it in a log file.
+- Surface skipped work: "Tests pass, but I skipped 3 tests marked `@pytest.mark.slow` — should I run those too?"
+- Surface partial completion: "Implemented X, but Y requires a dependency I don't have — should I add it?"
+- Surface uncertainty: "This fix works for the reported case, but I'm not confident about edge case Z."
+
+Never:
+- Say "done" when you skipped tests
+- Say "fixed" when you only fixed the happy path
+- Say "refactored" when you also changed behavior
+- Hide a warning that might be a real problem
+
+The test: Can you confidently say "Nothing was skipped, nothing was hidden, nothing was faked"? If not, you're not done.
 
 ---
 

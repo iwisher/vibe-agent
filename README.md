@@ -5,6 +5,7 @@ Vibe Agent is an open, visual-first interactive CLI agent harness. It is designe
 ## 🚀 Key Features
 
 - **Multi-Provider Fallback**: Seamlessly switch between OpenAI, Anthropic, Kimi, and other providers (via OpenRouter or Ollama) when primary models fail. Circuit breaker + latency-aware routing + cost tracking.
+- **Streaming Response Support**: Real-time token streaming (`--stream` CLI flag) with native reasoning/thinking token display for Ollama, Anthropic, OpenAI, and OpenRouter.
 - **Secure Tool Execution**: 5-layer security defense (pattern scanning, file safety, human approval, smart approver, checkpoints) with sandboxed Bash and jailed File tools.
 - **Context Management**: Automated compaction with 4 strategies (TRUNCATE, LLM_SUMMARIZE, OFFLOAD, DROP), plus adaptive iteration budgets based on task complexity.
 - **Eval-Driven Development**: 50+ built-in eval cases, adversarial testing, multi-model scorecards, soak tests with degradation detection, and factory-per-case isolation.
@@ -144,6 +145,9 @@ python -m vibe "Explain the difference between a mutex and a semaphore"
 
 # With a specific model
 python -m vibe --model qwen3:8b "What is the 52-week high of QQQ?"
+
+# With real-time response streaming
+python -m vibe --stream "Explain async/await in Python"
 
 # With debug logging
 python -m vibe --debug
@@ -375,4 +379,4 @@ vibe eval update-baseline
 
 ---
 
-*Vibe Agent is currently in Phase 4.2 (Self-Improving Skill-Maker) + Phase 5.2 (Shadow Workspace). See the [Roadmap](docs/ROADMAP.md) for what's next. Test suite: **1420+ tests passing**.*
+*Vibe Agent is currently in Phase 4.2 (Self-Improving Skill-Maker) + Phase 5.2 (Shadow Workspace). See the [Roadmap](docs/ROADMAP.md) for what's next. Test suite: **1334 tests passing**.*

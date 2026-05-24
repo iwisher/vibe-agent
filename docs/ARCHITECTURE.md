@@ -50,7 +50,9 @@ Vibe Agent is a high-performance, resilient, and secure agent harness. Unlike ma
 ```
 
 > [!TIP]
-> **Interactive Version Available:** View the [Interactive System Architecture Diagram](assets/system_architecture.html) directly in your browser to explore detailed component breakdowns, hover effects, and the complete tech stack.
+> **Interactive Version Available:** View the [Interactive System Architecture Diagram](docs/assets/system_architecture.html) directly in your browser to explore detailed component breakdowns, hover effects, and the complete tech stack.
+
+*Note: The interface layers (CLI and Dashboard) fully support real-time token streaming and reasoning trace extraction directly from the Model Gateway.*
 
 ---
 
@@ -117,6 +119,7 @@ graph TD
 - **Skill-Maker:** On COMPLETED, spawns background `SkillMakerPipeline.run_once()` to detect patterns and propose new skills.
 - **Iteration limit:** `max_iterations` (default 50) with adaptive budget allocation based on task complexity.
 - **Background Extraction & Telemetry:** Upon loop completion, async knowledge extraction + RLM threshold analyzer + skill-maker all spawn as fire-and-forget tasks.
+- **Streaming Mode:** When `stream=True` is enabled in configuration or CLI flags, the `QueryLoop` handles model responses as an asynchronous stream of tokens. It processes chunks incrementally and outputs them in real-time while properly distinguishing and rendering reasoning/thinking traces before yielding final response content.
 
 ---
 
@@ -143,13 +146,19 @@ Efficient token usage is a core design goal, implemented through three primary l
 - Provides specific fix hints to prevent hallucination loops.
 - **Status enum:** `OK`, `BELOW_THRESHOLD`, `ENGINE_ERROR`, `VALIDATION_ERROR` — explicit failure mode tracking.
 
+### 4.4 Reasoning and Token Tracking
+The system explicitly distinguishes standard completion tokens from `reasoning_tokens` (thinking/chain-of-thought tokens):
+- **Granular Telemetry**: Telemetry registers both completion and reasoning tokens separately to support models that output verbose internal thinking steps (e.g. reasoning traces).
+- **Billing and Budget Accuracy**: Accurate cost calculation via `CostTracker` factoring in provider-specific pricing for reasoning/thinking tokens.
+
 ---
 
 ## 5. Component Deep Dive
 
 ### 5.1 Model Gateway (`vibe/core/model_gateway.py`)
 The gateway is the "resilience layer" for all LLM communication.
-*   **Adapters:** Supports `OpenAIAdapter` and `AnthropicAdapter` via adapter registry.
+*   **Adapters:** Supports `OpenAIAdapter` and `AnthropicAdapter` via adapter registry. Adapters implement `build_stream_request()` and `parse_stream_chunk()` to normalize provider-specific SSE (Server-Sent Events) payloads into a unified stream of tokens and reasoning chunks.
+*   **Streaming API:** `LLMClient.complete_stream(messages, tools)` returns an async generator yielding chunk structures containing either partial text content or partial reasoning tokens.
 *   **Registry-Aware Resolution:** `ProviderRegistry` dynamically resolves `base_url`, `api_key`, `adapter`, and `extra_headers` per provider.
 *   **Circuit Breaker:** Per-model state. Opens after `threshold` consecutive failures (default 5), cooldown 60s. **Shared with FlashLLMClient** via `SharedCircuitBreaker`.
 *   **Fallback Chain:** Configurable model chain with `auto_fallback`. Rate limits (429) do NOT trigger fallback.
@@ -334,4 +343,4 @@ Native skill format with TOML frontmatter (`+++` delimited):
 
 ---
 
-*Last Updated: 2026-05-16 (v0.3.5-alpha)*
+*Last Updated: 2026-05-23 (v0.4.0-alpha)*

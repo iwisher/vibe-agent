@@ -171,6 +171,12 @@ This document tracks the progress of Vibe Agent, from its core foundation to fut
 - [x] GitHub Action for eval suite with regression gate
 - [x] Scorecard publishing to PR comments
 
+### 5.4 Streaming API & Reasoning (GA)
+- [x] Asynchronous streaming generation in `QueryLoop`
+- [x] Added `complete_stream()` to `LLMClient` and adapters
+- [x] Native extraction and rendering of reasoning/thinking tokens
+- [x] CLI support via `--stream` flag and configuration settings
+
 ---
 
 ---
@@ -320,4 +326,4 @@ CLIOnly            CLIOnly             CLI + React Dashboard
 
 ---
 
-*Last updated: 2026-05-23 | Test suite: **1395 tests collected, 1395 passing***
+*Last updated: 2026-05-23 | Test suite: **1334 tests passing***

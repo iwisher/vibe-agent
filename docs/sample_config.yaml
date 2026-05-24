@@ -1,4 +1,4 @@
-# Vibe Agent Configuration - v0.2.0-alpha
+# Vibe Agent Configuration - v0.4.0-alpha
 # Save this file to ~/.vibe/config.yaml
 
 # 1. Global Defaults
@@ -7,6 +7,8 @@ llm:
   base_url: "http://localhost:11434"   # Ollama default
   api_key_env_var: "LLM_API_KEY"
   timeout: 120.0
+  stream: false                        # Enable response streaming (real-time token delivery)
+  show_reasoning: false                # Display internal model reasoning trace / thinking process
 
 # 2. Providers (Connection Endpoints)
 # If no providers are configured, the system synthesizes a default from llm settings.
