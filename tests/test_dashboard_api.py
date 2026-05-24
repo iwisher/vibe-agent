@@ -98,9 +98,76 @@ class TestDashboardAPI:
         assert data[0]["event_type"] == "message:user"
         assert "content_preview" in data[0]["data"]
 
-    def test_session_timeline_not_found(self, client):
-        """Timeline returns empty for unknown session."""
-        response = client.get("/api/sessions/nonexistent/timeline")
+    def test_session_messages(self, client, session_db):
+        """Messages endpoint returns full messages for a session."""
+        response = client.get("/api/sessions/sess-test-001/messages")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["role"] == "user"
+        assert data[0]["content"] == "Hello"
+
+    def test_session_messages_with_tool_calls(self, client, tmp_path):
+        """Messages endpoint returns tool_calls in message data."""
+        db_path = tmp_path / ".vibe" / "sessions.db"
+        conn = sqlite3.connect(db_path)
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS session_checkpoints (
+                session_id TEXT PRIMARY KEY,
+                state TEXT NOT NULL,
+                messages_json TEXT,
+                plan_result_json TEXT,
+                iteration INTEGER DEFAULT 0,
+                feedback_retries INTEGER DEFAULT 0,
+                model TEXT,
+                created_at TEXT,
+                updated_at TEXT
+            );
+        """)
+        messages = [
+            {"role": "user", "content": "Call a tool"},
+            {"role": "assistant", "content": "", "tool_calls": [
+                {"id": "tc-1", "function": {"name": "test_tool", "arguments": '{"x": 1}'}}
+            ]},
+            {"role": "tool", "content": "result", "tool_call_id": "tc-1"},
+        ]
+        conn.execute(
+            "INSERT INTO session_checkpoints VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "sess-tool-001",
+                "COMPLETED",
+                json.dumps(messages),
+                json.dumps({}),
+                1,
+                0,
+                "gpt-4",
+                "2026-05-01T10:00:00",
+                "2026-05-01T10:05:00",
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        response = client.get("/api/sessions/sess-tool-001/messages")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 3
+        assert data[1]["tool_calls"][0]["function"]["name"] == "test_tool"
+        assert data[2]["tool_call_id"] == "tc-1"
+
+    def test_session_messages_not_found(self, client):
+        """Messages returns empty for unknown session."""
+        response = client.get("/api/sessions/nonexistent/messages")
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_session_messages_no_db(self, client, tmp_path):
+        """Messages returns empty when no checkpoint DB exists."""
+        # Ensure no sessions.db exists
+        db_path = tmp_path / ".vibe" / "sessions.db"
+        if db_path.exists():
+            db_path.unlink()
+        response = client.get("/api/sessions/any/messages")
         assert response.status_code == 200
         assert response.json() == []
 

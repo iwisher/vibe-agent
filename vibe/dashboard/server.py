@@ -317,6 +317,48 @@ async def session_timeline(session_id: str, request: Request) -> list[dict[str, 
     return await asyncio.to_thread(_load_timeline_sync, db_path, session_id)
 
 
+def _load_messages_sync(db_path: str, session_id: str) -> list[dict[str, Any]]:
+    """Synchronous helper to load full session messages from SQLite."""
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        cursor = conn.execute(
+            "SELECT messages_json, state, iteration, updated_at "
+            "FROM session_checkpoints WHERE session_id = ?",
+            (session_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return []
+
+        messages = json.loads(row["messages_json"] or "[]")
+        result = []
+        for msg in messages:
+            entry = {
+                "role": msg.get("role", "unknown"),
+                "content": msg.get("content", ""),
+                "tool_calls": msg.get("tool_calls"),
+                "tool_call_id": msg.get("tool_call_id"),
+            }
+            result.append(entry)
+
+        return result
+
+
+@app.get("/api/sessions/{session_id}/messages")
+async def session_messages(session_id: str, request: Request) -> list[dict[str, Any]]:
+    """Get full messages for a session replay.
+
+    Returns the complete conversation history with role, content, tool_calls,
+    and tool_call_id for each message. Suitable for session replay UI.
+    """
+    state = get_state(request)
+    db_path = state._db_path("sessions.db")
+    if not os.path.exists(db_path):
+        return []
+
+    return await asyncio.to_thread(_load_messages_sync, db_path, session_id)
+
+
 @app.get("/api/config")
 async def get_config(request: Request) -> dict[str, Any]:
     """Get dashboard configuration."""

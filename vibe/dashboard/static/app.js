@@ -133,8 +133,132 @@ function StatCard({ title, value, icon, color, delta, onClick }) {
   );
 }
 
+// ─── SessionReplay ───
+function SessionReplay({ sessionId, onBack }) {
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [expandedTools, setExpandedTools] = useState(new Set());
+  const bottomRef = useRef(null);
+
+  useEffect(() => {
+    let active = true;
+    api.get(`/api/sessions/${sessionId}/messages`)
+      .then(data => {
+        if (active) {
+          setMessages(data || []);
+          setLoading(false);
+        }
+      })
+      .catch(err => {
+        if (active) {
+          setError(err.message);
+          setLoading(false);
+        }
+      });
+    return () => { active = false; };
+  }, [sessionId]);
+
+  // Auto-scroll to bottom when messages load
+  useEffect(() => {
+    if (bottomRef.current) {
+      bottomRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, loading]);
+
+  const toggleTool = (index) => {
+    setExpandedTools(prev => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  };
+
+  if (loading) return React.createElement('div', { className: 'loading' },
+    React.createElement('div', { className: 'loading-spinner' }),
+    'Loading session replay...'
+  );
+
+  if (error) return React.createElement('div', { className: 'error' },
+    React.createElement(Icons.AlertTriangle),
+    'Error: ', error
+  );
+
+  if (!messages.length) return React.createElement('div', { className: 'empty-state' },
+    'No messages found for this session.'
+  );
+
+  return React.createElement('div', { className: 'session-replay' },
+    React.createElement('div', { className: 'session-replay-header' },
+      React.createElement('button', { className: 'back-button', onClick: onBack },
+        React.createElement(Icons.ArrowLeft),
+        ' Back to Dashboard'
+      ),
+      React.createElement('h2', { className: 'session-replay-title' },
+        'Session Replay'
+      ),
+      React.createElement('span', { className: 'session-replay-id' },
+        sessionId.slice(0, 16) + '...'
+      )
+    ),
+    React.createElement('div', { className: 'session-replay-messages' },
+      messages.map((msg, i) => {
+        const role = msg.role || 'unknown';
+        const isUser = role === 'user';
+        const isAssistant = role === 'assistant';
+        const isTool = role === 'tool';
+        const hasToolCalls = msg.tool_calls && msg.tool_calls.length > 0;
+        const isExpanded = expandedTools.has(i);
+
+        return React.createElement('div', {
+          key: i,
+          className: `message message-${role}`
+        },
+          React.createElement('div', { className: 'message-header' },
+            React.createElement('span', { className: `message-role message-role-${role}` },
+              role.charAt(0).toUpperCase() + role.slice(1)
+            ),
+            hasToolCalls && React.createElement('button', {
+              className: 'tool-toggle',
+              onClick: () => toggleTool(i)
+            }, isExpanded ? 'Hide tools' : `Show ${msg.tool_calls.length} tool call(s)`)
+          ),
+          React.createElement('div', { className: 'message-content' },
+            msg.content || React.createElement('em', { className: 'message-empty' }, '(no content)')
+          ),
+          hasToolCalls && isExpanded && React.createElement('div', { className: 'tool-calls' },
+            msg.tool_calls.map((tc, ti) =>
+              React.createElement('div', { key: ti, className: 'tool-call' },
+                React.createElement('div', { className: 'tool-call-header' },
+                  React.createElement('span', { className: 'tool-call-name' },
+                    tc.function?.name || 'unknown'
+                  ),
+                  React.createElement('span', { className: 'tool-call-id' },
+                    tc.id || ''
+                  )
+                ),
+                React.createElement('pre', { className: 'tool-call-args' },
+                  JSON.stringify(tc.function?.arguments || {}, null, 2)
+                )
+              )
+            )
+          ),
+          isTool && msg.tool_call_id && React.createElement('div', { className: 'tool-result-meta' },
+            'Result for: ', msg.tool_call_id
+          )
+        );
+      }),
+      React.createElement('div', { ref: bottomRef })
+    )
+  );
+}
+
 // ─── SessionList ───
-function SessionList() {
+function SessionList({ onSessionClick }) {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -156,7 +280,12 @@ function SessionList() {
   return React.createElement('div', { className: 'session-list' },
     sessions.map(s => {
       const isSuccess = s.success === true || s.state === 'COMPLETED';
-      return React.createElement('div', { key: s.session_id || s.id, className: 'session-item' },
+      return React.createElement('div', {
+        key: s.session_id || s.id,
+        className: `session-item ${onSessionClick ? 'clickable' : ''}`,
+        onClick: onSessionClick ? () => onSessionClick(s.session_id || s.id) : undefined,
+        style: onSessionClick ? { cursor: 'pointer' } : undefined
+      },
         React.createElement('div', { className: `session-avatar ${isSuccess ? 'success' : 'error'}` },
           isSuccess ? '✓' : '!'
         ),
@@ -594,6 +723,7 @@ function App() {
   const [error, setError] = useState(null);
   const [view, setView] = useState('dashboard');
   const [selectedWikiSlug, setSelectedWikiSlug] = useState(null);
+  const [selectedSessionId, setSelectedSessionId] = useState(null);
 
   useEffect(() => {
     Promise.all([
@@ -623,11 +753,17 @@ function App() {
   const handleBackToDashboard = useCallback(() => {
     setView('dashboard');
     setSelectedWikiSlug(null);
+    setSelectedSessionId(null);
   }, []);
 
   const handleShowWikiList = useCallback(() => {
     setView('wiki-list');
     setSelectedWikiSlug(null);
+  }, []);
+
+  const handleSessionClick = useCallback((sessionId) => {
+    setSelectedSessionId(sessionId);
+    setView('session-replay');
   }, []);
 
   if (error) return React.createElement('div', { className: 'error' },
@@ -688,6 +824,30 @@ function App() {
     );
   }
 
+  // ─── Session Replay View ───
+  if (view === 'session-replay' && selectedSessionId) {
+    return React.createElement('div', { className: 'dashboard' },
+      React.createElement('header', { className: 'header' },
+        React.createElement('div', { className: 'header-brand' },
+          React.createElement('div', { className: 'header-logo' }, '\u25C8'),
+          React.createElement('div', null,
+            React.createElement('h1', { className: 'header-title' }, 'Vibe Agent Dashboard',
+              React.createElement('span', null, 'v0.3.5')
+            )
+          )
+        ),
+        React.createElement('div', { className: 'header-meta' },
+          React.createElement('span', { className: 'status-badge' }, 'Live'),
+          React.createElement('span', { className: 'version-tag' }, 'v0.3.5')
+        )
+      ),
+      React.createElement(SessionReplay, {
+        sessionId: selectedSessionId,
+        onBack: handleBackToDashboard
+      })
+    );
+  }
+
   // ─── Dashboard View ───
   return React.createElement('div', { className: 'dashboard' },
     // Header
@@ -733,7 +893,7 @@ function App() {
           React.createElement('span', { className: 'panel-action' }, 'View All')
         ),
         React.createElement('div', { className: 'panel-body' },
-          React.createElement(SessionList, null)
+          React.createElement(SessionList, { onSessionClick: handleSessionClick })
         )
       ),
 
