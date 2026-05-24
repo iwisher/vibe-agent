@@ -22,11 +22,11 @@ def test_cli_stream_flag_passed_to_query_loop():
         MockStore.return_value = mock_store
 
         MockFactory.return_value.create.return_value = mock_loop
-        runner.invoke(app, ["main", "--stream"])
+        runner.invoke(app, ["main", "--no-stream"])
 
-        # Verify QueryLoopFactory was instantiated with stream=True
+        # Verify QueryLoopFactory was instantiated with stream=False
         args, kwargs = MockFactory.call_args
-        assert kwargs.get("stream") is True
+        assert kwargs.get("stream") is False
 
 
 def test_cli_interactive_streaming_output():

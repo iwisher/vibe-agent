@@ -177,3 +177,11 @@ async def test_query_loop_stream_tool_calls_wait(mock_llm, tool_system):
 
     # We should have the synthesized response at the end
     assert results[-1].response == "final answer"
+
+
+@pytest.mark.asyncio
+async def test_query_loop_stream_default_is_true(mock_llm, tool_system):
+    # Verify that stream defaults to True on construction
+    loop = QueryLoop(llm_client=mock_llm, tool_system=tool_system)
+    assert loop.stream is True
+

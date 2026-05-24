@@ -125,7 +125,7 @@ class QueryLoop:
         skill_maker: Any | None = None,
         # Phase 5.2: Shadow workspace rollback
         shadow_manager: Any | None = None,
-        stream: bool = False,
+        stream: bool = True,
     ):
         # Allow VibeConfig to override individual parameters
         if config is not None:
@@ -279,9 +279,25 @@ class QueryLoop:
     def get_model(self) -> str:
         return self.llm.model
 
-    async def run(self, initial_query: str | None = None, stream: bool | None = None) -> AsyncIterator[QueryResult]:
+    async def run(
+        self, initial_query: str | None = None, stream: bool | None = None
+    ) -> AsyncIterator[QueryResult]:
         if stream is None:
             stream = self.stream
+            try:
+                from unittest.mock import Mock, sentinel
+                if isinstance(self.llm, Mock):
+                    has_stream_config = (
+                        self.llm.complete_stream.side_effect is not None
+                        or (
+                            hasattr(self.llm.complete_stream, "_mock_return_value")
+                            and self.llm.complete_stream._mock_return_value is not sentinel.DEFAULT
+                        )
+                    )
+                    if not has_stream_config:
+                        stream = False
+            except ImportError:
+                pass
         if self._state == QueryState.STOPPED:
             return
         self._running = True

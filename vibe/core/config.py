@@ -171,8 +171,8 @@ class LLMConfig(BaseModel):
     max_tokens: Optional[int] = Field(default=None, ge=1)
     timeout: float = Field(default=60.0, ge=1.0)
     fallback_chain: list[str] = Field(default_factory=list)
-    stream: bool = False
-    show_reasoning: bool = False
+    stream: bool = True
+    show_reasoning: bool = True
 
     @field_validator("temperature")
     @classmethod
@@ -607,8 +607,8 @@ class VibeConfig(BaseSettings):
                 os.environ.get("VIBE_FALLBACK_CHAIN"),
                 llm_raw.get("fallback_chain", []),
             ),
-            stream=os.environ.get("VIBE_STREAM", str(llm_raw.get("stream", False))).lower() == "true",
-            show_reasoning=os.environ.get("VIBE_SHOW_REASONING", str(llm_raw.get("show_reasoning", False))).lower() == "true",
+            stream=os.environ.get("VIBE_STREAM", str(llm_raw.get("stream", True))).lower() == "true",
+            show_reasoning=os.environ.get("VIBE_SHOW_REASONING", str(llm_raw.get("show_reasoning", True))).lower() == "true",
         )
 
         # ---- FallbackConfig ----
@@ -748,8 +748,8 @@ def _default_yaml_dict() -> dict[str, Any]:
             "default_model": "default",
             "base_url": "http://localhost:11434",
             "timeout": 60.0,
-            "stream": False,
-            "show_reasoning": False,
+            "stream": True,
+            "show_reasoning": True,
         },
         "fallback": {
             "enabled": True,

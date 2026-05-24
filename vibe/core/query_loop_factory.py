@@ -32,7 +32,7 @@ class QueryLoopFactory:
         adapter_type: str | None = None,
         logger: Any | None = None,
         debug: bool = False,
-        stream: bool = False,
+        stream: bool = True,
     ):
         self.base_url = base_url
         self.model = model

@@ -179,7 +179,7 @@ This document tracks the progress of Vibe Agent, from its core foundation to fut
 - [x] Asynchronous streaming generation in `QueryLoop`
 - [x] Added `complete_stream()` to `LLMClient` and adapters
 - [x] Native extraction and rendering of reasoning/thinking tokens
-- [x] CLI support via `--stream` flag and configuration settings
+- [x] CLI support via `--stream/--no-stream` flag and configuration settings (default: enabled)
 
 ---
 

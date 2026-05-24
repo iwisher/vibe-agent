@@ -7,8 +7,8 @@ llm:
   base_url: "http://localhost:11434"   # Ollama default
   api_key_env_var: "LLM_API_KEY"
   timeout: 120.0
-  stream: false                        # Enable response streaming (real-time token delivery)
-  show_reasoning: false                # Display internal model reasoning trace / thinking process
+  stream: true                         # Enable response streaming (real-time token delivery)
+  show_reasoning: true                 # Display internal model reasoning trace / thinking process
 
 # 2. Providers (Connection Endpoints)
 # If no providers are configured, the system synthesizes a default from llm settings.

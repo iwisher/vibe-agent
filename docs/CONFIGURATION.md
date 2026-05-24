@@ -35,8 +35,8 @@ llm:
   base_url: "http://localhost:11434"   # Fallback base URL if no provider is matched
   api_key_env_var: "LLM_API_KEY"       # Env var containing the API key
   timeout: 120.0                        # Seconds before request timeout
-  stream: false                        # Enable token-by-token response streaming
-  show_reasoning: false                # Render internal thinking/reasoning traces
+  stream: true                         # Enable token-by-token response streaming
+  show_reasoning: true                 # Render internal thinking/reasoning traces
 ```
 
 **Environment overrides:** `VIBE_MODEL`, `VIBE_BASE_URL`, `VIBE_API_KEY_ENV_VAR`, `VIBE_TIMEOUT`, `VIBE_STREAM` (boolean), `VIBE_SHOW_REASONING` (boolean)
@@ -418,8 +418,8 @@ llm:
   default_model: "local-fast"
   base_url: "http://localhost:11434"
   timeout: 120.0
-  stream: false
-  show_reasoning: false
+  stream: true
+  show_reasoning: true
 
 providers:
   ollama:

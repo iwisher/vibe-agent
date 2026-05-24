@@ -67,7 +67,7 @@ def _save_readline_history() -> None:
 async def interactive_mode(query_loop: QueryLoop) -> None:
     _setup_readline_history()
     verbose_mode = False
-    show_reasoning = query_loop.config.llm.show_reasoning if (query_loop.config and hasattr(query_loop.config, "llm")) else False
+    show_reasoning = query_loop.config.llm.show_reasoning if (query_loop.config and hasattr(query_loop.config, "llm")) else True
     console.print("[bold green]Vibe Agent[/bold green] ready. Type /exit to quit, /clear to reset.")
     while True:
         try:
@@ -209,7 +209,7 @@ async def interactive_mode(query_loop: QueryLoop) -> None:
 async def single_query_mode(query_loop: QueryLoop, query: str) -> None:
     query_loop.add_user_message(query)
     streamed_any = False
-    show_reasoning = query_loop.config.llm.show_reasoning if (query_loop.config and hasattr(query_loop.config, "llm")) else False
+    show_reasoning = query_loop.config.llm.show_reasoning if (query_loop.config and hasattr(query_loop.config, "llm")) else True
     status_spinner = None
     try:
         async for result in query_loop.run():
@@ -290,7 +290,7 @@ def main(
     debug: bool = typer.Option(
         False, "--debug", "-d", help="Print request URL and redacted headers to stderr"
     ),
-    stream: bool = typer.Option(False, "--stream", help="Enable streaming responses"),
+    stream: bool = typer.Option(True, "--stream/--no-stream", help="Enable/disable streaming responses"),
 ):
     """Run Vibe Agent in interactive or single-query mode."""
     working_dir = str(Path(working_dir).expanduser().resolve())
