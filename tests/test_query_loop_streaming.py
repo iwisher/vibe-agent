@@ -185,3 +185,28 @@ async def test_query_loop_stream_default_is_true(mock_llm, tool_system):
     loop = QueryLoop(llm_client=mock_llm, tool_system=tool_system)
     assert loop.stream is True
 
+
+@pytest.mark.asyncio
+async def test_query_loop_stream_metrics_fallback_estimate(mock_llm, tool_system):
+    """When the streaming provider does not report usage, metrics should be
+    estimated from content length so that tokens_per_second is non-zero.
+    """
+    async def mock_stream(*args, **kwargs):
+        # Simulate a provider that never sends usage (common for Ollama, vLLM)
+        yield LLMResponse(content="Hello ", finish_reason=None, usage=None)
+        yield LLMResponse(content="world!", finish_reason="stop", usage=None)
+
+    mock_llm.complete_stream.side_effect = mock_stream
+    loop = QueryLoop(llm_client=mock_llm, tool_system=tool_system)
+
+    results = [r async for r in loop.run("hi", stream=True)]
+    final_results = [r for r in results if not r.is_status and not r.is_stream_chunk]
+    assert len(final_results) == 1
+
+    m = final_results[0].metrics
+    assert m is not None
+    # "Hello world!" is 12 chars -> ~3 tokens (12 // 4)
+    assert m.completion_tokens == 3
+    assert m.total_tokens == m.completion_tokens  # prompt_tokens stays 0
+    assert m.tokens_per_second > 0.0
+

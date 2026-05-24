@@ -71,12 +71,22 @@ class OpenAIAdapter(BaseLLMAdapter):
         choice = choices[0]
         delta = choice.get("delta", {})
 
+        # Only return usage when the provider actually sends it in the chunk.
+        # Most OpenAI-compatible streaming APIs omit usage from intermediate
+        # chunks; returning a zeroed dict breaks downstream accumulation.
+        raw_usage = chunk_json.get("usage")
+        usage = None
+        if raw_usage:
+            usage = {
+                "prompt_tokens": raw_usage.get("prompt_tokens", 0),
+                "completion_tokens": raw_usage.get("completion_tokens", 0),
+                "total_tokens": raw_usage.get("total_tokens", 0),
+            }
+
         return LLMResponse(
             content=delta.get("content") or "",
             reasoning_content=delta.get("reasoning_content") or "",
-            usage=chunk_json.get(
-                "usage", {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-            ),
+            usage=usage,
             finish_reason=choice.get("finish_reason"),
             tool_calls=delta.get("tool_calls"),
         )

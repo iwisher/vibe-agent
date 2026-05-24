@@ -29,7 +29,7 @@ class LLMResponse:
     """Standardized response from LLM."""
 
     content: str
-    usage: Dict[str, int] = field(
+    usage: Dict[str, int] | None = field(
         default_factory=lambda: {
             "prompt_tokens": 0,
             "completion_tokens": 0,

@@ -957,6 +957,18 @@ class QueryLoop:
         ):
             rt = usage["completion_tokens_details"].get("reasoning_tokens", 0)
 
+        # Fallback: estimate completion tokens from content length when the
+        # streaming provider does not report usage (common for Ollama, vLLM,
+        # and many OpenAI-compatible proxies).  ~4 chars/token is a rough
+        # average for English text; reasoning content is included since it
+        # also consumes tokens.
+        if ct == 0 and response.content:
+            combined = response.content
+            if response.reasoning_content:
+                combined += response.reasoning_content
+            ct = max(1, len(combined) // 4)
+            tt = pt + ct
+
         tps = ct / elapsed if elapsed > 0 else 0
         return Metrics(
             prompt_tokens=pt,

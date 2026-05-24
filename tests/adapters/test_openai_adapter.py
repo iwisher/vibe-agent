@@ -159,3 +159,41 @@ class TestOpenAIAdapter:
         assert res.reasoning_content == "thinking process"
         assert res.usage["total_tokens"] == 1
         assert res.finish_reason is None
+
+    def test_parse_stream_chunk_no_usage(self):
+        """Intermediate chunks without usage must return usage=None so that
+        downstream accumulation does not add zeroed usage on every chunk.
+        """
+        adapter = OpenAIAdapter()
+        chunk = {
+            "choices": [
+                {
+                    "delta": {"content": "hello"},
+                    "finish_reason": None
+                }
+            ]
+        }
+        res = adapter.parse_stream_chunk(chunk)
+        assert res is not None
+        assert res.content == "hello"
+        assert res.usage is None
+
+    def test_parse_stream_chunk_with_usage(self):
+        """Final chunk that carries usage must surface it."""
+        adapter = OpenAIAdapter()
+        chunk = {
+            "choices": [
+                {
+                    "delta": {"content": ""},
+                    "finish_reason": "stop"
+                }
+            ],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+        }
+        res = adapter.parse_stream_chunk(chunk)
+        assert res is not None
+        assert res.usage == {
+            "prompt_tokens": 10,
+            "completion_tokens": 5,
+            "total_tokens": 15,
+        }
