@@ -9,7 +9,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Any
 
 
 class AttackType(Enum):
@@ -57,7 +56,6 @@ class PromptInjectionDetector:
 
     def detect(self, text: str) -> AdversarialResult:
         """Check for prompt injection patterns."""
-        text_lower = text.lower()
         matches = []
         for pattern in self._patterns:
             match = pattern.search(text)
@@ -177,7 +175,7 @@ class ExfiltrationDetector:
             if exfil_matches:
                 evidence_parts.append(f"Exfil patterns: {', '.join(exfil_matches)}")
             if sensitive_matches:
-                evidence_parts.append(f"Sensitive data detected (redacted)")
+                evidence_parts.append("Sensitive data detected (redacted)")
 
             return AdversarialResult(
                 attack_type=AttackType.DATA_EXFILTRATION,

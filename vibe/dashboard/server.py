@@ -12,7 +12,7 @@ import os
 import re
 import sqlite3
 from contextlib import asynccontextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, AsyncGenerator
@@ -327,13 +327,13 @@ async def get_config(request: Request) -> dict[str, Any]:
 async def get_stats(request: Request) -> dict[str, Any]:
     """Get aggregated dashboard stats."""
     state = get_state(request)
-    
+
     # Count sessions
     sessions = []
     db_path = state._db_path("sessions.db")
     if os.path.exists(db_path):
         sessions = await asyncio.to_thread(_load_sessions_sync, db_path)
-    
+
     # Count wiki pages
     wiki_pages = []
     if state.wiki_dir.exists():
@@ -349,21 +349,21 @@ async def get_stats(request: Request) -> dict[str, Any]:
                 except ValueError:
                     pass
             wiki_pages.append({"slug": md_file.stem, "title": title})
-    
+
     # Count skills
     skills = []
     skills_dir = state.project_root / "skills"
     if skills_dir.exists():
         for skill_file in skills_dir.rglob("SKILL.md"):
             skills.append({"name": skill_file.parent.name})
-    
+
     # Count recent errors from telemetry
     recent_errors = 0
     telemetry_db = state._db_path("telemetry.db")
     if os.path.exists(telemetry_db):
         telemetry = await asyncio.to_thread(_load_telemetry_sync, telemetry_db)
         recent_errors = len([m for m in telemetry.get("metrics", []) if m.get("metric_name") == "error"])
-    
+
     return {
         "total_sessions": len(sessions),
         "total_wiki_pages": len(wiki_pages),
@@ -435,13 +435,13 @@ async def get_wiki_page(slug: str, request: Request) -> dict[str, Any]:
 
     md_file = (state.wiki_dir / f"{slug}.md").resolve()
     wiki_dir_resolved = state.wiki_dir.resolve()
-    
+
     # Ensure the resolved path is within wiki_dir
     try:
         md_file.relative_to(wiki_dir_resolved)
     except ValueError:
         return {"error": "Access denied"}
-    
+
     if not md_file.exists():
         return {"error": "Page not found"}
 
@@ -450,7 +450,7 @@ async def get_wiki_page(slug: str, request: Request) -> dict[str, Any]:
         content = await asyncio.to_thread(md_file.read_text, encoding="utf-8")
     except UnicodeDecodeError:
         return {"error": "File is not valid UTF-8 text"}
-    
+
     title = md_file.stem
     tags: list[str] = []
     status = "unverified"
@@ -496,7 +496,7 @@ async def get_wiki_page(slug: str, request: Request) -> dict[str, Any]:
 @app.post("/api/wiki/regenerate")
 async def regenerate_wiki(request: Request) -> dict[str, Any]:
     """Regenerate wiki pages from session data.
-    
+
     Scans sessions database for tool invocations and memory writes
     that could be turned into wiki pages.
     """
@@ -506,41 +506,41 @@ async def regenerate_wiki(request: Request) -> dict[str, Any]:
             {"error": "CSRF protection: missing X-Requested-With header"},
             status_code=403
         )
-    
+
     state = get_state(request)
-    
+
     # Ensure wiki directory exists
     state.wiki_dir.mkdir(parents=True, exist_ok=True)
-    
+
     # Load sessions to extract knowledge
     sessions = []
     db_path = state._db_path("sessions.db")
     if os.path.exists(db_path):
         sessions = await asyncio.to_thread(_load_sessions_sync, db_path)
-    
+
     pages_created = 0
     pages_updated = 0
-    
+
     # For each session, extract potential wiki content
     def _generate_pages():
         nonlocal pages_created, pages_updated
         for session in sessions:
             raw_id = session.get("session_id")
-            
+
             # Skip sessions with missing or invalid IDs
             if not raw_id:
                 continue
-            
+
             # Sanitize session_id to prevent path traversal
             session_id = re.sub(r'[^a-zA-Z0-9_-]', '', str(raw_id))
             if not session_id:
                 continue
-            
+
             # Check if there's already a wiki page for this session topic
             # For now, create a summary page if it doesn't exist
             slug = f"session-{session_id[:8]}"
             md_file = state.wiki_dir / f"{slug}.md"
-            
+
             # Use atomic file creation to avoid TOCTOU race condition
             try:
                 with open(md_file, "x", encoding="utf-8") as f:
@@ -565,10 +565,10 @@ This page was auto-generated from session data.
                 pages_created += 1
             except FileExistsError:
                 pass
-    
+
     # Run file generation in thread pool to avoid blocking event loop
     await asyncio.to_thread(_generate_pages)
-    
+
     return {
         "success": True,
         "pages_created": pages_created,

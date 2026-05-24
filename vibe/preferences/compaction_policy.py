@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 from vibe.preferences.models import PreferencePolicy, PreferenceRule, PreferenceSource
 from vibe.preferences.registry import PreferenceRegistry

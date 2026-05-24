@@ -372,3 +372,20 @@ async def test_dag_fallback_to_sequential_for_single_tool(mock_llm, tool_system)
     assert len(results) == 2
     assert results[0].tool_results[0].success
     assert results[1].response == "done"
+
+
+@pytest.mark.asyncio
+async def test_run_streaming_simple(mock_llm, tool_system):
+    async def mock_stream(*args, **kwargs):
+        yield LLMResponse(content="hello", finish_reason=None)
+        yield LLMResponse(content=" world", finish_reason="stop")
+
+    mock_llm.complete_stream.side_effect = mock_stream
+    loop = QueryLoop(llm_client=mock_llm, tool_system=tool_system)
+    results = [r async for r in loop.run("hi", stream=True) if not r.is_status]
+    
+    assert len(results) >= 2
+    assert results[0].response == "hello"
+    assert results[1].response == " world"
+    assert results[-1].response == "hello world"
+    assert results[-1].state == QueryState.COMPLETED

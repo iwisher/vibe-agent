@@ -7,7 +7,7 @@ per case via a factory function, preventing state contamination.
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Callable
+from typing import Callable
 
 from vibe.core.query_loop import QueryLoop
 from vibe.evals.runner import EvalRunner

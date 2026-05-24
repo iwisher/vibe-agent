@@ -85,6 +85,83 @@ class AnthropicAdapter(BaseLLMAdapter):
         )
         return resp
 
+    def parse_stream_chunk(self, chunk_json: Dict[str, Any]) -> Optional[LLMResponse]:
+        if not chunk_json:
+            return None
+        if chunk_json == "[DONE]":
+            return None
+        if isinstance(chunk_json, dict) and chunk_json.get("done") is True:
+            return None
+
+        event_type = chunk_json.get("type")
+        if not event_type or event_type in ("ping", "content_block_stop", "message_stop"):
+            return None
+
+        content = ""
+        reasoning_content = ""
+        tool_calls = None
+        finish_reason = None
+        usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
+        if event_type == "content_block_delta":
+            delta = chunk_json.get("delta", {})
+            delta_type = delta.get("type")
+            if delta_type == "text_delta":
+                content = delta.get("text") or ""
+            elif delta_type == "thinking_delta":
+                reasoning_content = delta.get("thinking") or ""
+            elif delta_type == "input_json_delta":
+                index = chunk_json.get("index", 0)
+                tool_calls = [{
+                    "index": index,
+                    "function": {
+                        "arguments": delta.get("partial_json") or ""
+                    }
+                }]
+        elif event_type == "content_block_start":
+            block = chunk_json.get("content_block", {})
+            block_type = block.get("type")
+            if block_type == "tool_use":
+                index = chunk_json.get("index", 0)
+                tool_calls = [{
+                    "index": index,
+                    "id": block.get("id"),
+                    "type": "function",
+                    "function": {
+                        "name": block.get("name"),
+                        "arguments": ""
+                    }
+                }]
+        elif event_type == "message_delta":
+            delta = chunk_json.get("delta", {})
+            finish_reason = delta.get("stop_reason")
+            usage_data = chunk_json.get("usage", {})
+            if usage_data:
+                out_tokens = usage_data.get("output_tokens", 0)
+                usage = {
+                    "prompt_tokens": 0,
+                    "completion_tokens": out_tokens,
+                    "total_tokens": out_tokens
+                }
+        elif event_type == "message_start":
+            msg = chunk_json.get("message", {})
+            usage_data = msg.get("usage", {})
+            if usage_data:
+                in_tokens = usage_data.get("input_tokens", 0)
+                usage = {
+                    "prompt_tokens": in_tokens,
+                    "completion_tokens": 0,
+                    "total_tokens": in_tokens
+                }
+
+        return LLMResponse(
+            content=content,
+            reasoning_content=reasoning_content,
+            tool_calls=tool_calls,
+            finish_reason=finish_reason,
+            usage=usage
+        )
+
     def health_check_endpoints(self, base_url: str, model_id: str) -> List[Tuple[str, str]]:
         return [
             ("GET", f"{base_url.rstrip('/')}/v1/models"),

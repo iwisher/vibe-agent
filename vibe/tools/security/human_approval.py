@@ -6,10 +6,10 @@ Choices: once | session | always | deny | view
 Fail-closed: timeout -> deny (not allow).
 """
 
-import sys
-import threading
 import os
 import shlex
+import sys
+import threading
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional

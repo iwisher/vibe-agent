@@ -5,9 +5,7 @@ Controls what gets extracted from conversations into the tripartite memory syste
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
-from typing import Any
 
 from vibe.preferences.models import PreferencePolicy, PreferenceRule, PreferenceSource
 from vibe.preferences.registry import PreferenceRegistry

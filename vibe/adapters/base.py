@@ -1,7 +1,11 @@
 """Base adapter interface for LLM providers."""
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+
+if TYPE_CHECKING:
+    from vibe.core.llm_types import LLMResponse
+
 
 
 class BaseLLMAdapter(ABC):
@@ -34,6 +38,45 @@ class BaseLLMAdapter(ABC):
     def parse_response(self, response_json: Dict[str, Any]) -> "LLMResponse":
         """Parse provider-specific JSON response into standardized LLMResponse."""
         ...
+
+    def build_stream_request(
+        self,
+        base_url: str,
+        model: str,
+        messages: List[Dict[str, Any]],
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: str = "auto",
+        api_key: Optional[str] = None,
+    ) -> Tuple[str, Dict[str, str], Dict[str, Any]]:
+        """Build an API request configured for streaming.
+
+        Defaults to calling build_request and appending stream=True to the payload.
+        Override if the provider uses a different streaming endpoint or payload shape.
+        """
+        url, headers, json_payload = self.build_request(
+            base_url=base_url,
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            tools=tools,
+            tool_choice=tool_choice,
+            api_key=api_key,
+        )
+        json_payload["stream"] = True
+        return url, headers, json_payload
+
+    def parse_stream_chunk(self, chunk_json: Dict[str, Any]) -> Optional["LLMResponse"]:
+        """Parse provider-specific SSE stream chunk JSON into standardized LLMResponse.
+
+        chunk_json is the parsed JSON dict from the SSE data line.
+        Return None for non-data chunks or the [DONE] sentinel.
+
+        Adapters supporting streaming must override this method.
+        """
+        raise NotImplementedError(f"{self.__class__.__name__} does not support streaming.")
 
     @abstractmethod
     def health_check_endpoints(self, base_url: str, model_id: str) -> List[Tuple[str, str]]:

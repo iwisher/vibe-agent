@@ -42,6 +42,22 @@ class TestModelConfig:
         with pytest.raises(ValidationError):
             ModelConfig(timeout=0.5)
 
+    def test_provider_validation(self):
+        """Should validate provider against known adapter types."""
+        # Valid providers
+        config = ModelConfig(provider="openai")
+        assert config.provider == "openai"
+
+        config = ModelConfig(provider="anthropic")
+        assert config.provider == "anthropic"
+
+        # Invalid provider (typo)
+        with pytest.raises(ValidationError) as exc_info:
+            ModelConfig(provider="openia")
+        assert "Unknown provider 'openia'" in str(exc_info.value)
+        assert "openai" in str(exc_info.value)
+        assert "anthropic" in str(exc_info.value)
+
 
 class TestPlannerConfig:
     """Test PlannerConfig validation."""

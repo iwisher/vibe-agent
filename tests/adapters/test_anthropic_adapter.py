@@ -189,3 +189,55 @@ class TestAnthropicAdapter:
         )
         assert ("GET", "https://api.anthropic.com/v1/models") in endpoints
         assert ("POST", "https://api.anthropic.com/v1/messages") in endpoints
+
+    def test_build_stream_request(self):
+        adapter = AnthropicAdapter()
+        url, headers, payload = adapter.build_stream_request(
+            base_url="https://api.anthropic.com",
+            model="claude-3-5-sonnet",
+            messages=[{"role": "user", "content": "hello"}],
+        )
+        assert payload["stream"] is True
+
+    def test_parse_stream_chunk_content_block_delta_text(self):
+        adapter = AnthropicAdapter()
+        chunk = {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {
+                "type": "text_delta",
+                "text": "hello text"
+            }
+        }
+        res = adapter.parse_stream_chunk(chunk)
+        assert res.content == "hello text"
+        assert res.reasoning_content == ""
+
+    def test_parse_stream_chunk_content_block_delta_thinking(self):
+        adapter = AnthropicAdapter()
+        chunk = {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {
+                "type": "thinking_delta",
+                "thinking": "thinking process"
+            }
+        }
+        res = adapter.parse_stream_chunk(chunk)
+        assert res.content == ""
+        assert res.reasoning_content == "thinking process"
+
+    def test_parse_stream_chunk_message_delta(self):
+        adapter = AnthropicAdapter()
+        chunk = {
+            "type": "message_delta",
+            "delta": {
+                "stop_reason": "end_turn"
+            },
+            "usage": {
+                "output_tokens": 10
+            }
+        }
+        res = adapter.parse_stream_chunk(chunk)
+        assert res.finish_reason == "end_turn"
+        assert res.usage["completion_tokens"] == 10

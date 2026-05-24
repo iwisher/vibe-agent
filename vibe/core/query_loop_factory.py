@@ -32,6 +32,7 @@ class QueryLoopFactory:
         adapter_type: str | None = None,
         logger: Any | None = None,
         debug: bool = False,
+        stream: bool = False,
     ):
         self.base_url = base_url
         self.model = model
@@ -42,12 +43,16 @@ class QueryLoopFactory:
         self.adapter_type = adapter_type
         self.logger = logger
         self.debug = debug
+        self.stream = stream
         # Read defaults from config to avoid divergence with QueryLoopConfig
         if config is not None:
             ql_cfg = getattr(config, "query_loop", None)
             if ql_cfg is not None:
                 max_iterations = getattr(ql_cfg, "max_iterations", max_iterations)
                 max_context_tokens = getattr(ql_cfg, "max_context_tokens", max_context_tokens)
+            llm_cfg = getattr(config, "llm", None)
+            if llm_cfg is not None:
+                llm_cfg.stream = stream
         self.max_iterations = max_iterations or 50
         self.max_context_tokens = max_context_tokens
         self.with_compactor = with_compactor
@@ -116,6 +121,7 @@ class QueryLoopFactory:
             "llm_client": llm,
             "tool_system": tools,
             "max_iterations": max_iterations if max_iterations is not None else self.max_iterations,
+            "stream": self.stream,
         }
         if self.max_context_tokens is not None:
             kwargs["max_context_tokens"] = self.max_context_tokens

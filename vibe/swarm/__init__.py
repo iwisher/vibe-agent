@@ -4,9 +4,9 @@ SwarmOrchestrator spawns role-based sub-agents (Research, Coding, Critic)
 that communicate through a Pub/Sub message bus with shared wiki access.
 """
 
-from vibe.swarm.protocol import AgentMessage, MessageBus, MessageType, EventBroker
-from vibe.swarm.agent import SubAgent, SubAgentRole, AgentLifecycle
+from vibe.swarm.agent import AgentLifecycle, SubAgent, SubAgentRole
 from vibe.swarm.orchestrator import SwarmOrchestrator, SwarmResult, TaskDAG
+from vibe.swarm.protocol import AgentMessage, EventBroker, MessageBus, MessageType
 from vibe.swarm.shared_wiki import SharedWiki, WikiUpdateRequest
 
 __all__ = [

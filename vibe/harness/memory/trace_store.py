@@ -183,7 +183,6 @@ class SQLiteTraceStore(BaseTraceStore):
         returns None and vector search falls back to keyword search.
         """
         try:
-            import numpy as np
             from sentence_transformers import SentenceTransformer
         except ImportError:
             return None

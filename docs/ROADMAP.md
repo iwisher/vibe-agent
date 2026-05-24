@@ -145,9 +145,9 @@ This document tracks the progress of Vibe Agent, from its core foundation to fut
 - [x] 12 tests: pattern detection, tool extraction, generation, validation, installation, session limits
 
 ### 4.3 Multi-Agent Swarm Orchestration
-- [ ] `SwarmOrchestrator` spawning specialized sub-agents
-- [ ] `AgentProtocol` message bus via `asyncio.Queue`
-- [ ] Shared wiki across swarm members
+- [x] `SwarmOrchestrator` spawning specialized sub-agents
+- [x] `AgentProtocol` message bus via `asyncio.Queue`
+- [x] Shared wiki across swarm members
 
 ---
 
@@ -320,4 +320,4 @@ CLIOnly            CLIOnly             CLI + React Dashboard
 
 ---
 
-*Last updated: 2026-05-16 | Test suite: **1420+ tests collected, 1420+ passing***
+*Last updated: 2026-05-23 | Test suite: **1395 tests collected, 1395 passing***

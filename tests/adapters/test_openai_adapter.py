@@ -130,3 +130,32 @@ class TestOpenAIAdapter:
         adapter = OpenAIAdapter()
         assert adapter.parse_health_response("GET", "/v1/models", {"data": [{"id": "llama3.2"}]}) is True
         assert adapter.parse_health_response("GET", "/v1/models", {"data": []}) is False
+
+    def test_build_stream_request(self):
+        adapter = OpenAIAdapter()
+        url, headers, payload = adapter.build_stream_request(
+            base_url="http://localhost:11434",
+            model="llama3.2",
+            messages=[{"role": "user", "content": "hello"}],
+        )
+        assert payload["stream"] is True
+
+    def test_parse_stream_chunk_content(self):
+        adapter = OpenAIAdapter()
+        chunk = {
+            "choices": [
+                {
+                    "delta": {
+                        "content": "hello",
+                        "reasoning_content": "thinking process"
+                    },
+                    "finish_reason": None
+                }
+            ],
+            "usage": {"prompt_tokens": 0, "completion_tokens": 1, "total_tokens": 1}
+        }
+        res = adapter.parse_stream_chunk(chunk)
+        assert res.content == "hello"
+        assert res.reasoning_content == "thinking process"
+        assert res.usage["total_tokens"] == 1
+        assert res.finish_reason is None

@@ -46,7 +46,8 @@ async def test_complete_rate_limit(client):
     )
 
     with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_resp):
-        result = await client.complete(messages=[{"role": "user", "content": "hi"}])
+        with patch("vibe.core.error_recovery.asyncio.sleep"):
+            result = await client.complete(messages=[{"role": "user", "content": "hi"}])
 
     assert result.error_type == ErrorType.RATE_LIMIT_ERROR
     assert result.is_error
@@ -61,7 +62,8 @@ async def test_complete_auth_error(client):
     )
 
     with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=mock_resp):
-        result = await client.complete(messages=[{"role": "user", "content": "hi"}])
+        with patch("vibe.core.error_recovery.asyncio.sleep"):
+            result = await client.complete(messages=[{"role": "user", "content": "hi"}])
 
     assert result.error_type == ErrorType.AUTHENTICATION_ERROR
 
@@ -71,7 +73,8 @@ async def test_complete_timeout(client):
     with patch(
         "httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=httpx.TimeoutException("timeout")
     ):
-        result = await client.complete(messages=[{"role": "user", "content": "hi"}])
+        with patch("vibe.core.error_recovery.asyncio.sleep"):
+            result = await client.complete(messages=[{"role": "user", "content": "hi"}])
 
     assert result.error_type == ErrorType.TIMEOUT_ERROR
 

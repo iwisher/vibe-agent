@@ -67,6 +67,7 @@ def _save_readline_history() -> None:
 async def interactive_mode(query_loop: QueryLoop) -> None:
     _setup_readline_history()
     verbose_mode = False
+    show_reasoning = query_loop.config.llm.show_reasoning if (query_loop.config and hasattr(query_loop.config, "llm")) else False
     console.print("[bold green]Vibe Agent[/bold green] ready. Type /exit to quit, /clear to reset.")
     while True:
         try:
@@ -93,6 +94,13 @@ async def interactive_mode(query_loop: QueryLoop) -> None:
             verbose_mode = not verbose_mode
             status = "enabled" if verbose_mode else "disabled"
             console.print(f"Verbose mode {status}.")
+            continue
+        if user_input.lower() == "/reasoning":
+            show_reasoning = not show_reasoning
+            if query_loop.config and hasattr(query_loop.config, "llm"):
+                query_loop.config.llm.show_reasoning = show_reasoning
+            status = "enabled" if show_reasoning else "disabled"
+            console.print(f"Reasoning display {status}.")
             continue
         if user_input.lower() == "/resume":
             from vibe.core.query_loop import QueryLoop
@@ -125,21 +133,49 @@ async def interactive_mode(query_loop: QueryLoop) -> None:
             continue
 
         query_loop.add_user_message(user_input)
-        with console.status("[dim]Thinking...[/dim]", spinner="dots") as status_spinner:
+        streamed_any = False
+        status_spinner = None
+        try:
             async for result in query_loop.run():
                 if result.is_status:
                     if verbose_mode:
                         console.print(f"[dim]  → {result.status_message}[/dim]")
                     else:
+                        if status_spinner is None:
+                            status_spinner = console.status("[dim]Thinking...[/dim]", spinner="dots")
+                            status_spinner.start()
                         status_spinner.update(f"[dim]{result.status_message}[/dim]")
                     continue
 
+                # Exit spinner before printing stream chunks
+                if status_spinner is not None:
+                    status_spinner.stop()
+                    status_spinner = None
+
+                if result.is_stream_chunk:
+                    streamed_any = True
+                    if result.response:
+                        console.print(result.response, end="")
+                    if (verbose_mode or show_reasoning) and result.reasoning_content:
+                        console.print(f"[dim]{result.reasoning_content}[/dim]", end="")
+                    continue
+
                 if result.error:
-                    console.print(Panel(str(result.error), title="Error", border_style="red"))
+                    error_msg = str(result.error)
+                    if getattr(result, "actionable_hint", None):
+                        error_msg += f"\n\n[bold]Hint:[/bold] {result.actionable_hint}"
+                    if getattr(result, "model_used", None):
+                        error_msg += f"\n\n[bold]Model Used:[/bold] {result.model_used}"
+                    console.print(Panel(error_msg, title="Error", border_style="red"))
                 elif result.context_truncated:
                     console.print("[dim](context compacted)[/dim]")
                 else:
-                    console.print(result.response, end="")
+                    if not streamed_any:
+                        if (verbose_mode or show_reasoning) and result.reasoning_content:
+                            console.print(f"[dim]{result.reasoning_content}[/dim]", end="")
+                        console.print(result.response, end="")
+                    else:
+                        console.print()
 
                 for tr in result.tool_results:
                     style = "green" if tr.success else "red"
@@ -149,28 +185,71 @@ async def interactive_mode(query_loop: QueryLoop) -> None:
 
                 if result.metrics:
                     m = result.metrics
-                    # Ensure metrics start on a new line (response may have end="")
-                    console.print()
+                    # Ensure metrics start on a new line
+                    if not streamed_any:
+                        console.print()
+                    
+                    reasoning_part = ""
+                    if getattr(m, "reasoning_tokens", 0) > 0:
+                        reasoning_part = f" ({m.reasoning_tokens} reasoning)"
+
                     metrics_str = (
-                        f"{m.total_tokens} tokens | "
+                        f"{m.total_tokens} tokens{reasoning_part} | "
                         f"{m.elapsed_seconds:.1f}s | "
                         f"{m.tokens_per_second:.1f} tok/s"
                     )
+                    if getattr(result, "model_used", None) and result.model_used != query_loop.llm.model:
+                        metrics_str += f" (via fallback model: {result.model_used})"
                     console.print(f"[dim]{metrics_str}[/dim]")
+        finally:
+            if status_spinner is not None:
+                status_spinner.stop()
 
 
 async def single_query_mode(query_loop: QueryLoop, query: str) -> None:
     query_loop.add_user_message(query)
-    with console.status("[dim]Thinking...[/dim]", spinner="dots") as status_spinner:
+    streamed_any = False
+    show_reasoning = query_loop.config.llm.show_reasoning if (query_loop.config and hasattr(query_loop.config, "llm")) else False
+    status_spinner = None
+    try:
         async for result in query_loop.run():
             if result.is_status:
+                if status_spinner is None:
+                    status_spinner = console.status("[dim]Thinking...[/dim]", spinner="dots")
+                    status_spinner.start()
                 status_spinner.update(f"[dim]{result.status_message}[/dim]")
                 continue
 
+            # Exit spinner before printing stream chunks
+            if status_spinner is not None:
+                status_spinner.stop()
+                status_spinner = None
+
+            if result.is_stream_chunk:
+                streamed_any = True
+                if result.response:
+                    console.print(result.response, end="")
+                if show_reasoning and result.reasoning_content:
+                    console.print(f"[dim]{result.reasoning_content}[/dim]", end="")
+                continue
+
             if result.error:
-                console.print(Panel(str(result.error), title="Error", border_style="red"))
-            elif not result.context_truncated:
-                console.print(result.response, end="")
+                error_msg = str(result.error)
+                if getattr(result, "actionable_hint", None):
+                    error_msg += f"\n\n[bold]Hint:[/bold] {result.actionable_hint}"
+                if getattr(result, "model_used", None):
+                    error_msg += f"\n\n[bold]Model Used:[/bold] {result.model_used}"
+                console.print(Panel(error_msg, title="Error", border_style="red"))
+            elif result.context_truncated:
+                console.print("[dim](context compacted)[/dim]")
+            else:
+                if not streamed_any:
+                    if show_reasoning and result.reasoning_content:
+                        console.print(f"[dim]{result.reasoning_content}[/dim]", end="")
+                    console.print(result.response, end="")
+                else:
+                    console.print()
+
             for tr in result.tool_results:
                 style = "green" if tr.success else "red"
                 title = "Tool Result" if tr.success else "Tool Error"
@@ -179,14 +258,25 @@ async def single_query_mode(query_loop: QueryLoop, query: str) -> None:
 
             if result.metrics:
                 m = result.metrics
-                # Ensure metrics start on a new line (response may have end="")
-                console.print()
+                # Ensure metrics start on a new line
+                if not streamed_any:
+                    console.print()
+                
+                reasoning_part = ""
+                if getattr(m, "reasoning_tokens", 0) > 0:
+                    reasoning_part = f" ({m.reasoning_tokens} reasoning)"
+
                 metrics_str = (
-                    f"{m.total_tokens} tokens | "
+                    f"{m.total_tokens} tokens{reasoning_part} | "
                     f"{m.elapsed_seconds:.1f}s | "
                     f"{m.tokens_per_second:.1f} tok/s"
                 )
+                if getattr(result, "model_used", None) and result.model_used != query_loop.llm.model:
+                    metrics_str += f" (via fallback model: {result.model_used})"
                 console.print(f"[dim]{metrics_str}[/dim]")
+    finally:
+        if status_spinner is not None:
+            status_spinner.stop()
     console.print()
 
 
@@ -200,6 +290,7 @@ def main(
     debug: bool = typer.Option(
         False, "--debug", "-d", help="Print request URL and redacted headers to stderr"
     ),
+    stream: bool = typer.Option(False, "--stream", help="Enable streaming responses"),
 ):
     """Run Vibe Agent in interactive or single-query mode."""
     working_dir = str(Path(working_dir).expanduser().resolve())
@@ -258,6 +349,7 @@ def main(
             config=DEFAULT_CONFIG,
             logger=logger,
             debug=debug,
+            stream=stream,
         )
 
         async def _run_resumed():
@@ -280,6 +372,7 @@ def main(
             config=DEFAULT_CONFIG,
             logger=logger,
             debug=debug,
+            stream=stream,
         ).create()
 
         if ctx.args:
@@ -882,9 +975,11 @@ def import_cmd(
     Uses IBM Docling under the hood to semantically extract and format documents.
     """
     import asyncio
+
     from rich.progress import Progress, SpinnerColumn, TextColumn
-    from vibe.core.query_loop_factory import QueryLoopFactory
+
     from vibe.cli.main import DEFAULT_CONFIG
+    from vibe.core.query_loop_factory import QueryLoopFactory
 
     # Initialize the wiki and extractor via factory
     factory = QueryLoopFactory(
@@ -1058,6 +1153,7 @@ def dashboard_start(
 ):
     """Launch the Vibe Agent trace dashboard (FastAPI + React)."""
     import webbrowser
+
     from vibe.dashboard.server import run_server
 
     url, token = run_server(host=host, port=port, enable_auth=not no_auth)
@@ -1084,6 +1180,7 @@ def dashboard_start(
 
     try:
         import uvicorn
+
         from vibe.dashboard.server import app
 
         uvicorn.run(app, host=host, port=port, log_level="info")
@@ -1432,7 +1529,7 @@ def macro_run(
             fallback_chain=DEFAULT_CONFIG.get_fallback_chain(),
             config=DEFAULT_CONFIG,
         )
-        query_loop = factory.create()
+        _ = factory.create()
 
         # Inject QueryLoop into runner for real execution
         runner.factory = factory
@@ -1453,7 +1550,7 @@ def macro_create(
     description: str = typer.Option("", "--desc", "-d"),
 ):
     """Create a new macro session interactively."""
-    from vibe.preferences.macro_session import MacroSession, MacroStep, MacroSessionRunner
+    from vibe.preferences.macro_session import MacroSession, MacroSessionRunner, MacroStep
 
     console.print("[dim]Enter steps (empty query to finish):[/dim]")
     steps = []

@@ -1,3 +1,0 @@
-2026-05-11 22:09:03,004 [INFO] vibe.session.6653f010: Starting session 6653f010 in /Users/rsong/DevSpace/vibe-agent
-2026-05-11 22:09:09,511 [DEBUG] vibe.session.6653f010: LLM Request: model=qwen3.5-plus url=http://ai-api.applesay.cn/v1/chat/completions messages=1
-2026-05-11 22:09:13,044 [DEBUG] vibe.session.6653f010: LLM Success Response: ...

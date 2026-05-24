@@ -12,7 +12,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, Awaitable, Callable
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +145,6 @@ class SkillOrchestrator:
             OrchestrationResult with all outputs
         """
         result = OrchestrationResult(success=True)
-        task_map = {t.task_id: t for t in tasks}
 
         try:
             waves = self._resolve_dag(tasks)

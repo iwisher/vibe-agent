@@ -33,6 +33,14 @@ class ProviderProfile:
     # Extra headers injected on every request (e.g., OpenRouter routing)
     extra_headers: Dict[str, str] = field(default_factory=dict)
 
+    def __post_init__(self):
+        from vibe.adapters.registry import ADAPTER_REGISTRY
+        if self.adapter_type not in ADAPTER_REGISTRY:
+            raise ValueError(
+                f"Unknown adapter_type '{self.adapter_type}' for provider '{self.name}'. "
+                f"Available: {sorted(ADAPTER_REGISTRY.keys())}"
+            )
+
     def resolve_api_key(self) -> Optional[str]:
         """Resolve API key: explicit value > env var > None."""
         if self.api_key:

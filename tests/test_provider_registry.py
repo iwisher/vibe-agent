@@ -40,9 +40,18 @@ class TestProviderProfile:
         assert isinstance(adapter, AnthropicAdapter)
 
     def test_create_adapter_unknown_raises(self):
-        p = ProviderProfile(name="test", base_url="http://localhost", adapter_type="unknown")
-        with pytest.raises(KeyError, match="Unknown adapter"):
-            p.create_adapter()
+        """Unknown adapter_type is rejected at construction time, not at create_adapter."""
+        with pytest.raises(ValueError, match="Unknown adapter_type 'unknown'"):
+            ProviderProfile(name="test", base_url="http://localhost", adapter_type="unknown")
+
+    def test_adapter_type_validation_on_init(self):
+        """Should reject unknown adapter_type at construction time."""
+        with pytest.raises(ValueError, match="Unknown adapter_type 'openia'"):
+            ProviderProfile(name="test", base_url="http://localhost", adapter_type="openia")
+
+        # Valid adapter types should work
+        p = ProviderProfile(name="test", base_url="http://localhost", adapter_type="openai")
+        assert p.adapter_type == "openai"
 
     def test_create_client(self):
         p = ProviderProfile(

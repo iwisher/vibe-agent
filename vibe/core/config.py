@@ -171,6 +171,8 @@ class LLMConfig(BaseModel):
     max_tokens: Optional[int] = Field(default=None, ge=1)
     timeout: float = Field(default=60.0, ge=1.0)
     fallback_chain: list[str] = Field(default_factory=list)
+    stream: bool = False
+    show_reasoning: bool = False
 
     @field_validator("temperature")
     @classmethod
@@ -189,6 +191,16 @@ class ModelConfig(BaseModel):
     temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     max_tokens: Optional[int] = Field(default=None, ge=1)
     timeout: float = Field(default=60.0, ge=1.0)
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, v: str) -> str:
+        from vibe.adapters.registry import ADAPTER_REGISTRY
+        if v not in ADAPTER_REGISTRY:
+            raise ValueError(
+                f"Unknown provider '{v}'. Available: {sorted(ADAPTER_REGISTRY.keys())}"
+            )
+        return v
 
     @field_validator("temperature")
     @classmethod
@@ -595,6 +607,8 @@ class VibeConfig(BaseSettings):
                 os.environ.get("VIBE_FALLBACK_CHAIN"),
                 llm_raw.get("fallback_chain", []),
             ),
+            stream=os.environ.get("VIBE_STREAM", str(llm_raw.get("stream", False))).lower() == "true",
+            show_reasoning=os.environ.get("VIBE_SHOW_REASONING", str(llm_raw.get("show_reasoning", False))).lower() == "true",
         )
 
         # ---- FallbackConfig ----
@@ -734,6 +748,8 @@ def _default_yaml_dict() -> dict[str, Any]:
             "default_model": "default",
             "base_url": "http://localhost:11434",
             "timeout": 60.0,
+            "stream": False,
+            "show_reasoning": False,
         },
         "fallback": {
             "enabled": True,

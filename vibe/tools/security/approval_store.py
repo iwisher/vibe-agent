@@ -49,7 +49,7 @@ class ApprovalStore:
             return False
         if not tokens:
             return False
-        
+
         base = tokens[0]
         # Handle path-prefixed binaries like /bin/ls
         if "/" in base:
@@ -57,13 +57,13 @@ class ApprovalStore:
 
         if base in SAFE_COMMANDS:
             return True
-        
+
         if base == "git" and len(tokens) > 1:
             return tokens[1] in SAFE_GIT_SUBCOMMANDS
-            
+
         if base == "python" and "-m" in tokens and "json.tool" in tokens:
             return True
-            
+
         return False
 
     def add_scoped_approval(self, base_cmd: str, root_path: str):
@@ -71,7 +71,7 @@ class ApprovalStore:
         abs_root = str(Path(root_path).resolve())
         # Remove existing scoped approval for the same command/path if it exists
         self.approvals = [
-            a for a in self.approvals 
+            a for a in self.approvals
             if not (a.get("type") == "scoped_base_cmd" and a.get("command") == base_cmd and a.get("root_path") == abs_root)
         ]
         self.approvals.append({
@@ -87,7 +87,7 @@ class ApprovalStore:
         """Add an approval for an exact command string."""
         # Remove existing exact approval if it exists
         self.approvals = [
-            a for a in self.approvals 
+            a for a in self.approvals
             if not (a.get("type") == "exact_match" and a.get("command") == command_line)
         ]
         self.approvals.append({
@@ -99,7 +99,7 @@ class ApprovalStore:
 
     def _split_command_chain(self, command_line: str) -> list[dict[str, Any]]:
         """Split a command line into units and redirections.
-        
+
         Returns a list of dicts: {'type': 'cmd'|'redirect', 'content': str}
         """
         try:
@@ -109,7 +109,7 @@ class ApprovalStore:
 
         units = []
         current_unit = []
-        
+
         i = 0
         while i < len(tokens):
             token = tokens[i]
@@ -127,16 +127,16 @@ class ApprovalStore:
             else:
                 current_unit.append(token)
             i += 1
-        
+
         if current_unit:
             units.append({"type": "cmd", "content": " ".join(current_unit)})
-            
+
         return units
 
     def check_approval(self, command_line: str, cwd: str) -> bool:
         """Check if a command is approved in the given context."""
         abs_cwd = str(Path(cwd).resolve())
-        
+
         # 1. Exact match check (fast path)
         for app in self.approvals:
             if app.get("type") == "exact_match" and app.get("command") == command_line:
@@ -159,7 +159,7 @@ class ApprovalStore:
             elif unit["type"] == "redirect":
                 if not self._is_path_in_hierarchy(unit["content"], abs_cwd):
                     return False
-        
+
         return True
 
     def _check_single_unit_approval(self, command: str, abs_cwd: str) -> bool:
@@ -170,7 +170,7 @@ class ApprovalStore:
             return False
         if not tokens:
             return False
-        
+
         base = tokens[0]
         if "/" in base:
             base = Path(base).name
@@ -186,12 +186,12 @@ class ApprovalStore:
                     root = app.get("root_path", "")
                     if self._is_path_in_hierarchy(abs_cwd, root):
                         return True
-        
+
         # Also check for exact matches of this specific unit (less common but possible)
         for app in self.approvals:
             if app.get("type") == "exact_match" and app.get("command") == command:
                 return True
-                
+
         return False
 
     def _is_path_in_hierarchy(self, target_path: str, root_path: str) -> bool:

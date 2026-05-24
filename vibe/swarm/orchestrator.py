@@ -10,8 +10,8 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
+from vibe.swarm.agent import SubAgent, SubAgentConfig, SubAgentRole
 from vibe.swarm.protocol import AgentMessage, MessageBus, MessageType
-from vibe.swarm.agent import AgentLifecycle, SubAgent, SubAgentConfig, SubAgentRole
 from vibe.swarm.shared_wiki import SharedWiki, WikiUpdateRequest
 
 
@@ -298,7 +298,7 @@ class SwarmOrchestrator:
         """Background task: process wiki update requests sequentially."""
         while True:
             try:
-                request = await asyncio.wait_for(
+                _ = await asyncio.wait_for(
                     self._wiki_update_queue.get(),
                     timeout=1.0,
                 )

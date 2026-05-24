@@ -98,17 +98,6 @@ class SessionRecoveryManager:
         if self.session_store is None:
             return
 
-        checkpoint = SessionCheckpoint(
-            session_id=session_id,
-            state=state,
-            messages=messages,
-            plan_result=plan_result,
-            iteration=iteration,
-            feedback_retries=feedback_retries,
-            model=model,
-            metadata=metadata or {},
-        )
-
         try:
             self.session_store.save_checkpoint(
                 session_id=session_id,
@@ -155,7 +144,7 @@ class SessionRecoveryManager:
         created_at = data.get("created_at", checkpoint.created_at)
         if isinstance(created_at, str):
             try:
-                from datetime import datetime, timezone
+                from datetime import datetime
                 created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00")).timestamp()
             except Exception:
                 created_at = checkpoint.created_at

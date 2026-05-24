@@ -149,7 +149,7 @@ class ApprovalPolicyDB:
             unresolved = str(Path(raw_path))
             resolved_match = fnmatch.fnmatch(resolved, path_pattern)
             unresolved_match = fnmatch.fnmatch(unresolved, path_pattern)
-            
+
             # SECURITY: Path traversal check — if the unresolved path contains
             # parent directory references (..), the resolved path MUST also match.
             # For normal paths, either match is sufficient (macOS /private compat).

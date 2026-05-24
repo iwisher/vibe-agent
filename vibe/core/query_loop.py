@@ -1,13 +1,20 @@
 """Query loop implementation for Vibe Agent."""
 
 import asyncio
+import json
 import copy
 import time
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, AsyncIterator, Callable
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable
 
+if TYPE_CHECKING:
+    from vibe.core.query_loop_factory import QueryLoopFactory
+    from vibe.harness.memory.session_store import SessionStore
+
+# Phase: Adaptive iteration budgets
+from vibe.core.adaptive_budget import AdaptiveBudgetAllocator, BudgetConfig, IterationBudget
 from vibe.core.context_compactor import ContextCompactor
 from vibe.core.coordinators import (
     CompactionCoordinator,
@@ -16,6 +23,10 @@ from vibe.core.coordinators import (
     ToolExecutor,
 )
 from vibe.core.error_recovery import ErrorRecovery, RetryPolicy
+
+# Phase: Latency-aware routing
+from vibe.core.latency_tracker import LatencyAwareRouter, LatencyTracker
+from vibe.core.llm_types import ErrorType
 from vibe.core.model_gateway import LLMClient, LLMResponse
 from vibe.harness.constraints import HookPipeline
 from vibe.harness.feedback import FeedbackEngine
@@ -25,12 +36,6 @@ from vibe.harness.planner import PlanRequest, PlanResult
 from vibe.tools._utils import extract_tool_call_arguments, extract_tool_call_name
 from vibe.tools.mcp_bridge import MCPBridge
 from vibe.tools.tool_system import ToolResult, ToolSystem
-
-# Phase: Adaptive iteration budgets
-from vibe.core.adaptive_budget import AdaptiveBudgetAllocator, BudgetConfig, IterationBudget
-
-# Phase: Latency-aware routing
-from vibe.core.latency_tracker import LatencyAwareRouter, LatencyTracker
 
 
 class QueryState(Enum):
@@ -52,6 +57,7 @@ class Metrics:
     total_tokens: int = 0
     elapsed_seconds: float = 0.0
     tokens_per_second: float = 0.0
+    reasoning_tokens: int = 0
 
 
 @dataclass
@@ -73,6 +79,11 @@ class QueryResult:
     state: QueryState = QueryState.IDLE
     is_status: bool = False
     status_message: str = ""
+    actionable_hint: str | None = None
+    model_used: str | None = None
+    reasoning_content: str = ""
+    is_chunk: bool = False
+    is_stream_chunk: bool = False
 
 
 class QueryLoop:
@@ -114,6 +125,7 @@ class QueryLoop:
         skill_maker: Any | None = None,
         # Phase 5.2: Shadow workspace rollback
         shadow_manager: Any | None = None,
+        stream: bool = False,
     ):
         # Allow VibeConfig to override individual parameters
         if config is not None:
@@ -164,6 +176,7 @@ class QueryLoop:
         self.logger = logger
         self.security_config = security_config
         self.checkpoint_manager = checkpoint_manager
+        self.stream = stream
         self.wiki = wiki
         self.pageindex = pageindex
         self.telemetry = telemetry
@@ -266,7 +279,9 @@ class QueryLoop:
     def get_model(self) -> str:
         return self.llm.model
 
-    async def run(self, initial_query: str | None = None) -> AsyncIterator[QueryResult]:
+    async def run(self, initial_query: str | None = None, stream: bool | None = None) -> AsyncIterator[QueryResult]:
+        if stream is None:
+            stream = self.stream
         if self._state == QueryState.STOPPED:
             return
         self._running = True
@@ -397,21 +412,119 @@ class QueryLoop:
                         state=self._state,
                     )
                     start_time = time.time()
-                    response = await self.error_recovery.execute_with_retry(
-                        lambda: self.llm.complete(llm_msgs, tools=tools_for_llm)
-                    )
+                    if stream:
+                        content_acc = []
+                        reasoning_acc = []
+                        tool_calls_acc = []
+                        usage_acc = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+                        model_used = self.llm.model
+                        finish_reason = None
+                        error = None
+                        error_type = ErrorType.NONE
+
+                        async def run_stream():
+                            nonlocal model_used, finish_reason, error, error_type
+                            try:
+                                async for chunk in self.llm.complete_stream(llm_msgs, tools=tools_for_llm):
+                                    if chunk.is_error:
+                                        error = chunk.error
+                                        error_type = chunk.error_type
+                                        yield chunk
+                                        return
+
+                                    model_used = chunk.model_used or model_used
+                                    if chunk.content:
+                                        content_acc.append(chunk.content)
+                                    if chunk.reasoning_content:
+                                        reasoning_acc.append(chunk.reasoning_content)
+                                    if chunk.finish_reason:
+                                        finish_reason = chunk.finish_reason
+                                    if chunk.tool_calls:
+                                        tool_calls_acc.extend(chunk.tool_calls)
+                                    if chunk.usage:
+                                        usage_acc["prompt_tokens"] = max(usage_acc["prompt_tokens"], chunk.usage.get("prompt_tokens", 0))
+                                        usage_acc["completion_tokens"] += chunk.usage.get("completion_tokens", 0)
+                                        usage_acc["total_tokens"] = usage_acc["prompt_tokens"] + usage_acc["completion_tokens"]
+
+                                    yield chunk
+                            except Exception as e:
+                                error = str(e)
+                                error_type = ErrorType.UNKNOWN_ERROR
+                                yield LLMResponse(content="", error=error, error_type=error_type)
+
+                        async for chunk in run_stream():
+                            if chunk.is_error:
+                                break
+                            if chunk.content or chunk.reasoning_content:
+                                yield QueryResult(
+                                    response=chunk.content or "",
+                                    reasoning_content=chunk.reasoning_content or "",
+                                    state=self._state,
+                                    model_used=model_used,
+                                    is_status=False,
+                                    is_chunk=True,
+                                    is_stream_chunk=True,
+                                )
+
+                        if error:
+                            response = LLMResponse(
+                                content="",
+                                error=error,
+                                error_type=error_type,
+                                model_used=model_used,
+                            )
+                        else:
+                            assembled_tool_calls = self._assemble_tool_calls(tool_calls_acc) if tool_calls_acc else None
+                            response = LLMResponse(
+                                content="".join(content_acc),
+                                reasoning_content="".join(reasoning_acc) if reasoning_acc else None,
+                                tool_calls=assembled_tool_calls,
+                                finish_reason=finish_reason,
+                                usage=usage_acc,
+                                model_used=model_used,
+                            )
+                    else:
+                        response = await self.error_recovery.execute_with_retry(
+                            lambda: self.llm.complete(llm_msgs, tools=tools_for_llm)
+                        )
                     elapsed = time.time() - start_time
                     metrics = self._calc_metrics(response, elapsed)
 
                     if response.is_error:
                         self._set_state(QueryState.ERROR)
+                        failed_model = getattr(response, "model_used", None) or self.llm.model
+                        failed_base_url = self.llm.base_url
+                        if getattr(self.llm, "registry", None) and failed_model:
+                            profile = self.llm.registry.get(failed_model)
+                            if profile:
+                                failed_base_url = profile.base_url
+
+                        # Yield status message showing which model failed
+                        yield QueryResult(
+                            is_status=True,
+                            status_message=f"Connection failed for model '{failed_model}' at {failed_base_url}",
+                            state=self._state,
+                        )
+
+                        actionable_hint = getattr(response, "actionable_hint", None)
+
                         yield QueryResult(
                             response="",
                             error=Exception(response.error),
+                            actionable_hint=actionable_hint,
+                            model_used=failed_model,
                             metrics=metrics,
                             state=self._state,
                         )
                         break
+
+                    model_used = getattr(response, "model_used", None)
+                    if model_used and model_used != self.llm.model:
+                        yield QueryResult(
+                            is_status=True,
+                            status_message=f"Responded via fallback model: {model_used}",
+                            state=self._state,
+                        )
 
                     if not response.content and not response.tool_calls:
                         self._set_state(QueryState.ERROR)
@@ -439,7 +552,7 @@ class QueryLoop:
                         if sig.name != "CONTINUE":
                             self._iteration_budget.add_signal(sig)
                             if self.logger:
-                                self.logger.info(f"Adaptive budget: stagnation detected")
+                                self.logger.info("Adaptive budget: stagnation detected")
                             break
 
                         # Check token pressure
@@ -449,7 +562,7 @@ class QueryLoop:
                         if sig.name != "CONTINUE":
                             self._iteration_budget.add_signal(sig)
                             if self.logger:
-                                self.logger.info(f"Adaptive budget: token pressure")
+                                self.logger.info("Adaptive budget: token pressure")
                             break
 
                     if response.tool_calls:
@@ -461,12 +574,17 @@ class QueryLoop:
                             status_message=f"Executing tools: {tool_names}...",
                             state=QueryState.TOOL_EXECUTION,
                         )
-                        yield await self._process_tool_response(response, metrics)
+                        res = await self._process_tool_response(response, metrics)
+                        res.model_used = getattr(response, "model_used", None)
+                        res.actionable_hint = getattr(response, "actionable_hint", None)
+                        yield res
                     else:
                         should_continue, result = await self._process_content_response(
                             response, metrics
                         )
                         if result:
+                            result.model_used = getattr(response, "model_used", None)
+                            result.actionable_hint = getattr(response, "actionable_hint", None)
                             yield result
                         if not should_continue:
                             break
@@ -761,6 +879,7 @@ class QueryLoop:
         self._set_state(QueryState.SYNTHESIZING)
         return QueryResult(
             response=response.content or "",
+            reasoning_content=getattr(response, "reasoning_content", None) or "",
             tool_results=tool_results,
             metrics=metrics,
             state=self._state,
@@ -780,12 +899,16 @@ class QueryLoop:
             self._set_state(QueryState.PROCESSING)
             return True, QueryResult(
                 response=response.content or "",
+                reasoning_content=getattr(response, "reasoning_content", None) or "",
                 metrics=metrics,
                 state=QueryState.PROCESSING,
             )
         self._set_state(QueryState.COMPLETED)
         return False, QueryResult(
-            response=response.content or "", metrics=metrics, state=self._state
+            response=response.content or "",
+            reasoning_content=getattr(response, "reasoning_content", None) or "",
+            metrics=metrics,
+            state=self._state,
         )
 
     async def _execute_tool_calls(self, tool_calls: list) -> list[ToolResult]:
@@ -808,6 +931,16 @@ class QueryLoop:
         pt = usage.get("prompt_tokens", 0)
         ct = usage.get("completion_tokens", 0)
         tt = usage.get("total_tokens", pt + ct)
+        # Robustly extract reasoning tokens if available
+        rt = 0
+        if "reasoning_tokens" in usage:
+            rt = usage["reasoning_tokens"]
+        elif (
+            "completion_tokens_details" in usage
+            and isinstance(usage["completion_tokens_details"], dict)
+        ):
+            rt = usage["completion_tokens_details"].get("reasoning_tokens", 0)
+
         tps = ct / elapsed if elapsed > 0 else 0
         return Metrics(
             prompt_tokens=pt,
@@ -815,7 +948,37 @@ class QueryLoop:
             total_tokens=tt,
             elapsed_seconds=elapsed,
             tokens_per_second=tps,
+            reasoning_tokens=rt,
         )
+
+    def _assemble_tool_calls(self, tool_calls_list: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
+        """Assembles stream tool call chunks into standardized list of tool calls."""
+        assembled = {}
+        for tc in tool_calls_list:
+            idx = tc.get("index")
+            if idx is None:
+                continue
+            if idx not in assembled:
+                assembled[idx] = {
+                    "id": tc.get("id"),
+                    "type": "function",
+                    "function": {
+                        "name": tc.get("function", {}).get("name") or "",
+                        "arguments": tc.get("function", {}).get("arguments") or "",
+                    }
+                }
+            else:
+                tc_id = tc.get("id")
+                if tc_id:
+                    assembled[idx]["id"] = tc_id
+                name = tc.get("function", {}).get("name")
+                if name:
+                    assembled[idx]["function"]["name"] = name
+                args = tc.get("function", {}).get("arguments")
+                if args:
+                    assembled[idx]["function"]["arguments"] += args
+        
+        return list(assembled.values()) if assembled else None
 
     # ------------------------------------------------------------------
     # Phase 1b: Wiki auto-extraction

@@ -3,7 +3,7 @@ import os
 import sys
 import time
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
 import httpx
 
@@ -63,6 +63,12 @@ class CircuitBreaker:
         state.last_failure_time = time.time()
         if state.consecutive_failures >= self.threshold:
             state.open = True
+
+
+class StreamExecutionError(Exception):
+    """Raised when a streaming request fails after partial content has been delivered."""
+
+    pass
 
 
 class LLMClient:
@@ -130,6 +136,7 @@ class LLMClient:
         # Adapter: default to OpenAI-compatible for backward compatibility
         if adapter is None:
             from vibe.adapters.openai import OpenAIAdapter
+
             adapter = OpenAIAdapter()
         self.adapter = adapter
 
@@ -143,9 +150,7 @@ class LLMClient:
     ) -> LLMResponse:
         """Sends a completion request with built-in retry and optional model fallback."""
 
-        models_to_try = [self.model] + [
-            m for m in self.fallback_chain if m != self.model
-        ]
+        models_to_try = [self.model] + [m for m in self.fallback_chain if m != self.model]
 
         last_error: Optional[LLMResponse] = None
 
@@ -189,9 +194,9 @@ class LLMClient:
                 adapter=adapter,
                 extra_headers=extra_headers,
             )
+            result.model_used = attempt_model
             if not result.is_error:
                 self.circuit_breaker.record_success(attempt_model)
-                result.model_used = attempt_model
                 return result
 
             self.circuit_breaker.record_failure(attempt_model)
@@ -380,8 +385,7 @@ class LLMClient:
             detail = f"[TIMEOUT] {e}"
             if self.debug:
                 print(
-                    f"[vibe-debug] ERROR model={model} error_type=TIMEOUT "
-                    f"detail={detail}",
+                    f"[vibe-debug] ERROR model={model} error_type=TIMEOUT " f"detail={detail}",
                     file=sys.stderr,
                 )
             result = LLMResponse(
@@ -397,8 +401,7 @@ class LLMClient:
             detail = f"[NETWORK] {e}"
             if self.debug:
                 print(
-                    f"[vibe-debug] ERROR model={model} error_type=NETWORK "
-                    f"detail={detail}",
+                    f"[vibe-debug] ERROR model={model} error_type=NETWORK " f"detail={detail}",
                     file=sys.stderr,
                 )
             result = LLMResponse(
@@ -414,8 +417,7 @@ class LLMClient:
             detail = f"[{type(e).__name__}] {e}"
             if self.debug:
                 print(
-                    f"[vibe-debug] ERROR model={model} error_type=UNKNOWN "
-                    f"detail={detail}",
+                    f"[vibe-debug] ERROR model={model} error_type=UNKNOWN " f"detail={detail}",
                     file=sys.stderr,
                 )
             result = LLMResponse(
@@ -460,7 +462,9 @@ class LLMClient:
         )
 
         if response.is_error:
-            raise RuntimeError(f"LLM failed to provide structured output: {response.error}. Hint: {response.actionable_hint}")
+            raise RuntimeError(
+                f"LLM failed to provide structured output: {response.error}. Hint: {response.actionable_hint}"
+            )
 
         # Basic cleanup of markdown markers if the LLM ignores instructions
         content = response.content.strip()
@@ -476,6 +480,231 @@ class LLMClient:
             return json.loads(content)
         except json.JSONDecodeError as e:
             raise RuntimeError(f"LLM output was not valid JSON: {content}") from e
+
+    async def complete_stream(
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: str = "auto",
+    ) -> AsyncIterator[LLMResponse]:
+        """Stream completion chunks with fallback support.
+
+        Pre-stream fallback: if connection fails before first chunk, try next model.
+        Mid-stream lock: once first chunk is yielded, model is locked. Mid-stream
+        failures fail loud with StreamExecutionError.
+
+        Yields LLMResponse chunks with partial content/reasoning.
+        On fatal error, yields a single error LLMResponse and stops.
+        """
+        models_to_try = [self.model] + [m for m in self.fallback_chain if m != self.model]
+
+        last_error: Optional[LLMResponse] = None
+
+        for attempt_model in models_to_try:
+            # Circuit breaker: skip models that are continuously failing
+            if self.circuit_breaker.is_open(attempt_model):
+                if self.debug:
+                    print(
+                        f"[vibe-debug] SKIP model={attempt_model} reason=circuit_breaker_open",
+                        file=sys.stderr,
+                    )
+                continue
+
+            # Resolve connection details for this model attempt
+            base_url = self.base_url
+            api_key = self.api_key
+            adapter = self.adapter
+            extra_headers = {}
+            model_id = attempt_model
+
+            if self.registry:
+                profile = self.registry.get(attempt_model)
+                if profile:
+                    base_url = profile.base_url
+                    api_key = profile.resolve_api_key()
+                    model_id = profile.model_id
+                    extra_headers = profile.extra_headers
+                    from vibe.adapters.registry import get_adapter
+
+                    adapter = get_adapter(profile.adapter_type)()
+
+            url, headers, payload = adapter.build_stream_request(
+                base_url=base_url,
+                model=model_id,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                tools=tools,
+                tool_choice=tool_choice,
+                api_key=api_key,
+            )
+
+            # Merge extra headers from provider profile
+            if extra_headers:
+                headers.update(extra_headers)
+
+            if self.debug:
+                safe_headers = {}
+                for k, v in headers.items():
+                    k_lower = k.lower()
+                    if any(p in k_lower for p in ["auth", "key", "token", "secret"]):
+                        val = str(v)
+                        if len(val) <= 15:
+                            safe_headers[k] = "***"
+                        else:
+                            safe_headers[k] = val[:12] + "..." + val[-4:]
+                    else:
+                        safe_headers[k] = v
+                print(f"[vibe-debug] POST stream {url}", file=sys.stderr)
+                print(f"[vibe-debug] headers={safe_headers}", file=sys.stderr)
+                print(
+                    f"[vibe-debug] model={payload.get('model')} "
+                    f"messages={len(payload.get('messages', []))}",
+                    file=sys.stderr,
+                )
+
+            if self.logger:
+                self.logger.debug(
+                    f"LLM Stream Request: model={model_id} url={url} messages={len(messages)}"
+                )
+
+            if self.on_request:
+                self.on_request(payload, model_id)
+
+            yielded_any = False
+            try:
+                async with self.client.stream(
+                    "POST", url, json=payload, headers=headers
+                ) as response:
+                    response.raise_for_status()
+
+                    async for line in response.aiter_lines():
+                        if not line.strip():
+                            continue
+                        if not line.startswith("data: "):
+                            continue
+                        data_str = line[len("data: ") :].strip()
+                        if data_str == "[DONE]":
+                            break
+
+                        try:
+                            chunk_json = json.loads(data_str)
+                        except json.JSONDecodeError:
+                            continue
+
+                        chunk_res = adapter.parse_stream_chunk(chunk_json)
+                        if chunk_res is None:
+                            continue
+
+                        chunk_res.model_used = attempt_model
+
+                        if not yielded_any:
+                            self.circuit_breaker.record_success(attempt_model)
+                            yielded_any = True
+
+                        yield chunk_res
+
+                # Successful streaming finished, exit complete_stream
+                if yielded_any:
+                    return
+
+            except Exception as e:
+                if yielded_any:
+                    # Mid-stream failure: fail loud
+                    if self.debug:
+                        print(
+                            f"[vibe-debug] MID-STREAM FAILURE model={attempt_model} error={str(e)}",
+                            file=sys.stderr,
+                        )
+                    raise StreamExecutionError(
+                        f"Mid-stream failure for {attempt_model}: {str(e)}"
+                    ) from e
+                else:
+                    # Pre-stream failure: record failure and try fallback if configured
+                    self.circuit_breaker.record_failure(attempt_model)
+
+                    if self.debug:
+                        print(
+                            f"[vibe-debug] PRE-STREAM FAIL model={attempt_model} error={str(e)}",
+                            file=sys.stderr,
+                        )
+
+                    error_type = ErrorType.UNKNOWN_ERROR
+                    error_msg = str(e)
+                    if isinstance(e, httpx.HTTPStatusError):
+                        status = e.response.status_code
+                        error_type = ErrorType.HTTP_ERROR
+                        if status in (401, 403):
+                            error_type = ErrorType.AUTHENTICATION_ERROR
+                        elif status == 429:
+                            error_type = ErrorType.RATE_LIMIT_ERROR
+                        elif status >= 500:
+                            error_type = ErrorType.SERVER_ERROR
+
+                        try:
+                            body = e.response.text
+                            if body:
+                                parsed = json.loads(body)
+                                if isinstance(parsed, dict):
+                                    err_obj = parsed.get("error", parsed)
+                                    if isinstance(err_obj, dict):
+                                        msg = err_obj.get("message", "")
+                                        err_type = err_obj.get("type", "")
+                                        if msg:
+                                            error_msg = f"[{status}] {msg}"
+                                            if err_type:
+                                                error_msg += f" (type: {err_type})"
+                                    else:
+                                        error_msg = f"[{status}] {err_obj}"
+                        except Exception:
+                            pass
+                    elif isinstance(e, httpx.TimeoutException):
+                        error_type = ErrorType.TIMEOUT_ERROR
+                    elif isinstance(e, (httpx.ConnectError, httpx.ConnectTimeout)):
+                        error_type = ErrorType.CONNECTION_ERROR
+                    elif isinstance(e, httpx.NetworkError):
+                        error_type = ErrorType.NETWORK_ERROR
+
+                    last_error = LLMResponse(
+                        content="",
+                        error=error_msg,
+                        error_type=error_type,
+                        model_used=attempt_model,
+                    )
+
+                    # If auto_fallback is enabled and the error is recoverable, continue
+                    if (
+                        self.auto_fallback
+                        and error_type
+                        in (
+                            ErrorType.SERVER_ERROR,
+                            ErrorType.HTTP_ERROR,
+                            ErrorType.MODEL_UNAVAILABLE,
+                            ErrorType.AUTHENTICATION_ERROR,
+                            ErrorType.NETWORK_ERROR,
+                            ErrorType.TIMEOUT_ERROR,
+                            ErrorType.CONNECTION_ERROR,
+                        )
+                        and error_type != ErrorType.RATE_LIMIT_ERROR
+                    ):
+                        continue
+                    else:
+                        yield last_error
+                        return
+
+        # All models exhausted
+        if last_error:
+            last_error.error = f"All models exhausted. Last error: {last_error.error}"
+            last_error.error_type = ErrorType.MODEL_UNAVAILABLE
+            yield last_error
+        else:
+            yield LLMResponse(
+                content="",
+                error="No models available in fallback chain",
+                error_type=ErrorType.MODEL_UNAVAILABLE,
+            )
 
     async def close(self):
         """Closes the underlying HTTP client if we created it."""

@@ -60,7 +60,7 @@ class RLMTrainer:
 
         count = 0
         lines = []
-        
+
         # 1. Export Wiki pages as factual QA
         try:
             pages = await wiki.list_pages(status="verified")

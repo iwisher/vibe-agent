@@ -1,8 +1,0 @@
-2026-05-06 21:18:00,744 [INFO] vibe.session.a1a65f3a: Starting session a1a65f3a in /Users/rsong/DevSpace/vibe-agent
-2026-05-06 21:34:31,222 [DEBUG] vibe.session.a1a65f3a: LLM Request: model=qwen3.5-plus url=http://ai-api.applesay.cn/v1/chat/completions messages=1
-2026-05-06 21:35:02,527 [DEBUG] vibe.session.a1a65f3a: LLM Success Response: To connect your applications or interfaces to a local Ollama instance, you'll typically use Ollama's **OpenAI-compatible API endpoint**. Here's everything you need:
-
-### 🔑 Base Configuration
-- **API B...
-2026-05-06 21:40:03,822 [DEBUG] vibe.session.a1a65f3a: LLM Request: model=qwen3.5-plus url=http://ai-api.applesay.cn/v1/chat/completions messages=3
-2026-05-06 21:40:32,915 [DEBUG] vibe.session.a1a65f3a: LLM Success Response: I don't have a built-in web interface myself—I'm an AI model accessed via API. But if you're looking for a **web UI to chat with your local Ollama models**, there are excellent free, open-source optio...

@@ -71,7 +71,6 @@ class ToolExecutor:
     async def execute(self, tool_calls: list, session_id: str | None = None) -> list[ToolResult]:
         """Execute a batch of tool calls with hooks, fallback, and optional shadow backup."""
         # Phase 5.2: Auto-create shadow before write-heavy operations
-        shadow_created = False
         if (
             self.shadow_manager is not None
             and session_id
@@ -91,7 +90,6 @@ class ToolExecutor:
                 if self.shadow_manager.is_write_heavy_operation(call_name or "", args):
                     self.shadow_manager.create_shadow(session_id)
                     self._shadow_created = True
-                    shadow_created = True
                     break
 
         results = []
@@ -395,7 +393,7 @@ class SecurityCoordinator:
 
         # Detect if shell execution is needed
         has_shell = any(c in command for c in "|&;><$`")
-        
+
         result = self._human_approver.request_approval(
             command=command,
             description=f"{tool_name} tool call",
@@ -405,7 +403,7 @@ class SecurityCoordinator:
             if has_shell:
                 tool_args["use_shell"] = True
             return SecurityCheckResult(allowed=True)
-        
+
         return SecurityCheckResult(
             allowed=False,
             reason=result.reason or "Approval denied",

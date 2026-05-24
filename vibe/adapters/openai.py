@@ -56,6 +56,31 @@ class OpenAIAdapter(BaseLLMAdapter):
             tool_calls=message.get("tool_calls"),
         )
 
+    def parse_stream_chunk(self, chunk_json: Dict[str, Any]) -> Optional[LLMResponse]:
+        if not chunk_json:
+            return None
+        if chunk_json == "[DONE]":
+            return None
+        if isinstance(chunk_json, dict) and chunk_json.get("done") is True:
+            return None
+
+        choices = chunk_json.get("choices")
+        if not choices:
+            return None
+
+        choice = choices[0]
+        delta = choice.get("delta", {})
+
+        return LLMResponse(
+            content=delta.get("content") or "",
+            reasoning_content=delta.get("reasoning_content") or "",
+            usage=chunk_json.get(
+                "usage", {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+            ),
+            finish_reason=choice.get("finish_reason"),
+            tool_calls=delta.get("tool_calls"),
+        )
+
     def health_check_endpoints(self, base_url: str, model_id: str) -> List[Tuple[str, str]]:
         return [
             ("GET", f"{base_url.rstrip('/')}/v1/models"),

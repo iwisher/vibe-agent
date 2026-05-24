@@ -3,8 +3,8 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from vibe.memory.ingestion.parser import DocumentParser
 from vibe.memory.ingestion.chunker import SemanticChunker
+from vibe.memory.ingestion.parser import DocumentParser
 
 logger = logging.getLogger(__name__)
 
@@ -22,9 +22,9 @@ class IngestionWorker:
         async with self.semaphore:
             # We don't have a direct "add_chunk" in KnowledgeExtractor, but we can
             # simulate passing it as raw text or let the extractor treat it as a task.
-            # In Vibe Agent, KnowledgeExtractor typically extracts from raw text 
-            # and uses update_page to save it. 
-            
+            # In Vibe Agent, KnowledgeExtractor typically extracts from raw text
+            # and uses update_page to save it.
+
             # Since extractor has an `extract_from_text` method (or similar)
             if hasattr(self.extractor, "extract_from_text"):
                 pages_created = await self.extractor.extract_from_text(
@@ -64,7 +64,7 @@ class IngestionWorker:
     async def ingest_file(self, file_path: str | Path) -> int:
         """Ingest a single file, chunk it, and save to memory. Returns number of pages created."""
         path = Path(file_path)
-        
+
         # 1. Parse using Docling (or raw if MD)
         logger.info(f"Starting ingestion for {path.name}...")
         try:

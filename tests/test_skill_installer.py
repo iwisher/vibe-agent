@@ -70,10 +70,16 @@ def test_install_git_clone_timeout():
     install_dir = tempfile.mkdtemp()
     installer = SkillInstaller(skills_dir=install_dir, approval_gate=AutoApproveGate())
 
-    async def _test():
-        return await installer.install_from_git("http://192.0.2.1/nonexistent.git")
+    # Mock subprocess to avoid real 60s TCP timeout
+    from unittest.mock import Mock, patch
 
-    result = asyncio.run(_test())
+    fake_proc = Mock()
+    fake_proc.returncode = 1
+
+    with patch("vibe.harness.skills.installer.asyncio.create_subprocess_exec", return_value=fake_proc):
+        with patch("vibe.harness.skills.installer.asyncio.wait_for", side_effect=asyncio.TimeoutError):
+            result = asyncio.run(installer.install_from_git("http://192.0.2.1/nonexistent.git"))
+
     assert not result.success
     assert "timed out" in result.message.lower()
 
