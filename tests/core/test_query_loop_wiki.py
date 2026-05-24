@@ -26,6 +26,9 @@ class FakeLLMResponse:
     error: str = ""
     tool_calls: list | None = None
     usage: dict | None = None
+    finish_reason: str | None = None
+    model_used: str | None = None
+    reasoning_content: str | None = None
 
 
 @pytest.fixture
@@ -33,6 +36,14 @@ def fake_llm():
     client = MagicMock()
     client.complete = AsyncMock(return_value=FakeLLMResponse(content="Done"))
     client.model = "test-model"
+
+    async def _stream(*args, **kwargs):
+        yield FakeLLMResponse(content="Done", finish_reason="stop")
+
+    # Use a MagicMock with a side_effect so query_loop's Mock detection works
+    stream_mock = MagicMock()
+    stream_mock.side_effect = _stream
+    client.complete_stream = stream_mock
     return client
 
 
@@ -69,10 +80,11 @@ def fake_telemetry():
 @pytest.fixture
 def fake_config():
     cfg = MagicMock()
-    cfg.wiki.auto_extract = True
-    cfg.wiki.novelty_threshold = 0.5
-    cfg.wiki.confidence_threshold = 0.8
-    cfg.rlm.enabled = False
+    # QueryLoop reads _config_memory from config.tripartite, not config.wiki
+    cfg.tripartite.wiki.auto_extract = True
+    cfg.tripartite.wiki.novelty_threshold = 0.5
+    cfg.tripartite.wiki.confidence_threshold = 0.8
+    cfg.tripartite.rlm.enabled = False
     cfg.query_loop = None
     cfg.retry = None
     return cfg
@@ -211,8 +223,8 @@ async def test_close_cancels_pending_extraction_task(query_loop, fake_config):
 
 @pytest.mark.asyncio
 async def test_close_cancels_pending_rlm_task(fake_llm, fake_tools, fake_config):
-    fake_config.wiki.auto_extract = False
-    fake_config.rlm.enabled = True
+    fake_config.tripartite.wiki.auto_extract = False
+    fake_config.tripartite.rlm.enabled = True
     fake_telemetry = MagicMock()
     fake_telemetry.record_session = MagicMock()
     ql = QueryLoop(
