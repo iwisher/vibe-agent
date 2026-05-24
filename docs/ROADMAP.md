@@ -65,17 +65,21 @@ This document tracks the progress of Vibe Agent, from its core foundation to fut
 - [x] `QueryLoopFactory` wires FlashLLM, PageIndex, and TelemetryCollector at startup.
 - [x] `FlashModelConfig` Pydantic model added to `WikiConfig` for proper config validation.
 - [x] **Phase 3 Stabilization**: Resolved CLI static type checking (`mypy`), offloaded RLM dataset JSONL generation to background threads (`asyncio.to_thread`) to preserve event loop responsiveness, and fully stabilized CI static analysis gates.
+- [x] **Phase 2f: Hardening & Refinements**:
+  - [x] **Factory-per-case EvalRunner**: Fresh QueryLoop per eval case to prevent state bleed between runs.
+  - [x] **Structured FeedbackEngine**: `FeedbackStatus` enum to distinguish failure modes from neutral scores.
+  - [x] **Safe SkillExecutor**: Env-var passing as primary method, `string.Template` as fallback.
+  - [x] **Real LLM Summarization**: Wire `ContextCompactor` to loop's LLM client with efficiency metrics.
+  - [x] **Security Expansion**: 5-layer defense model + Pydantic config validation.
+  - [x] **Wiki Compiler**: Nightly trace compilation with `pending/` human review mechanism.
 
 ---
 
-## 🏗️ In Progress (Phase 2 Hardening)
+## 🏗️ In Progress (Phase 4.1 RLM Training Pipeline)
 
-- [x] **Factory-per-case EvalRunner**: Fresh QueryLoop per eval case to prevent state bleed between runs.
-- [x] **Structured FeedbackEngine**: `FeedbackStatus` enum to distinguish failure modes from neutral scores.
-- [x] **Safe SkillExecutor**: Env-var passing as primary method, `string.Template` as fallback.
-- [x] **Real LLM Summarization**: Wire `ContextCompactor` to loop's LLM client with efficiency metrics.
-- [x] **Security Expansion**: 5-layer defense model + Pydantic config validation.
-- [x] **Wiki Compiler**: Nightly trace compilation with `pending/` human review mechanism.
+- [ ] **RLM Fine-Tuning Pipeline**: Integrate local quantized training (via `unsloth` or `llama.cpp`) triggered by `RLMThresholdAnalyzer`.
+- [ ] **Weight Management**: Implement persistence of fine-tuned weights to `rlm_model_path`.
+- [ ] **A/B Evaluation**: Run A/B testing on the eval suite to compare fine-tuned models against base models.
 
 ---
 
@@ -326,4 +330,4 @@ CLIOnly            CLIOnly             CLI + React Dashboard
 
 ---
 
-*Last updated: 2026-05-23 | Test suite: **1334 tests passing***
+*Last updated: 2026-05-23 | Test suite: **1424 tests passing***

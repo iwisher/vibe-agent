@@ -7,11 +7,11 @@ All notable changes to Vibe Agent will be documented in this file.
 ## [0.4.0-alpha] — 2026-05-23
 
 ### Added — Real-Time Response Streaming & Reasoning (Phase 5.4 GA)
-- **Streaming Response Generator**: Upgraded `QueryLoop` state machine to support token-by-token response streaming (`--stream` CLI flag) with real-time CLI terminal rendering and WebSocket propagation for dashboard support.
+- **Streaming Response Generator**: Upgraded `QueryLoop` state machine to support token-by-token response streaming (`--stream` CLI flag) with real-time CLI terminal rendering.
 - **Thinking/Reasoning Extraction**: Native extraction and separate rendering of internal model reasoning traces/thinking tokens (e.g. Gemini 3.5 / deep-thinking models).
 - **Model Gateway Streaming API**: Added `LLMClient.complete_stream()` yielding chunks containing content or reasoning traces, unified across OpenAI and Anthropic adapters.
 - **Adapter Streaming Support**: Added `build_stream_request()` and `parse_stream_chunk()` in `ModelAdapter` interface for mapping streaming Server-Sent Events payloads.
-- **Reasoning Telemetry & Metrics**: Added dedicated `reasoning_tokens` and `completion_tokens` metric classification, tracking, and costing in `CostTracker` and telemetry databases.
+- **Reasoning Telemetry & Metrics**: Added dedicated reasoning content extraction and response metric tracking in telemetry databases.
 - **Configuration Fields**: Added `stream` and `show_reasoning` configuration fields with `VIBE_STREAM` and `VIBE_SHOW_REASONING` environment variable overrides.
 
 ---

@@ -14,10 +14,10 @@ For a quick start, run `python -m vibe` once — it will auto-create `~/.vibe/co
 
 | Section | Key Fields | Env Override |
 |---------|-----------|-------------|
-| `llm` | `default_model`, `base_url`, `timeout`, `stream`, `show_reasoning` | `VIBE_MODEL`, `VIBE_BASE_URL`, `VIBE_STREAM`, `VIBE_SHOW_REASONING` |
+| `llm` | `default_model`, `base_url`, `timeout`, `stream`, `show_reasoning`, `fallback_chain` | `VIBE_MODEL`, `VIBE_BASE_URL`, `VIBE_STREAM`, `VIBE_SHOW_REASONING`, `VIBE_FALLBACK_CHAIN` |
 | `providers` | `base_url`, `adapter`, `api_key_env_var` | — |
 | `models` | `provider`, `model_id` | — |
-| `fallback` | `enabled`, `chain`, `circuit_breaker_*` | `VIBE_FALLBACK_ENABLED` |
+| `fallback` | `enabled`, `chain`, `circuit_breaker_*` | — *(VIBE_FALLBACK_CHAIN maps to chain)* |
 | `compactor` | `max_tokens` | `VIBE_COMPACTOR_MAX_TOKENS` |
 | `query_loop` | `max_iterations`, `max_context_tokens` | `VIBE_MAX_ITERATIONS` |
 | `security` | `approval_mode` | `VIBE_APPROVAL_MODE` |
@@ -126,7 +126,7 @@ fallback:
 
 **How circuit breakers work:** After `circuit_breaker_threshold` consecutive errors on a model, it enters a 60-second cooldown. The system tries the next model in the chain. After cooldown, one probe request is sent; if it succeeds, the breaker closes.
 
-**Environment overrides:** `VIBE_FALLBACK_ENABLED`, `VIBE_FALLBACK_CHAIN` (comma-separated), `VIBE_FALLBACK_RETRIES`, `VIBE_CB_THRESHOLD`, `VIBE_CB_COOLDOWN`
+**Environment overrides:** `VIBE_FALLBACK_CHAIN` (comma-separated), `VIBE_CB_THRESHOLD`, `VIBE_CB_COOLDOWN` *(Note: `VIBE_FALLBACK_ENABLED` is not currently implemented in environment variables)*
 
 ---
 

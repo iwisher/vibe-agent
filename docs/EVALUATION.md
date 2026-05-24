@@ -30,9 +30,8 @@ timeout_seconds: 30.0
 
 ## 2. Key Components
 
-- **`vibe/evals/runner.py`**: Core execution engine for individual eval cases.
-  - **Current behavior:** Reuses a single `QueryLoop` instance across cases; calls `clear_history()` between cases.
-  - **Planned fix:** Factory-per-case isolation to prevent state bleed.
+- **`vibe/evals/runner.py` & `vibe/evals/factory_runner.py`**: Core execution engines for individual eval cases.
+  - **Behavior:** Implements factory-per-case isolation (`FactoryEvalRunner` via `QueryLoopFactory`) to prevent state bleed, creating a fresh `QueryLoop` per eval case.
 - **`vibe/evals/multi_model_runner.py`**: Runs the suite against multiple models and produces comparative `Scorecard` objects with per-tag breakdowns. Correctly creates a fresh `QueryLoop` per model.
 - **`vibe/evals/soak_test.py`**: Stress tests over long durations (default 60 min) with degradation detection (compares first 20% vs last 20% latencies). Correctly creates a fresh `QueryLoop` per iteration.
 - **`vibe/evals/observability.py`**: Collects spans, counters, gauges, and histograms during eval runs. Exports to JSON.
@@ -41,19 +40,26 @@ timeout_seconds: 30.0
 
 ## 3. Running Evals
 
+Evals are run using the unified `vibe eval` CLI app.
+
 ### End-to-End Suite
 ```bash
-python run_e2e_evals.py
+vibe eval run
 ```
 
-### Benchmarking Multiple Models
+### Filter by Subsystem Tag
 ```bash
-python run_e2e_evals.py benchmark --models gpt-4,claude-3-sonnet
+vibe eval run --tag subsystem=memory
 ```
 
 ### Soak Test
 ```bash
-python run_e2e_evals.py soak --model primary-brain --duration 60
+vibe eval soak --duration 30 --cpm 6
+```
+
+### Update Baseline Scorecard
+```bash
+vibe eval update-baseline
 ```
 
 ---

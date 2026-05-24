@@ -353,9 +353,14 @@ if request.wiki_hint:
 
 ### 4.6 Hybrid Pre-Filter (BM25 + Optional Embeddings)
 
-To avoid loading massive markdown files into the RLM when not needed, implement a lightweight SQLite pre-filter in the **shared** memory database:
+To avoid loading massive markdown files into the RLM when not needed, a lightweight SQLite pre-filter can be implemented.
 
-**Shared database:** `~/.vibe/memory/memory.db` (replaces separate `traces.db`, `evals.db`, `wiki_chunks.db`)
+> [!NOTE]
+> The originally planned consolidated database `memory.db` is deferred. Legacy separate databases (`traces.db`, `eval_store` database, etc.) continue to exist in their respective directories, while tripartite memory uses local filesystem Markdown and memory/PageIndex indexes.
+
+If consolidated in the future, the shared database format would look like:
+
+**Shared database (Planned):** `~/.vibe/memory/memory.db` (replaces separate `traces.db`, `evals.db`, `wiki_chunks.db`)
 
 ```sql
 -- Single database, multiple tables
@@ -577,11 +582,11 @@ User runs: vibe memory save
 
 ### 7.3 Phase 2: RLM Engine (Deferred)
 
-**Files to create:**
-- `vibe/memory/rlm_engine.py` — `RLMEngine` + `RLMInterpreter`
-- `vibe/memory/wiki_chunks.py` — FTS5 chunk store in shared `memory.db`
+**Proposed Files (Planned/Deferred):**
+- `vibe/memory/rlm_engine.py` — `RLMEngine` + `RLMInterpreter` (deferred)
+- `vibe/memory/wiki_chunks.py` — FTS5 chunk store in a shared database (deferred)
 
-**Files to modify:**
+**Proposed Files to Modify (Planned/Deferred):**
 - `vibe/core/query_loop.py` — Add RLM delegation for content >100K chars
 - `vibe/core/query_loop_factory.py` — Wire `RLMEngine`
 
@@ -675,7 +680,7 @@ User runs: vibe memory save
 - [ ] Environment override: `VIBE_MEMORY__TRIPARTITE_ENABLED=true`
 - [ ] **v4:** Config validation logs a warning if `tripartite_enabled` is set but `wiki` or `pageindex` sub-config is misspelled
 
-### Goal 7: Shared Memory Database (Phase 1a)
+### 7.3 Goal 7: Shared Memory Database (Phase 1a - Deferred/Planned)
 **Objective:** Consolidate SQLite databases with schema versioning.
 
 **Acceptance Criteria:**
@@ -700,14 +705,14 @@ User runs: vibe memory save
 - [ ] **No `eval()`, `exec()`, or arbitrary Python execution**
 - [ ] Unit tests: accuracy on standardized 500K-char benchmark document
 
-### Goal 9: FlashLLMClient Contract (Phase 1a)
+### Goal 9: FlashLLMClient Contract (Phase 1a) ✅ COMPLETED
 **Objective:** Define cheap-model routing infrastructure for quality gates.
 
 **Acceptance Criteria:**
-- [ ] `FlashLLMClient` class or model profile defined in `vibe/harness/model_gateway.py`
-- [ ] Supports at least one "cheap" model (e.g., local Ollama, or API flash tier)
-- [ ] Fallback chain: if cheap model unavailable, skip contradiction detection with warning
-- [ ] Unit tests: flash model routing, fallback behavior
+- [x] `FlashLLMClient` class defined in `vibe/memory/flash_client.py`
+- [x] Supports at least one "cheap" model (e.g., local Ollama, or API flash tier)
+- [x] Fallback chain: if cheap model unavailable, skip contradiction detection with warning
+- [x] Unit tests: flash model routing, fallback behavior
 
 ### Goal 10: Telemetry for Phase 2 Trigger (Phase 1a)
 **Objective:** Collect metrics to enable measurable Phase 2 trigger.

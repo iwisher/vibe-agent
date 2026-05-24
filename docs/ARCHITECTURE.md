@@ -58,7 +58,7 @@ Vibe Agent is a high-performance, resilient, and secure agent harness. Unlike ma
 
 ## 3. Query Loop Flow
 
-The `QueryLoop` is a state-machine-driven async generator (`vibe/core/query_loop.py`, ~1170 lines) that manages the agent's "thought-action" cycle.
+The `QueryLoop` is a state-machine-driven async generator (`vibe/core/query_loop.py`, ~1351 lines) that manages the agent's "thought-action" cycle.
 
 ### 3.1 States
 
@@ -94,9 +94,10 @@ graph TD
     LLMCall --> CheckResponse{Response Type?}
     
     CheckResponse -- Tool Calls --> ToolExec[TOOL_EXECUTION: ToolExecutor runs hooks + tools]
-    ToolExec --> LoopStart
+    ToolExec --> Synthesizing[SYNTHESIZING: State set after tool results process]
+    Synthesizing --> LoopStart
     
-    CheckResponse -- Content --> Feedback[SYNTHESIZING: FeedbackCoordinator scores content]
+    CheckResponse -- Content --> Feedback[FeedbackCoordinator scores content]
     Feedback -- Below Threshold --> LoopStart
     Feedback -- Pass --> End((COMPLETED))
     
@@ -221,7 +222,7 @@ Native skill format with TOML frontmatter (`+++` delimited):
     - `run_once()`: End-to-end pipeline callable from `QueryLoop` background task.
     - Config: `SkillMakerConfig` with `enabled`, `min_pattern_frequency`, `confidence_threshold`, `max_skills_per_session`.
 
-### 5.6 Memory (`vibe/harness/memory/`)
+### 5.6 Memory (`vibe/memory/` & `vibe/harness/memory/`)
 *   **TraceStore:** Scalable backend (SQLite, JSON, or Memory) for session persistence.
     - **Persistence:** `QueryLoop` automatically logs sessions on completion via `finally` block.
     - **Optimization:** Switched from `pickle` to `numpy` float32 for 4x smaller and faster embedding storage.
