@@ -623,6 +623,15 @@ class QueryLoop:
                     self._set_state(QueryState.COMPLETED)
         finally:
             self._running = False
+
+            # Phase 3.2: Delete checkpoint FIRST — must run before any slow async
+            # operations that could be interrupted by KeyboardInterrupt.
+            if self._session_store and self._session_id:
+                try:
+                    self._session_store.delete_checkpoint(self._session_id)
+                except Exception:
+                    pass
+
             # Record session telemetry
             if self._telemetry is not None and self._session_id:
                 try:
@@ -704,13 +713,6 @@ class QueryLoop:
                     # Logging failures must not crash the session
                     pass
 
-            # Phase 3.2: Delete checkpoint on completion (session is now durable in trace_store)
-            if self._session_store and self._session_id:
-                try:
-                    self._session_store.delete_checkpoint(self._session_id)
-                except Exception:
-                    pass
-
             # Phase 5.2: Offer rollback if shadow exists and session ended in error/incomplete
             if self.shadow_manager is not None and self._session_id:
                 if self._state in (QueryState.ERROR, QueryState.INCOMPLETE):
@@ -718,17 +720,14 @@ class QueryLoop:
                         shadows = self.shadow_manager.list_shadows()
                         matching = [s for s in shadows if s.session_id == self._session_id]
                         if matching:
-                            # We can't yield here (outside async generator), but we can log
+                            latest = max(matching, key=lambda s: s.created_at)
                             if self.logger:
                                 self.logger.info(
-                                    "Shadow backup available for session %s. "
-                                    "Run `vibe shadow restore %s` to rollback.",
-                                    self._session_id[:16],
-                                    self._session_id,
+                                    f"Session {self._session_id[:16]}... ended in {self._state.name}. "
+                                    f"Rollback available: {latest.branch_name}"
                                 )
-                    except Exception as e:
-                        if self.logger:
-                            self.logger.debug("Failed to list shadows for rollback offer: %s", e)
+                    except Exception:
+                        pass
 
     async def _maybe_compact(self, llm_msgs: list[dict]) -> QueryResult | None:
         """Compact context if needed. Returns a QueryResult if compaction occurred."""

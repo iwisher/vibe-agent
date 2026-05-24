@@ -307,6 +307,14 @@ def main(
         from vibe.harness.memory.session_store import SessionStore
 
         store = SessionStore()
+        # Auto-cleanup stale checkpoints on startup (older than 24h, non-terminal)
+        try:
+            removed = store.cleanup_stale(max_age_hours=24.0)
+            if removed:
+                console.print(f"[dim]Cleaned up {removed} stale session checkpoint(s).[/dim]")
+        except Exception:
+            pass  # Non-fatal: don't block startup if cleanup fails
+
         incomplete = store.list_incomplete(limit=1)
         if incomplete:
             latest = incomplete[0]
@@ -1063,6 +1071,74 @@ def session_list(
             s.get("updated_at", "?"),
         )
     console.print(table)
+
+
+@session_app.command("cleanup")
+def session_cleanup(
+    stale_only: bool = typer.Option(
+        True, "--stale-only/--all", help="Only remove non-terminal stale checkpoints"
+    ),
+    max_age_hours: float = typer.Option(
+        24.0, "--max-age", "-h", help="Maximum age in hours for stale checkpoints"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", "-n", help="Show what would be deleted without deleting"
+    ),
+):
+    """Remove stale session checkpoints that weren't cleaned up on exit."""
+    from vibe.harness.memory.session_store import SessionStore
+
+    store = SessionStore()
+    stats = store.get_checkpoint_stats()
+
+    console.print(f"[dim]Total checkpoints: {stats['total']}[/dim]")
+    if stats["by_state"]:
+        for state, count in sorted(stats["by_state"].items()):
+            console.print(f"[dim]  {state}: {count}[/dim]")
+
+    if dry_run:
+        # Count what would be deleted without actually deleting
+        if stale_only:
+            # We need to count stale checkpoints manually
+            import sqlite3
+            from contextlib import closing
+            from datetime import datetime, timedelta, timezone
+
+            cutoff = (datetime.now(timezone.utc) - timedelta(hours=max_age_hours)).isoformat()
+            with closing(sqlite3.connect(store.db_path, timeout=5.0)) as conn:
+                cursor = conn.execute(
+                    """
+                    SELECT COUNT(*) FROM session_checkpoints
+                    WHERE updated_at < ?
+                      AND state NOT IN ('COMPLETED', 'ERROR', 'STOPPED', 'INCOMPLETE')
+                    """,
+                    (cutoff,),
+                )
+                would_delete = cursor.fetchone()[0]
+        else:
+            import sqlite3
+            from contextlib import closing
+            from datetime import datetime, timedelta, timezone
+
+            cutoff = (datetime.now(timezone.utc) - timedelta(hours=max_age_hours)).isoformat()
+            with closing(sqlite3.connect(store.db_path, timeout=5.0)) as conn:
+                cursor = conn.execute(
+                    "SELECT COUNT(*) FROM session_checkpoints WHERE updated_at < ?",
+                    (cutoff,),
+                )
+                would_delete = cursor.fetchone()[0]
+        console.print(f"[yellow]Dry run: would delete {would_delete} checkpoint(s)[/yellow]")
+        return
+
+    if stale_only:
+        removed = store.cleanup_stale(max_age_hours=max_age_hours)
+    else:
+        removed = store.cleanup_all(max_age_hours=max_age_hours)
+
+    if removed:
+        console.print(f"[green]Deleted {removed} checkpoint(s).[/green]")
+    else:
+        console.print("[dim]No stale checkpoints found.[/dim]")
 
 
 @session_app.command("resume")
