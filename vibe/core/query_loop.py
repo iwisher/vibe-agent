@@ -302,8 +302,9 @@ class QueryLoop:
             return
         self._running = True
         self._set_state(QueryState.PLANNING)
-        self._session_id = str(uuid.uuid4())
-        self._session_start_time = time.time()
+        if self._session_id is None:
+            self._session_id = str(uuid.uuid4())
+            self._session_start_time = time.time()
         yield QueryResult(is_status=True, status_message="Planning strategy...", state=self._state)
         if self.logger:
             self.logger.info(f"Starting QueryLoop run. Initial query: {initial_query}")
@@ -1233,6 +1234,8 @@ class QueryLoop:
         self._feedback_retries = 0
         self._running = False
         self._plan_result = None
+        self._session_id = None
+        self._session_start_time = 0.0
         self.feedback_coord.reset()
 
     def copy(self) -> "QueryLoop":

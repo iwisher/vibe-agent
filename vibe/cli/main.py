@@ -16,6 +16,7 @@ from vibe.core.config import VibeConfig
 from vibe.core.logger import setup_session_logger
 from vibe.core.query_loop import QueryLoop
 from vibe.core.query_loop_factory import QueryLoopFactory
+from vibe.core.session_controller import SessionController
 from vibe.evals.model_registry import ModelRegistry
 from vibe.evals.runner import EvalRunner
 from vibe.harness.memory.eval_store import EvalStore
@@ -64,146 +65,264 @@ def _save_readline_history() -> None:
         pass
 
 
-async def interactive_mode(query_loop: QueryLoop) -> None:
-    _setup_readline_history()
-    verbose_mode = False
-    show_reasoning = query_loop.config.llm.show_reasoning if (query_loop.config and hasattr(query_loop.config, "llm")) else True
-    console.print("[bold green]Vibe Agent[/bold green] ready. Type /exit to quit, /clear to reset.")
-    while True:
-        try:
-            # Use built-in input() with readline for arrow-key history support
-            # Rich console.input() doesn't process terminal escape sequences
-            console.print("[bold cyan]>[/bold cyan] ", end="")
-            user_input = input().strip()
-        except (EOFError, KeyboardInterrupt):
-            _save_readline_history()
-            console.print("\nGoodbye!")
-            break
-
-        if not user_input:
-            continue
-        if user_input.lower() in ("/exit", "exit", "quit"):
-            _save_readline_history()
-            console.print("Goodbye!")
-            break
-        if user_input.lower() == "/clear":
-            query_loop.clear_history()
-            console.print("History cleared.")
-            continue
-        if user_input.lower() == "/verbose":
-            verbose_mode = not verbose_mode
-            status = "enabled" if verbose_mode else "disabled"
-            console.print(f"Verbose mode {status}.")
-            continue
-        if user_input.lower() == "/reasoning":
-            show_reasoning = not show_reasoning
-            if query_loop.config and hasattr(query_loop.config, "llm"):
-                query_loop.config.llm.show_reasoning = show_reasoning
-            status = "enabled" if show_reasoning else "disabled"
-            console.print(f"Reasoning display {status}.")
-            continue
-        if user_input.lower() == "/resume":
-            from vibe.core.query_loop import QueryLoop
-            from vibe.harness.memory.session_store import SessionStore
-
-            store = SessionStore()
-            incomplete = store.list_incomplete(limit=1)
-            if not incomplete:
-                console.print("[yellow]No incomplete sessions found.[/yellow]")
-                continue
-            session_id = incomplete[0]["session_id"]
-            # Build a factory matching the current loop's config
-            factory = QueryLoopFactory(
-                base_url=DEFAULT_CONFIG.llm.base_url,
-                model=query_loop.llm.model,
-                api_key=DEFAULT_CONFIG.resolve_api_key(),
-                working_dir=str(Path.cwd()),
-                fallback_chain=DEFAULT_CONFIG.get_fallback_chain(),
-                config=DEFAULT_CONFIG,
-                logger=query_loop.logger,
-            )
+async def interactive_mode(controller: Any) -> None:
+    if not isinstance(controller, SessionController):
+        # Legacy QueryLoop mode for backward compatibility
+        query_loop = controller
+        _setup_readline_history()
+        verbose_mode = False
+        show_reasoning = query_loop.config.llm.show_reasoning if (query_loop.config and hasattr(query_loop.config, "llm")) else True
+        console.print("[bold green]Vibe Agent[/bold green] ready. Type /exit to quit, /clear to reset.")
+        while True:
             try:
-                query_loop = await QueryLoop.resume(session_id, store, factory)
-                console.print(
-                    f"[green]Resumed session {session_id[:16]}...[/green] "
-                    f"(state: {query_loop.state.name}, iteration: {query_loop._iteration})"
+                console.print("[bold cyan]>[/bold cyan] ", end="")
+                user_input = input().strip()
+            except (EOFError, KeyboardInterrupt):
+                _save_readline_history()
+                console.print("\nGoodbye!")
+                break
+
+            if not user_input:
+                continue
+            if user_input.lower() in ("/exit", "exit", "quit"):
+                _save_readline_history()
+                console.print("Goodbye!")
+                break
+            if user_input.lower() == "/clear":
+                query_loop.clear_history()
+                console.print("History cleared.")
+                continue
+            if user_input.lower() == "/verbose":
+                verbose_mode = not verbose_mode
+                status = "enabled" if verbose_mode else "disabled"
+                console.print(f"Verbose mode {status}.")
+                continue
+            if user_input.lower() == "/reasoning":
+                show_reasoning = not show_reasoning
+                if query_loop.config and hasattr(query_loop.config, "llm"):
+                    query_loop.config.llm.show_reasoning = show_reasoning
+                status = "enabled" if show_reasoning else "disabled"
+                console.print(f"Reasoning display {status}.")
+                continue
+            if user_input.lower() == "/resume":
+                from vibe.core.query_loop import QueryLoop
+                from vibe.harness.memory.session_store import SessionStore
+
+                store = SessionStore()
+                incomplete = store.list_incomplete(limit=1)
+                if not incomplete:
+                    console.print("[yellow]No incomplete sessions found.[/yellow]")
+                    continue
+                session_id = incomplete[0]["session_id"]
+                factory = QueryLoopFactory(
+                    base_url=DEFAULT_CONFIG.llm.base_url,
+                    model=query_loop.llm.model,
+                    api_key=DEFAULT_CONFIG.resolve_api_key(),
+                    working_dir=str(Path.cwd()),
+                    fallback_chain=DEFAULT_CONFIG.get_fallback_chain(),
+                    config=DEFAULT_CONFIG,
+                    logger=query_loop.logger,
                 )
-            except ValueError as e:
-                console.print(f"[red]Failed to resume: {e}[/red]")
-            continue
+                try:
+                    query_loop = await QueryLoop.resume(session_id, store, factory)
+                    console.print(
+                        f"[green]Resumed session {session_id[:16]}...[/green] "
+                        f"(state: {query_loop.state.name}, iteration: {query_loop._iteration})"
+                    )
+                except ValueError as e:
+                    console.print(f"[red]Failed to resume: {e}[/red]")
+                continue
 
-        query_loop.add_user_message(user_input)
-        streamed_any = False
-        status_spinner = None
-        try:
-            async for result in query_loop.run():
-                if result.is_status:
-                    if verbose_mode:
-                        console.print(f"[dim]  → {result.status_message}[/dim]")
-                    else:
-                        if status_spinner is None:
-                            status_spinner = console.status("[dim]Thinking...[/dim]", spinner="dots")
-                            status_spinner.start()
-                        status_spinner.update(f"[dim]{result.status_message}[/dim]")
-                    continue
+            query_loop.add_user_message(user_input)
+            streamed_any = False
+            status_spinner = None
+            try:
+                async for result in query_loop.run():
+                    if result.is_status:
+                        if verbose_mode:
+                            console.print(f"[dim]  → {result.status_message}[/dim]")
+                        else:
+                            if status_spinner is None:
+                                status_spinner = console.status("[dim]Thinking...[/dim]", spinner="dots")
+                                status_spinner.start()
+                            status_spinner.update(f"[dim]{result.status_message}[/dim]")
+                        continue
 
-                # Exit spinner before printing stream chunks
-                if status_spinner is not None:
-                    status_spinner.stop()
-                    status_spinner = None
+                    if status_spinner is not None:
+                        status_spinner.stop()
+                        status_spinner = None
 
-                if result.is_stream_chunk:
-                    streamed_any = True
-                    if result.response:
-                        console.print(result.response, end="")
-                    if (verbose_mode or show_reasoning) and result.reasoning_content:
-                        console.print(f"[dim]{result.reasoning_content}[/dim]", end="")
-                    continue
-
-                if result.error:
-                    error_msg = str(result.error)
-                    if getattr(result, "actionable_hint", None):
-                        error_msg += f"\n\n[bold]Hint:[/bold] {result.actionable_hint}"
-                    if getattr(result, "model_used", None):
-                        error_msg += f"\n\n[bold]Model Used:[/bold] {result.model_used}"
-                    console.print(Panel(error_msg, title="Error", border_style="red"))
-                elif result.context_truncated:
-                    console.print("[dim](context compacted)[/dim]")
-                else:
-                    if not streamed_any:
+                    if result.is_stream_chunk:
+                        streamed_any = True
+                        if result.response:
+                            console.print(result.response, end="")
                         if (verbose_mode or show_reasoning) and result.reasoning_content:
                             console.print(f"[dim]{result.reasoning_content}[/dim]", end="")
-                        console.print(result.response, end="")
+                        continue
+
+                    if result.error:
+                        error_msg = str(result.error)
+                        if getattr(result, "actionable_hint", None):
+                            error_msg += f"\n\n[bold]Hint:[/bold] {result.actionable_hint}"
+                        if getattr(result, "model_used", None):
+                            error_msg += f"\n\n[bold]Model Used:[/bold] {result.model_used}"
+                        console.print(Panel(error_msg, title="Error", border_style="red"))
+                    elif result.context_truncated:
+                        console.print("[dim](context compacted)[/dim]")
                     else:
-                        console.print()
+                        if not streamed_any:
+                            if (verbose_mode or show_reasoning) and result.reasoning_content:
+                                console.print(f"[dim]{result.reasoning_content}[/dim]", end="")
+                            console.print(result.response, end="")
+                        else:
+                            console.print()
 
-                for tr in result.tool_results:
-                    style = "green" if tr.success else "red"
-                    title = "Tool Result" if tr.success else "Tool Error"
-                    panel_content = tr.content if tr.content else (tr.error or "")
-                    console.print(Panel(panel_content, title=title, border_style=style))
+                    for tr in result.tool_results:
+                        style = "green" if tr.success else "red"
+                        title = "Tool Result" if tr.success else "Tool Error"
+                        panel_content = tr.content if tr.content else (tr.error or "")
+                        console.print(Panel(panel_content, title=title, border_style=style))
 
-                if result.metrics:
-                    m = result.metrics
-                    # Ensure metrics start on a new line
-                    if not streamed_any:
-                        console.print()
-                    
-                    reasoning_part = ""
-                    if getattr(m, "reasoning_tokens", 0) > 0:
-                        reasoning_part = f" ({m.reasoning_tokens} reasoning)"
+                    if result.metrics:
+                        m = result.metrics
+                        if not streamed_any:
+                            console.print()
+                        
+                        reasoning_part = ""
+                        if getattr(m, "reasoning_tokens", 0) > 0:
+                            reasoning_part = f" ({m.reasoning_tokens} reasoning)"
 
-                    metrics_str = (
-                        f"{m.total_tokens} tokens{reasoning_part} | "
-                        f"{m.elapsed_seconds:.1f}s | "
-                        f"{m.tokens_per_second:.1f} tok/s"
-                    )
-                    if getattr(result, "model_used", None) and result.model_used != query_loop.llm.model:
-                        metrics_str += f" (via fallback model: {result.model_used})"
-                    console.print(f"[dim]{metrics_str}[/dim]")
-        finally:
-            if status_spinner is not None:
-                status_spinner.stop()
+                        metrics_str = (
+                            f"{m.total_tokens} tokens{reasoning_part} | "
+                            f"{m.elapsed_seconds:.1f}s | "
+                            f"{m.tokens_per_second:.1f} tok/s"
+                        )
+                        if getattr(result, "model_used", None) and result.model_used != query_loop.llm.model:
+                            metrics_str += f" (via fallback model: {result.model_used})"
+                        console.print(f"[dim]{metrics_str}[/dim]")
+            finally:
+                if status_spinner is not None:
+                    status_spinner.stop()
+        return
+
+    _setup_readline_history()
+    verbose_mode = False
+    show_reasoning = controller.main_loop.config.llm.show_reasoning if (controller.main_loop.config and hasattr(controller.main_loop.config, "llm")) else True
+    
+    console.print("[bold green]Vibe Agent[/bold green] ready.")
+    console.print("Commands: /exit, /clear, /verbose, /reasoning, /resume, /bg <msg>, /btw <msg>")
+    
+    # Start controller
+    await controller.start()
+    
+    # Start output consumer
+    output_task = asyncio.create_task(_output_consumer(controller))
+    
+    try:
+        while True:
+            try:
+                console.print("[bold cyan]>[/bold cyan] ", end="")
+                user_input = input().strip()
+            except (EOFError, KeyboardInterrupt):
+                break
+
+            if not user_input:
+                continue
+                
+            if user_input.lower() in ("/exit", "exit", "quit"):
+                break
+                
+            if user_input.lower() == "/clear":
+                controller.main_loop.clear_history()
+                console.print("History cleared.")
+                continue
+                
+            if user_input.lower() == "/verbose":
+                verbose_mode = not verbose_mode
+                console.print(f"Verbose mode {'enabled' if verbose_mode else 'disabled'}.")
+                continue
+                
+            if user_input.lower() == "/reasoning":
+                show_reasoning = not show_reasoning
+                if controller.main_loop.config and hasattr(controller.main_loop.config, "llm"):
+                    controller.main_loop.config.llm.show_reasoning = show_reasoning
+                console.print(f"Reasoning display {'enabled' if show_reasoning else 'disabled'}.")
+                continue
+                
+            if user_input.lower() == "/resume":
+                # Existing resume logic adapted for controller
+                from vibe.harness.memory.session_store import SessionStore
+                store = SessionStore()
+                incomplete = store.list_incomplete(limit=1)
+                if not incomplete:
+                    console.print("[yellow]No incomplete sessions found.[/yellow]")
+                    continue
+                session_id = incomplete[0]["session_id"]
+                factory = QueryLoopFactory(
+                    base_url=DEFAULT_CONFIG.llm.base_url,
+                    model=controller.main_loop.llm.model,
+                    api_key=DEFAULT_CONFIG.resolve_api_key(),
+                    working_dir=str(Path.cwd()),
+                    fallback_chain=DEFAULT_CONFIG.get_fallback_chain(),
+                    config=DEFAULT_CONFIG,
+                    logger=controller.main_loop.logger,
+                )
+                try:
+                    controller.main_loop = await QueryLoop.resume(session_id, store, factory)
+                    console.print(f"[green]Resumed session {session_id[:16]}...[/green]")
+                except ValueError as e:
+                    console.print(f"[red]Failed to resume: {e}[/red]")
+                continue
+
+            if user_input.lower().startswith("/bg "):
+                query = user_input[4:].strip()
+                if query:
+                    agent_id = await controller.send_bg(query)
+                    console.print(f"[dim]Background agent {agent_id} started...[/dim]")
+                continue
+                
+            if user_input.lower().startswith("/btw "):
+                query = user_input[5:].strip()
+                if query:
+                    await controller.send_btw(query)
+                    console.print("[dim]Side query running... result will be injected when done.[/dim]")
+                continue
+
+            # Normal message — queue to main session
+            await controller.queue.enqueue(user_input)
+            
+    finally:
+        _save_readline_history()
+        await controller.shutdown()
+        if not output_task.done():
+            output_task.cancel()
+
+
+async def _output_consumer(controller: SessionController) -> None:
+    """Consume output events and print them with source labels."""
+    while True:
+        try:
+            event = await controller.output_queue.get()
+        except asyncio.CancelledError:
+            break
+            
+        result = event.result
+        source = event.source
+        
+        if source.startswith("bg_"):
+            prefix = f"[dim][{source}][/dim] "
+        elif source == "btw":
+            prefix = "[dim][btw][/dim] "
+        else:
+            prefix = ""
+        
+        if result.is_status:
+            continue  # Skip status messages for cleaner output
+            
+        if result.error:
+            console.print(f"{prefix}[red]Error: {result.error}[/red]")
+        elif result.response:
+            console.print(f"{prefix}{result.response}")
 
 
 async def single_query_mode(query_loop: QueryLoop, query: str) -> None:
@@ -367,11 +486,13 @@ def main(
                 f"[green]Resumed session {resumed_session_id[:16]}...[/green] "
                 f"(state: {loop.state.name}, iteration: {loop._iteration})"
             )
-            await interactive_mode(loop)
+            controller = SessionController(factory)
+            controller.main_loop = loop
+            await interactive_mode(controller)
 
         asyncio.run(_run_resumed())
     else:
-        query_loop = QueryLoopFactory(
+        factory = QueryLoopFactory(
             base_url=server,
             model=model,
             api_key=api_key if api_key is not None else DEFAULT_CONFIG.resolve_api_key(),
@@ -381,13 +502,15 @@ def main(
             logger=logger,
             debug=debug,
             stream=stream,
-        ).create()
+        )
 
         if ctx.args:
             query = " ".join(ctx.args)
+            query_loop = factory.create()
             asyncio.run(single_query_mode(query_loop, query))
         else:
-            asyncio.run(interactive_mode(query_loop))
+            controller = SessionController(factory)
+            asyncio.run(interactive_mode(controller))
 
 
 @eval_app.command("run")
@@ -1177,7 +1300,9 @@ def session_resume(
         console.print(
             "[dim]Continue the conversation. Type /exit to quit, /clear to reset.[/dim]\n"
         )
-        await interactive_mode(loop)
+        controller = SessionController(factory)
+        controller.main_loop = loop
+        await interactive_mode(controller)
 
     try:
         asyncio.run(_run_resume())
