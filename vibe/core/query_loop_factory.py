@@ -9,6 +9,8 @@ from vibe.core.query_loop import QueryLoop
 from vibe.harness.constraints import HookPipeline
 from vibe.tools.bash import BashSandbox, BashTool
 from vibe.tools.file import ReadFileTool, WriteFileTool
+from vibe.tools.skill_install import SkillInstallTool, SkillListTool
+from vibe.tools.skill_manage import SkillManageTool
 from vibe.tools.tool_system import ToolSystem
 
 
@@ -112,6 +114,9 @@ class QueryLoopFactory:
         )
         tool_system.register_tool(ReadFileTool())
         tool_system.register_tool(WriteFileTool())
+        tool_system.register_tool(SkillInstallTool())
+        tool_system.register_tool(SkillListTool())
+        tool_system.register_tool(SkillManageTool())
         return tool_system
 
     def create(self, max_iterations: int | None = None) -> QueryLoop:
