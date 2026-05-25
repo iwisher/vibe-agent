@@ -352,6 +352,12 @@ class SecurityConfig(BaseModel):
     fail_closed: bool = True
     smart_approver_enabled: bool = True
     checkpoint_enabled: bool = True
+    # Gated skill installation security flag (default: False). Gating ensures headless runs
+    # never hang. Setting to True allows interactive stdin prompts to override critical risks,
+    # which slightly weakens the auto-reject policy in favor of interactive control.
+    interactive_skill_install: bool = False
+
+
 
     file_safety: FileSafetyConfig = Field(default_factory=FileSafetyConfig)
     env_sanitization: EnvSanitizationConfig = Field(default_factory=EnvSanitizationConfig)

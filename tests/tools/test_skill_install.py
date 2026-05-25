@@ -3,6 +3,10 @@
 import tempfile
 from pathlib import Path
 import pytest
+from unittest.mock import patch, MagicMock
+
+import sys
+from unittest.mock import MagicMock, patch
 
 from vibe.tools.skill_install import SkillInstallTool, SkillListTool, ChatApprovalGate
 from vibe.tools.tool_system import ToolResult
@@ -192,3 +196,103 @@ async def test_format_result_includes_metadata():
         assert "2.0.0" in result.content
         assert "test" in result.content
         assert "Steps: 1" in result.content
+
+
+def test_chat_approval_gate_interactive_disabled_by_default():
+    """With interactive_skill_install disabled (default), risks are always blocked."""
+    gate = ChatApprovalGate()
+    mock_config = MagicMock()
+    mock_config.security.interactive_skill_install = False
+
+    with patch("vibe.core.config.VibeConfig.load", return_value=mock_config):
+        result = gate.approve("RiskySkill", risks=["critical vulnerability"], warnings=[])
+        assert result is False
+
+
+def test_chat_approval_gate_interactive_approves_on_y():
+    """When interactive is enabled and user types 'y', approve the risk."""
+    gate = ChatApprovalGate()
+    mock_config = MagicMock()
+    mock_config.security.interactive_skill_install = True
+
+    with patch("vibe.core.config.VibeConfig.load", return_value=mock_config):
+        with patch("sys.stdin.isatty", return_value=True):
+            with patch("sys.stdout.flush"):
+                with patch("select.select", return_value=([sys.stdin], [], [])):
+                    with patch("sys.stdin.readline", return_value="y\n"):
+                        result = gate.approve("RiskySkill", risks=["critical"], warnings=[])
+                        assert result is True
+
+
+def test_chat_approval_gate_interactive_rejects_on_n():
+    """When interactive is enabled and user types 'n', reject the risk."""
+    gate = ChatApprovalGate()
+    mock_config = MagicMock()
+    mock_config.security.interactive_skill_install = True
+
+    with patch("vibe.core.config.VibeConfig.load", return_value=mock_config):
+        with patch("sys.stdin.isatty", return_value=True):
+            with patch("sys.stdout.flush"):
+                with patch("select.select", return_value=([sys.stdin], [], [])):
+                    with patch("sys.stdin.readline", return_value="n\n"):
+                        result = gate.approve("RiskySkill", risks=["critical"], warnings=[])
+                        assert result is False
+
+
+def test_chat_approval_gate_interactive_rejects_on_timeout(capsys):
+    """When interactive prompt times out, reject and print timeout message."""
+    gate = ChatApprovalGate()
+    mock_config = MagicMock()
+    mock_config.security.interactive_skill_install = True
+
+    with patch("vibe.core.config.VibeConfig.load", return_value=mock_config):
+        with patch("sys.stdin.isatty", return_value=True):
+            with patch("sys.stdout.flush"):
+                with patch("select.select", return_value=([], [], [])):
+                    result = gate.approve("RiskySkill", risks=["critical"], warnings=[])
+                    assert result is False
+
+    captured = capsys.readouterr()
+    assert "Timeout" in captured.out or "Auto-rejecting" in captured.out
+
+
+def test_chat_approval_gate_non_tty_blocks():
+    """When stdin is not a TTY, interactive prompt is skipped and risk is blocked."""
+    gate = ChatApprovalGate()
+    mock_config = MagicMock()
+    mock_config.security.interactive_skill_install = True
+
+    with patch("vibe.core.config.VibeConfig.load", return_value=mock_config):
+        with patch("sys.stdin.isatty", return_value=False):
+            result = gate.approve("RiskySkill", risks=["critical"], warnings=[])
+            assert result is False
+
+
+def test_chat_approval_gate_prompt_timeout_fallback():
+    """_prompt_with_timeout returns None when select.select times out."""
+    gate = ChatApprovalGate()
+    with patch("select.select", return_value=([], [], [])):
+        result = gate._prompt_with_timeout("test: ", 0.1)
+        assert result is None
+
+
+def test_chat_approval_gate_prompt_reads_input():
+    """_prompt_with_timeout returns stripped user input on success."""
+    gate = ChatApprovalGate()
+    with patch("select.select", return_value=([sys.stdin], [], [])):
+        with patch("sys.stdin.readline", return_value="yes\n"):
+            result = gate._prompt_with_timeout("test: ", 1.0)
+            assert result == "yes"
+
+
+def test_chat_approval_gate_prompt_windows_fallback():
+    """On Windows (OSError from select), _prompt_with_timeout falls back to threading."""
+    gate = ChatApprovalGate()
+
+    def _raise_oserror(*args, **kwargs):
+        raise OSError("select does not support stdin on Windows")
+
+    with patch("select.select", side_effect=_raise_oserror):
+        with patch("sys.stdin.readline", return_value="y\n"):
+            result = gate._prompt_with_timeout("test: ", 1.0)
+            assert result == "y"

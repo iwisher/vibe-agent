@@ -21,20 +21,29 @@ def client(tmp_path):
     original_cwd = os.getcwd()
     os.chdir(tmp_path)
 
+    # Isolate memory DB to tmp_path
+    original_memory_dir = os.environ.get("VIBE_MEMORY_DIR")
+    os.environ["VIBE_MEMORY_DIR"] = str(tmp_path / ".vibe")
+
     # Create test data directories
-    (tmp_path / ".vibe").mkdir()
-    (tmp_path / "wiki").mkdir()
+    (tmp_path / ".vibe").mkdir(exist_ok=True)
+    (tmp_path / "wiki").mkdir(exist_ok=True)
 
     with TestClient(app) as c:
         yield c
 
     os.chdir(original_cwd)
+    if original_memory_dir is not None:
+        os.environ["VIBE_MEMORY_DIR"] = original_memory_dir
+    else:
+        os.environ.pop("VIBE_MEMORY_DIR", None)
+
 
 
 @pytest.fixture
 def session_db(tmp_path):
-    """Create a SessionStore database with test data."""
-    db_path = tmp_path / ".vibe" / "sessions.db"
+    """Create a traces.db database with test checkpoints and sessions."""
+    db_path = tmp_path / ".vibe" / "traces.db"
     conn = sqlite3.connect(db_path)
     conn.executescript("""
         CREATE TABLE IF NOT EXISTS session_checkpoints (
@@ -47,6 +56,22 @@ def session_db(tmp_path):
             model TEXT,
             created_at TEXT,
             updated_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS sessions (
+            id TEXT PRIMARY KEY,
+            start_time TEXT,
+            end_time TEXT,
+            success INTEGER,
+            model TEXT,
+            error TEXT
+        );
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT,
+            role TEXT,
+            content TEXT,
+            tool_calls TEXT,
+            timestamp TEXT
         );
     """)
     conn.execute(
@@ -66,6 +91,7 @@ def session_db(tmp_path):
     conn.commit()
     conn.close()
     return db_path
+
 
 
 class TestDashboardAPI:
@@ -109,7 +135,7 @@ class TestDashboardAPI:
 
     def test_session_messages_with_tool_calls(self, client, tmp_path):
         """Messages endpoint returns tool_calls in message data."""
-        db_path = tmp_path / ".vibe" / "sessions.db"
+        db_path = tmp_path / ".vibe" / "traces.db"
         conn = sqlite3.connect(db_path)
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS session_checkpoints (
@@ -148,6 +174,11 @@ class TestDashboardAPI:
         conn.commit()
         conn.close()
 
+        # Ensure no legacy sessions.db gets in the way
+        legacy_db = tmp_path / ".vibe" / "sessions.db"
+        if legacy_db.exists():
+            legacy_db.unlink()
+
         response = client.get("/api/sessions/sess-tool-001/messages")
         assert response.status_code == 200
         data = response.json()
@@ -163,13 +194,158 @@ class TestDashboardAPI:
 
     def test_session_messages_no_db(self, client, tmp_path):
         """Messages returns empty when no checkpoint DB exists."""
-        # Ensure no sessions.db exists
-        db_path = tmp_path / ".vibe" / "sessions.db"
+        # Ensure no traces.db exists
+        db_path = tmp_path / ".vibe" / "traces.db"
         if db_path.exists():
             db_path.unlink()
         response = client.get("/api/sessions/any/messages")
         assert response.status_code == 200
         assert response.json() == []
+
+    def test_session_messages_fallback_to_tracestore(self, client, tmp_path):
+        """Verify we can query messages of a completed session from the persistent messages table in traces.db."""
+        db_path = tmp_path / ".vibe" / "traces.db"
+        conn = sqlite3.connect(db_path)
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                id TEXT PRIMARY KEY,
+                start_time TEXT,
+                end_time TEXT,
+                success INTEGER,
+                model TEXT,
+                error TEXT
+            );
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT,
+                role TEXT,
+                content TEXT,
+                tool_calls TEXT,
+                timestamp TEXT
+            );
+        """)
+        conn.execute(
+            "INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?)",
+            ("sess-completed-001", "2026-05-01T10:00:00", "2026-05-01T10:05:00", 1, "gpt-4", None)
+        )
+        conn.execute(
+            "INSERT INTO messages (session_id, role, content, tool_calls, timestamp) VALUES (?, ?, ?, ?, ?)",
+            ("sess-completed-001", "user", "Durable Hello", None, "2026-05-01T10:00:00")
+        )
+        conn.commit()
+        conn.close()
+
+        response = client.get("/api/sessions/sess-completed-001/messages")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 1
+        assert data[0]["role"] == "user"
+        assert data[0]["content"] == "Durable Hello"
+
+    def test_session_list_merges_checkpoints_and_sessions(self, client, tmp_path):
+        """Verify sessions list endpoint merges active checkpoints and completed sessions."""
+        db_path = tmp_path / ".vibe" / "traces.db"
+        conn = sqlite3.connect(db_path)
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS session_checkpoints (
+                session_id TEXT PRIMARY KEY,
+                state TEXT NOT NULL,
+                messages_json TEXT,
+                plan_result_json TEXT,
+                iteration INTEGER DEFAULT 0,
+                feedback_retries INTEGER DEFAULT 0,
+                model TEXT,
+                created_at TEXT,
+                updated_at TEXT
+            );
+            CREATE TABLE IF NOT EXISTS sessions (
+                id TEXT PRIMARY KEY,
+                start_time TEXT,
+                end_time TEXT,
+                success INTEGER,
+                model TEXT,
+                error TEXT
+            );
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT,
+                role TEXT,
+                content TEXT,
+                tool_calls TEXT,
+                timestamp TEXT
+            );
+        """)
+        # Insert 1 active checkpoint
+        conn.execute(
+            "INSERT INTO session_checkpoints VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ("sess-active", "PLANNING", "[]", "null", 1, 0, "gpt-4", "2026-05-01T12:00:00", "2026-05-01T12:01:00")
+        )
+        # Insert 1 completed session
+        conn.execute(
+            "INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?)",
+            ("sess-completed", "2026-05-01T10:00:00", "2026-05-01T10:05:00", 1, "gpt-4", None)
+        )
+        conn.execute(
+            "INSERT INTO messages (session_id, role, content, tool_calls, timestamp) VALUES (?, ?, ?, ?, ?)",
+            ("sess-completed", "user", "hi", None, "2026-05-01T10:00:00")
+        )
+        conn.commit()
+        conn.close()
+
+        response = client.get("/api/sessions")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data) == 2
+        # Verify ordering is descending by updated_at
+        assert data[0]["session_id"] == "sess-active"
+        assert data[0]["state"] == "PLANNING"
+        assert data[1]["session_id"] == "sess-completed"
+        assert data[1]["state"] == "COMPLETED"
+
+    def test_legacy_sessions_db_migration(self, tmp_path):
+        """Verify legacy sessions.db migrates checkpoints automatically to traces.db on startup."""
+        (tmp_path / ".vibe").mkdir(parents=True, exist_ok=True)
+        legacy_db = tmp_path / ".vibe" / "sessions.db"
+        conn = sqlite3.connect(str(legacy_db))
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS session_checkpoints (
+                session_id TEXT PRIMARY KEY,
+                state TEXT NOT NULL,
+                messages_json TEXT,
+                plan_result_json TEXT,
+                iteration INTEGER DEFAULT 0,
+                feedback_retries INTEGER DEFAULT 0,
+                model TEXT,
+                created_at TEXT,
+                updated_at TEXT
+            );
+        """)
+        conn.execute(
+            "INSERT INTO session_checkpoints VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ("sess-legacy", "PLANNING", "[]", "null", 1, 0, "gpt-4", "2026-05-01T12:00:00", "2026-05-01T12:01:00")
+        )
+        conn.commit()
+        conn.close()
+
+        # Run migration helper
+        from vibe.dashboard.server import _migrate_legacy_database_sync
+        target_db = tmp_path / ".vibe" / "traces.db"
+        _migrate_legacy_database_sync(tmp_path, str(target_db))
+
+        # Assert target database has the data
+        assert target_db.exists()
+        conn_target = sqlite3.connect(str(target_db))
+        cursor = conn_target.execute("SELECT session_id, state FROM session_checkpoints")
+        row = cursor.fetchone()
+        assert row is not None
+        assert row[0] == "sess-legacy"
+        assert row[1] == "PLANNING"
+        conn_target.close()
+
+        # Assert legacy file was renamed to backup
+        assert not legacy_db.exists()
+        assert (tmp_path / ".vibe" / "sessions.db.backup").exists()
+
 
     def test_list_wiki_empty(self, client):
         """Wiki endpoint returns empty when no wiki directory."""
@@ -264,3 +440,46 @@ This is a test wiki page with some content.
             assert response.status_code != 401
         finally:
             server_module.DASHBOARD_TOKEN = original_token
+
+    def test_legacy_sessions_db_migration_with_existing_backup(self, tmp_path):
+        """Verify migration uses numbered backup when .db.backup already exists."""
+        (tmp_path / ".vibe").mkdir(parents=True, exist_ok=True)
+        legacy_db = tmp_path / ".vibe" / "sessions.db"
+        conn = sqlite3.connect(str(legacy_db))
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS session_checkpoints (
+                session_id TEXT PRIMARY KEY,
+                state TEXT NOT NULL,
+                messages_json TEXT,
+                plan_result_json TEXT,
+                iteration INTEGER DEFAULT 0,
+                feedback_retries INTEGER DEFAULT 0,
+                model TEXT,
+                created_at TEXT,
+                updated_at TEXT
+            );
+        """)
+        conn.execute(
+            "INSERT INTO session_checkpoints VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ("sess-legacy", "PLANNING", "[]", "null", 1, 0, "gpt-4", "2026-05-01T12:00:00", "2026-05-01T12:01:00")
+        )
+        conn.commit()
+        conn.close()
+
+        # Pre-create an existing backup to force numbered fallback
+        existing_backup = tmp_path / ".vibe" / "sessions.db.backup"
+        existing_backup.write_text("old backup")
+
+        # Also create .backup.1 to force .backup.2
+        existing_backup_1 = tmp_path / ".vibe" / "sessions.db.backup.1"
+        existing_backup_1.write_text("older backup")
+
+        from vibe.dashboard.server import _migrate_legacy_database_sync
+        target_db = tmp_path / ".vibe" / "traces.db"
+        _migrate_legacy_database_sync(tmp_path, str(target_db))
+
+        assert target_db.exists()
+        assert not legacy_db.exists()
+        # Should have created .backup.2 since .backup and .backup.1 existed
+        assert (tmp_path / ".vibe" / "sessions.db.backup.2").exists()
+

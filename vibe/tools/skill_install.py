@@ -23,17 +23,73 @@ class ChatApprovalGate(ApprovalGate):
     The user can always uninstall later if needed.
     """
 
+    def _prompt_with_timeout(self, prompt: str, timeout: float) -> str | None:
+        """Read a line from stdin with a timeout. Returns None on timeout.
+
+        Uses select.select() on POSIX systems and falls back to a threading-based
+        approach on Windows where select() does not support stdin.
+        """
+        import sys
+        import threading
+
+        print(prompt, end="", flush=True)
+
+        # Primary path: POSIX select()
+        try:
+            import select
+            rlist, _, _ = select.select([sys.stdin], [], [], timeout)
+            if rlist:
+                return sys.stdin.readline().strip()
+            return None
+        except (ImportError, OSError, ValueError):
+            # Fallback for Windows where select.select() doesn't support stdin
+            response: list[str | None] = [None]
+
+            def _read() -> None:
+                try:
+                    response[0] = sys.stdin.readline()
+                except Exception:
+                    pass
+
+            t = threading.Thread(target=_read, daemon=True)
+            t.start()
+            t.join(timeout)
+            return response[0].strip() if response[0] is not None else None
+
     def approve(
         self,
         skill_name: str,
         risks: list[str],
         warnings: list[str],
     ) -> bool:
-        # Block on critical risks regardless
+        # Block on critical risks unless config gates allow interactive CLI prompts
         if risks:
+            import sys
+            try:
+                from vibe.core.config import VibeConfig
+                config = VibeConfig.load()
+                interactive_enabled = config.security.interactive_skill_install
+            except Exception:
+                interactive_enabled = False
+
+            if interactive_enabled and sys.stdin.isatty():
+                print(f"\n⚠️  SECURITY RISK WARNING")
+                print(f"Skill '{skill_name}' contains critical security risks:")
+                for risk in risks:
+                    print(f" - {risk}")
+                response = self._prompt_with_timeout(
+                    f"\nDo you want to override and install this skill anyway? [y/N] (30s timeout): ",
+                    30.0,
+                )
+                if response == 'y':
+                    return True
+                if response is None:
+                    print("\n[Timeout - Auto-rejecting skill installation]")
             return False
+
         # Auto-approve warnings in chat context
         return True
+
 
 
 class SkillInstallTool(Tool):

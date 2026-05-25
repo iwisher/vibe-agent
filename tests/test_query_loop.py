@@ -1,6 +1,7 @@
 """Tests for vibe.core.query_loop."""
 
-from unittest.mock import AsyncMock, MagicMock
+import logging
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -389,3 +390,116 @@ async def test_run_streaming_simple(mock_llm, tool_system):
     assert results[1].response == " world"
     assert results[-1].response == "hello world"
     assert results[-1].state == QueryState.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_keyboard_interrupt_offers_rollback_hint(mock_llm, tool_system, caplog):
+    """When KeyboardInterrupt interrupts the loop, a rollback hint is logged if a shadow exists."""
+    from unittest.mock import patch
+    from vibe.tools.git_shadow import ShadowBranch
+
+    async def mock_stream(*args, **kwargs):
+        raise KeyboardInterrupt()
+        yield  # makes this an async generator
+
+    mock_llm.complete_stream.side_effect = mock_stream
+
+    fake_session_id = "test-session-id-1234"
+    shadow_manager = MagicMock()
+    shadow_manager.list_shadows.return_value = [
+        ShadowBranch(
+            session_id=fake_session_id,
+            branch_name="vibe/shadow-test-session-id-1234",
+            created_at="2024-01-01T00:00:00+00:00",
+            original_branch="main",
+            has_uncommitted_changes=False,
+        )
+    ]
+
+    logger = logging.getLogger("test_query_loop")
+    with patch("vibe.core.query_loop.uuid.uuid4", return_value=fake_session_id):
+        loop = QueryLoop(
+            llm_client=mock_llm,
+            tool_system=tool_system,
+            shadow_manager=shadow_manager,
+            logger=logger,
+        )
+        with caplog.at_level(logging.INFO, logger="test_query_loop"):
+            try:
+                async for _ in loop.run("hi", stream=True):
+                    pass
+            except KeyboardInterrupt:
+                pass
+
+    assert loop.state != QueryState.COMPLETED
+    shadow_manager.list_shadows.assert_called_once()
+    assert "Rollback available: vibe/shadow-test-session-id-1234" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_error_run_offers_rollback_hint(mock_llm, tool_system, caplog):
+    """When a run ends in ERROR and a shadow exists, a rollback hint is logged."""
+    import logging
+    import uuid
+
+    mock_llm.complete.side_effect = RuntimeError("simulated failure")
+
+    # Use a deterministic session ID so the shadow mock matches
+    fixed_uuid = uuid.uuid4()
+    shadow_manager = MagicMock()
+    shadow_manager.list_shadows.return_value = [
+        MagicMock(
+            session_id=str(fixed_uuid),
+            branch_name="vibe/shadow-test-sess-123",
+            created_at=1,
+        )
+    ]
+
+    loop = QueryLoop(
+        llm_client=mock_llm,
+        tool_system=tool_system,
+        shadow_manager=shadow_manager,
+    )
+    # Set logger to capture output
+    loop.logger = logging.getLogger("test_rollback")
+    loop.logger.setLevel(logging.INFO)
+
+    with patch("uuid.uuid4", return_value=fixed_uuid):
+        with caplog.at_level(logging.INFO, logger="test_rollback"):
+            results = [r async for r in loop.run("hi") if not r.is_status]
+
+    assert results[0].state == QueryState.ERROR
+    shadow_manager.list_shadows.assert_called_once()
+    # The rollback hint should mention the branch name
+    assert any("Rollback available" in rec.message for rec in caplog.records)
+    assert any("vibe/shadow-test-sess-123" in rec.message for rec in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_completed_run_skips_rollback_hint(mock_llm, tool_system, caplog):
+    """When a run completes successfully, no rollback hint is logged."""
+    import logging
+
+    mock_llm.complete.return_value = LLMResponse(content="success")
+
+    shadow_manager = MagicMock()
+    shadow_manager.list_shadows.return_value = [
+        MagicMock(session_id="test-sess-456", branch_name="vibe/shadow-test-sess-456", created_at=1)
+    ]
+
+    loop = QueryLoop(
+        llm_client=mock_llm,
+        tool_system=tool_system,
+        shadow_manager=shadow_manager,
+    )
+    loop.logger = logging.getLogger("test_no_rollback")
+    loop.logger.setLevel(logging.INFO)
+
+    with caplog.at_level(logging.INFO, logger="test_no_rollback"):
+        results = [r async for r in loop.run("hi") if not r.is_status]
+
+    assert results[0].state == QueryState.COMPLETED
+    # list_shadows should NOT be called for successful runs
+    shadow_manager.list_shadows.assert_not_called()
+    assert not any("Rollback available" in rec.message for rec in caplog.records)
+

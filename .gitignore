@@ -33,3 +33,7 @@ vibe/**/__pycache__/
 .worktrees/
 logs/*.log
 uv.lock
+
+# Development artifacts
+.tmp/
+.hermes/plans/

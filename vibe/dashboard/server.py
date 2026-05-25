@@ -136,7 +136,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[dict, None]:
     project_root = _find_project_root()
     state = DashboardState(project_root)
     app.state.dashboard = state
+    
+    # Transparent migration for legacy sessions database (Item 1)
+    db_path = _get_traces_db_path(project_root)
+    await asyncio.to_thread(_migrate_legacy_database_sync, project_root, db_path)
+    
     yield {"dashboard": state}
+
     # Shutdown: close all websockets
     async with state._lock:
         for ws in list(state.active_websockets):
@@ -219,44 +225,181 @@ async def auth_middleware(request: Request, call_next):
 # ────────────────────────────────
 
 
+def _get_traces_db_path(project_root: Path) -> str:
+    """Get the correct path to traces.db."""
+    base = os.environ.get("VIBE_MEMORY_DIR")
+    if base:
+        return str(Path(base) / "traces.db")
+    return str(Path.home() / ".vibe" / "memory" / "traces.db")
+
+
+def _find_safe_backup_path(legacy_db: Path) -> Path:
+    """Return a non-conflicting backup path, incrementing suffix if needed."""
+    base = legacy_db.with_suffix(".db.backup")
+    if not base.exists():
+        return base
+    counter = 1
+    while True:
+        candidate = legacy_db.with_suffix(f".db.backup.{counter}")
+        if not candidate.exists():
+            return candidate
+        counter += 1
+
+
+def _migrate_legacy_database_sync(project_root: Path, target_db_path: str) -> None:
+    """Migrate active/incomplete checkpoints from legacy sessions.db to traces.db."""
+    import logging
+    logger = logging.getLogger(__name__)
+    legacy_db = project_root / ".vibe" / "sessions.db"
+    if not legacy_db.exists():
+        return
+
+    try:
+        Path(target_db_path).parent.mkdir(parents=True, exist_ok=True)
+        
+        with sqlite3.connect(target_db_path) as conn_target:
+            conn_target.execute(
+                """
+                CREATE TABLE IF NOT EXISTS session_checkpoints (
+                    session_id TEXT PRIMARY KEY,
+                    state TEXT NOT NULL,
+                    messages_json TEXT NOT NULL,
+                    plan_result_json TEXT,
+                    iteration INTEGER DEFAULT 0,
+                    feedback_retries INTEGER DEFAULT 0,
+                    model TEXT,
+                    created_at TEXT,
+                    updated_at TEXT
+                );
+                """
+            )
+            
+            with sqlite3.connect(str(legacy_db)) as conn_src:
+                conn_src.row_factory = sqlite3.Row
+                cursor = conn_src.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table' AND name='session_checkpoints'"
+                )
+                if not cursor.fetchone():
+                    return
+                
+                cursor = conn_src.execute("SELECT * FROM session_checkpoints")
+                rows = cursor.fetchall()
+                for row in rows:
+                    d = dict(row)
+                    conn_target.execute(
+                        """
+                        INSERT OR IGNORE INTO session_checkpoints
+                        (session_id, state, messages_json, plan_result_json, iteration,
+                         feedback_retries, model, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            d.get("session_id"),
+                            d.get("state"),
+                            d.get("messages_json"),
+                            d.get("plan_result_json"),
+                            d.get("iteration", 0),
+                            d.get("feedback_retries", 0),
+                            d.get("model"),
+                            d.get("created_at"),
+                            d.get("updated_at"),
+                        ),
+                    )
+            conn_target.commit()
+        
+        backup_path = _find_safe_backup_path(legacy_db)
+        legacy_db.rename(backup_path)
+        logger.info(f"Successfully migrated legacy sessions database to {target_db_path}")
+    except Exception as e:
+        logger.warning(f"Failed to migrate legacy sessions database: {e}")
+
+
 def get_state(request: Request) -> DashboardState:
     return request.app.state.dashboard
 
 
+
 def _load_sessions_sync(db_path: str) -> list[dict[str, Any]]:
-    """Synchronous helper to load sessions from SQLite."""
+    """Synchronous helper to load sessions from SQLite (active checkpoints & completed sessions)."""
     sessions = []
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
-        cursor = conn.execute(
-            "SELECT session_id, state, model, iteration, created_at, updated_at, "
-            "messages_json FROM session_checkpoints ORDER BY updated_at DESC"
-        )
-        for row in cursor.fetchall():
-            messages = json.loads(row["messages_json"] or "[]")
-            created = datetime.fromisoformat(row["created_at"])
-            updated = datetime.fromisoformat(row["updated_at"])
-            duration = (updated - created).total_seconds()
-            sessions.append(
-                {
-                    "session_id": row["session_id"],
-                    "state": row["state"],
-                    "model": row["model"],
-                    "iteration": row["iteration"],
-                    "created_at": row["created_at"],
-                    "updated_at": row["updated_at"],
-                    "message_count": len(messages),
-                    "duration_seconds": duration,
-                }
+        
+        # 1. Load active session checkpoints
+        try:
+            cursor = conn.execute(
+                "SELECT session_id, state, model, iteration, created_at, updated_at, "
+                "messages_json FROM session_checkpoints ORDER BY updated_at DESC"
             )
+            for row in cursor.fetchall():
+                messages = json.loads(row["messages_json"] or "[]")
+                created = datetime.fromisoformat(row["created_at"])
+                updated = datetime.fromisoformat(row["updated_at"])
+                duration = (updated - created).total_seconds()
+                sessions.append(
+                    {
+                        "session_id": row["session_id"],
+                        "state": row["state"],
+                        "model": row["model"],
+                        "iteration": row["iteration"],
+                        "created_at": row["created_at"],
+                        "updated_at": row["updated_at"],
+                        "message_count": len(messages),
+                        "duration_seconds": duration,
+                    }
+                )
+        except sqlite3.OperationalError:
+            pass
+
+        # 2. Load completed sessions from TraceStore sessions table
+        checkpoint_ids = {s["session_id"] for s in sessions}
+        try:
+            cursor = conn.execute(
+                "SELECT id, start_time, end_time, success, model, error FROM sessions ORDER BY start_time DESC"
+            )
+            for row in cursor.fetchall():
+                session_id = row["id"]
+                if session_id in checkpoint_ids:
+                    continue
+
+                # Retrieve message count
+                msg_count_cursor = conn.execute(
+                    "SELECT COUNT(*) FROM messages WHERE session_id = ?",
+                    (session_id,),
+                )
+                msg_count = msg_count_cursor.fetchone()[0]
+
+                # Compute duration
+                created = datetime.fromisoformat(row["start_time"])
+                updated = datetime.fromisoformat(row["end_time"])
+                duration = (updated - created).total_seconds()
+
+                state = "COMPLETED" if row["success"] else "ERROR"
+                sessions.append(
+                    {
+                        "session_id": session_id,
+                        "state": state,
+                        "model": row["model"],
+                        "iteration": 0,
+                        "created_at": row["start_time"],
+                        "updated_at": row["end_time"],
+                        "message_count": msg_count,
+                        "duration_seconds": duration,
+                    }
+                )
+        except sqlite3.OperationalError:
+            pass
+
+    # Sort all merged sessions by updated_at descending
+    sessions.sort(key=lambda s: s["updated_at"], reverse=True)
     return sessions
 
 
 @app.get("/api/sessions", response_class=JSONResponse)
 async def list_sessions(request: Request) -> list[dict[str, Any]]:
-    """List all sessions from SessionStore."""
+    """List all sessions from SessionStore and TraceStore."""
     state = get_state(request)
-    db_path = state._db_path("sessions.db")
+    db_path = _get_traces_db_path(state.project_root)
     if not os.path.exists(db_path):
         return []
 
@@ -267,50 +410,80 @@ def _load_timeline_sync(db_path: str, session_id: str) -> list[dict[str, Any]]:
     """Synchronous helper to load session timeline from SQLite."""
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
-        cursor = conn.execute(
-            "SELECT messages_json, plan_result_json, state, iteration, updated_at "
-            "FROM session_checkpoints WHERE session_id = ?",
-            (session_id,),
-        )
-        row = cursor.fetchone()
-        if not row:
-            return []
-
-        timeline = []
-        messages = json.loads(row["messages_json"] or "[]")
-        for i, msg in enumerate(messages):
-            timeline.append(
-                {
-                    "index": i,
-                    "timestamp": row["updated_at"],
-                    "event_type": f"message:{msg.get('role', 'unknown')}",
-                    "data": {
-                        "role": msg.get("role"),
-                        "content_preview": _preview(msg.get("content", ""), 200),
-                    },
-                }
+        
+        # 1. Try active checkpoints
+        try:
+            cursor = conn.execute(
+                "SELECT messages_json, plan_result_json, state, iteration, updated_at "
+                "FROM session_checkpoints WHERE session_id = ?",
+                (session_id,),
             )
+            row = cursor.fetchone()
+            if row:
+                timeline = []
+                messages = json.loads(row["messages_json"] or "[]")
+                for i, msg in enumerate(messages):
+                    timeline.append(
+                        {
+                            "index": i,
+                            "timestamp": row["updated_at"],
+                            "event_type": f"message:{msg.get('role', 'unknown')}",
+                            "data": {
+                                "role": msg.get("role"),
+                                "content_preview": _preview(msg.get("content", ""), 200),
+                            },
+                        }
+                    )
 
-        # Add state transition event
-        plan = json.loads(row["plan_result_json"] or "null")
-        if plan:
-            timeline.append(
-                {
-                    "index": len(timeline),
-                    "timestamp": row["updated_at"],
-                    "event_type": "plan_result",
-                    "data": {"plan": plan},
-                }
+                # Add state transition event
+                plan = json.loads(row["plan_result_json"] or "null")
+                if plan:
+                    timeline.append(
+                        {
+                            "index": len(timeline),
+                            "timestamp": row["updated_at"],
+                            "event_type": "plan_result",
+                            "data": {"plan": plan},
+                        }
+                    )
+
+                return timeline
+        except sqlite3.OperationalError:
+            pass
+
+        # 2. Fall back to persistent messages table
+        try:
+            cursor = conn.execute(
+                "SELECT role, content, timestamp FROM messages WHERE session_id = ? ORDER BY id",
+                (session_id,),
             )
+            rows = cursor.fetchall()
+            if rows:
+                timeline = []
+                for i, r in enumerate(rows):
+                    timeline.append(
+                        {
+                            "index": i,
+                            "timestamp": r["timestamp"],
+                            "event_type": f"message:{r['role']}",
+                            "data": {
+                                "role": r["role"],
+                                "content_preview": _preview(r["content"] or "", 200),
+                            },
+                        }
+                    )
+                return timeline
+        except sqlite3.OperationalError:
+            pass
 
-        return timeline
+        return []
 
 
 @app.get("/api/sessions/{session_id}/timeline")
 async def session_timeline(session_id: str, request: Request) -> list[dict[str, Any]]:
     """Get message timeline for a session."""
     state = get_state(request)
-    db_path = state._db_path("sessions.db")
+    db_path = _get_traces_db_path(state.project_root)
     if not os.path.exists(db_path):
         return []
 
@@ -321,42 +494,70 @@ def _load_messages_sync(db_path: str, session_id: str) -> list[dict[str, Any]]:
     """Synchronous helper to load full session messages from SQLite."""
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
-        cursor = conn.execute(
-            "SELECT messages_json, state, iteration, updated_at "
-            "FROM session_checkpoints WHERE session_id = ?",
-            (session_id,),
-        )
-        row = cursor.fetchone()
-        if not row:
-            return []
+        
+        # 1. Try to load active checkpoint messages first
+        try:
+            cursor = conn.execute(
+                "SELECT messages_json FROM session_checkpoints WHERE session_id = ?",
+                (session_id,),
+            )
+            row = cursor.fetchone()
+            if row:
+                messages = json.loads(row["messages_json"] or "[]")
+                result = []
+                for msg in messages:
+                    entry = {
+                        "role": msg.get("role", "unknown"),
+                        "content": msg.get("content", ""),
+                        "tool_calls": msg.get("tool_calls"),
+                        "tool_call_id": msg.get("tool_call_id"),
+                    }
+                    result.append(entry)
+                return result
+        except sqlite3.OperationalError:
+            pass
 
-        messages = json.loads(row["messages_json"] or "[]")
-        result = []
-        for msg in messages:
-            entry = {
-                "role": msg.get("role", "unknown"),
-                "content": msg.get("content", ""),
-                "tool_calls": msg.get("tool_calls"),
-                "tool_call_id": msg.get("tool_call_id"),
-            }
-            result.append(entry)
+        # 2. Fall back to persistent messages table for completed sessions
+        try:
+            cursor = conn.execute(
+                "SELECT role, content, tool_calls FROM messages WHERE session_id = ? ORDER BY id",
+                (session_id,),
+            )
+            rows = cursor.fetchall()
+            if rows:
+                result = []
+                for r in rows:
+                    tool_calls = None
+                    if r["tool_calls"]:
+                        try:
+                            tool_calls = json.loads(r["tool_calls"])
+                        except Exception:
+                            pass
+                    result.append(
+                        {
+                            "role": r["role"],
+                            "content": r["content"],
+                            "tool_calls": tool_calls,
+                            "tool_call_id": None,
+                        }
+                    )
+                return result
+        except sqlite3.OperationalError:
+            pass
 
-        return result
+        return []
 
 
 @app.get("/api/sessions/{session_id}/messages")
 async def session_messages(session_id: str, request: Request) -> list[dict[str, Any]]:
-    """Get full messages for a session replay.
-
-    Returns the complete conversation history with role, content, tool_calls,
-    and tool_call_id for each message. Suitable for session replay UI.
-    """
+    """Get full messages for a session replay."""
     state = get_state(request)
-    db_path = state._db_path("sessions.db")
+    db_path = _get_traces_db_path(state.project_root)
     if not os.path.exists(db_path):
         return []
 
     return await asyncio.to_thread(_load_messages_sync, db_path, session_id)
+
 
 
 @app.get("/api/config")

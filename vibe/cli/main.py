@@ -1097,36 +1097,10 @@ def session_cleanup(
             console.print(f"[dim]  {state}: {count}[/dim]")
 
     if dry_run:
-        # Count what would be deleted without actually deleting
         if stale_only:
-            # We need to count stale checkpoints manually
-            import sqlite3
-            from contextlib import closing
-            from datetime import datetime, timedelta, timezone
-
-            cutoff = (datetime.now(timezone.utc) - timedelta(hours=max_age_hours)).isoformat()
-            with closing(sqlite3.connect(store.db_path, timeout=5.0)) as conn:
-                cursor = conn.execute(
-                    """
-                    SELECT COUNT(*) FROM session_checkpoints
-                    WHERE updated_at < ?
-                      AND state NOT IN ('COMPLETED', 'ERROR', 'STOPPED', 'INCOMPLETE')
-                    """,
-                    (cutoff,),
-                )
-                would_delete = cursor.fetchone()[0]
+            would_delete = store.count_stale(max_age_hours=max_age_hours)
         else:
-            import sqlite3
-            from contextlib import closing
-            from datetime import datetime, timedelta, timezone
-
-            cutoff = (datetime.now(timezone.utc) - timedelta(hours=max_age_hours)).isoformat()
-            with closing(sqlite3.connect(store.db_path, timeout=5.0)) as conn:
-                cursor = conn.execute(
-                    "SELECT COUNT(*) FROM session_checkpoints WHERE updated_at < ?",
-                    (cutoff,),
-                )
-                would_delete = cursor.fetchone()[0]
+            would_delete = store.count_all(max_age_hours=max_age_hours)
         console.print(f"[yellow]Dry run: would delete {would_delete} checkpoint(s)[/yellow]")
         return
 

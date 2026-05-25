@@ -78,33 +78,34 @@ def test_session_approval_exact_match(tmp_path):
     approver = HumanApprover(mode=ApprovalMode.INTERACTIVE)
     approver.timeout_seconds = 5
     
-    # 1. First request - simulation user choosing 'session' (s)
+    # Keep TTY mocks active for all interactive requests in this test
     with patch("sys.stdin.isatty", return_value=True), \
          patch("sys.stdin.fileno", return_value=0), \
          patch("vibe.tools.security.human_approval.termios"), \
          patch("vibe.tools.security.human_approval.tty"), \
-         patch("select.select", return_value=([0], [], [])), \
-         patch("sys.stdin.read", side_effect=["s", "\n"]):
+         patch("select.select", return_value=([0], [], [])):
         
-        res1 = approver.request_approval("ls -la")
-        assert res1.approved
-        assert res1.choice == ApprovalChoice.SESSION
+        # 1. First request - simulation user choosing 'session' (s)
+        with patch("sys.stdin.read", side_effect=["s", "\n"]):
+            res1 = approver.request_approval("ls -la")
+            assert res1.approved
+            assert res1.choice == ApprovalChoice.SESSION
+            
+        # 2. Second request - same exact command -> auto-approved in session
+        res2 = approver.request_approval("ls -la")
+        assert res2.approved
+        assert res2.choice == ApprovalChoice.SESSION
         
-    # 2. Second request - same exact command -> auto-approved in session
-    res2 = approver.request_approval("ls -la")
-    assert res2.approved
-    assert res2.choice == ApprovalChoice.SESSION
-    
-    # 3. Third request - different flags -> NOT approved
-    with patch("sys.stdin.read", side_effect=["d", "\n"]):
-        res3 = approver.request_approval("ls -F")
-        assert not res3.approved
+        # 3. Third request - different flags -> NOT approved
+        with patch("sys.stdin.read", side_effect=["d", "\n"]):
+            res3 = approver.request_approval("ls -F")
+            assert not res3.approved
 
-    # 4. Reset session -> Second request should now prompt again
-    approver.reset_session()
-    with patch("sys.stdin.read", side_effect=["d", "\n"]):
-        res4 = approver.request_approval("ls -la")
-        assert not res4.approved
+        # 4. Reset session -> Second request should now prompt again
+        approver.reset_session()
+        with patch("sys.stdin.read", side_effect=["d", "\n"]):
+            res4 = approver.request_approval("ls -la")
+            assert not res4.approved
 
 def test_shell_pipe_auto_approval(clean_vibe_dir, tmp_path):
     with patch("vibe.tools.security.approval_store.DEFAULT_STORE_PATH", clean_vibe_dir), \

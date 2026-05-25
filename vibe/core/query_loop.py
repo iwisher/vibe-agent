@@ -713,9 +713,9 @@ class QueryLoop:
                     # Logging failures must not crash the session
                     pass
 
-            # Phase 5.2: Offer rollback if shadow exists and session ended in error/incomplete
+            # Phase 5.2: Offer rollback if shadow exists and session ended in error/incomplete/interrupted
             if self.shadow_manager is not None and self._session_id:
-                if self._state in (QueryState.ERROR, QueryState.INCOMPLETE):
+                if self._state != QueryState.COMPLETED:
                     try:
                         shadows = self.shadow_manager.list_shadows()
                         matching = [s for s in shadows if s.session_id == self._session_id]
@@ -728,6 +728,7 @@ class QueryLoop:
                                 )
                     except Exception:
                         pass
+
 
     async def _maybe_compact(self, llm_msgs: list[dict]) -> QueryResult | None:
         """Compact context if needed. Returns a QueryResult if compaction occurred."""
@@ -958,15 +959,24 @@ class QueryLoop:
 
         # Fallback: estimate completion tokens from content length when the
         # streaming provider does not report usage (common for Ollama, vLLM,
-        # and many OpenAI-compatible proxies).  ~4 chars/token is a rough
-        # average for English text; reasoning content is included since it
-        # also consumes tokens.
+        # and many OpenAI-compatible proxies). ASCII text averages ~4 chars/token;
+        # non-ASCII (such as CJK, Arabic, or Cyrillic) averages ~0.8 tokens per char.
+        # Reasoning content is included since it also consumes tokens.
         if ct == 0 and response.content:
             combined = response.content
             if response.reasoning_content:
                 combined += response.reasoning_content
-            ct = max(1, len(combined) // 4)
+            
+            estimated_tokens = 0.0
+            for char in combined:
+                if ord(char) < 128:
+                    estimated_tokens += 0.25
+                else:
+                    estimated_tokens += 0.8
+            
+            ct = max(1, int(estimated_tokens))
             tt = pt + ct
+
 
         tps = ct / elapsed if elapsed > 0 else 0
         return Metrics(
