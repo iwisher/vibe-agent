@@ -3,6 +3,8 @@ import re
 import tomllib
 from pathlib import Path
 
+import yaml
+
 from .models import Skill, SkillStep, SkillTrigger, SkillVerification
 
 
@@ -14,9 +16,17 @@ class SkillParser:
         return self.parse_string(content)
 
     def parse_string(self, content: str) -> Skill:
-        if not content.startswith("+++"):
-            raise ValueError("SKILL.md must start with TOML frontmatter (+++)")
+        if content.startswith("+++"):
+            return self._parse_toml(content)
+        elif content.startswith("---"):
+            return self._parse_yaml(content)
+        else:
+            raise ValueError(
+                "SKILL.md must start with TOML frontmatter (+++) or YAML frontmatter (---)"
+            )
 
+    def _parse_toml(self, content: str) -> Skill:
+        """Parse TOML frontmatter format (Vibe-native skills)."""
         parts = content.split("+++", 2)
         if len(parts) < 3:
             raise ValueError("Invalid frontmatter: missing closing +++")
@@ -75,6 +85,68 @@ class SkillParser:
             examples=examples,
             metadata=config.get("metadata", {}),
         )
+
+    def _parse_yaml(self, content: str) -> Skill:
+        """Parse YAML frontmatter format (Hermes skills)."""
+        parts = content.split("---", 2)
+        if len(parts) < 3:
+            raise ValueError("Invalid frontmatter: missing closing ---")
+
+        frontmatter = parts[1].strip()
+        body = parts[2].strip()
+
+        try:
+            config = yaml.safe_load(frontmatter)
+        except yaml.YAMLError as e:
+            raise ValueError(f"Invalid YAML in frontmatter: {e}") from e
+
+        if not isinstance(config, dict):
+            raise ValueError("YAML frontmatter must be a mapping")
+
+        # Map YAML fields to Skill model
+        name = config.get("name", "")
+        skill_id = self._slugify(name) if name else config.get("id", "")
+        if not skill_id:
+            raise ValueError("Skill must have a 'name' or 'id' field")
+
+        # Parse trigger from YAML
+        trigger_data = config.get("trigger", [])
+        if isinstance(trigger_data, list):
+            trigger = SkillTrigger(patterns=trigger_data)
+        elif isinstance(trigger_data, dict):
+            trigger = SkillTrigger(
+                patterns=trigger_data.get("patterns", []),
+                required_tools=trigger_data.get("required_tools", []),
+                required_context=trigger_data.get("required_context", []),
+            )
+        else:
+            trigger = SkillTrigger()
+
+        # Parse pitfalls and examples from body
+        pitfalls = self._extract_pitfalls(body)
+        examples = self._extract_examples(body)
+
+        return Skill(
+            vibe_skill_version=config.get("vibe_skill_version", "2.0.0"),
+            id=skill_id,
+            name=name or skill_id,
+            description=config.get("description", ""),
+            category=config.get("category", "general"),
+            tags=config.get("tags", []) or [],
+            trigger=trigger,
+            steps=[],  # Hermes skills don't have executable steps
+            pitfalls=pitfalls,
+            examples=examples,
+            metadata=config.get("metadata", {}) or {},
+        )
+
+    @staticmethod
+    def _slugify(name: str) -> str:
+        """Convert a skill name to a slug ID."""
+        slug = name.lower().strip()
+        slug = re.sub(r"[^a-z0-9_-]+", "-", slug)
+        slug = re.sub(r"-+", "-", slug)
+        return slug.strip("-")
 
     def _extract_pitfalls(self, body: str) -> list[str]:
         match = re.search(r"## Pitfalls\n+(.*?)(?=\n## |\Z)", body, re.DOTALL)

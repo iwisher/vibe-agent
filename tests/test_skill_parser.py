@@ -59,6 +59,37 @@ A simple test skill.
 """
 
 
+SAMPLE_YAML_SKILL = """---
+name: yaml-skill
+description: "A YAML-frontmatter skill"
+category: "general"
+tags: ["yaml", "test"]
+trigger:
+  - "yaml pattern"
+  - "another pattern"
+metadata:
+  author: test
+---
+
+# YAML Skill
+
+## Overview
+This is a Hermes-style YAML skill.
+
+## Pitfalls
+
+- Don't use in production
+- Watch for edge cases
+
+## Examples
+
+### Example 1: Basic usage
+
+**Input:** "Run yaml skill"
+**Expected:** Success
+"""
+
+
 def test_parser_reads_frontmatter():
     parser = SkillParser()
     skill = parser.parse_string(SAMPLE_SKILL)
@@ -100,3 +131,30 @@ def test_parser_missing_frontmatter():
     parser = SkillParser()
     with pytest.raises(ValueError, match="must start with"):
         parser.parse_string("# No frontmatter")
+
+
+def test_parser_yaml_frontmatter():
+    parser = SkillParser()
+    skill = parser.parse_string(SAMPLE_YAML_SKILL)
+    assert skill.id == "yaml-skill"
+    assert skill.name == "yaml-skill"
+    assert skill.description == "A YAML-frontmatter skill"
+    assert skill.vibe_skill_version == "2.0.0"
+    assert skill.category == "general"
+    assert skill.tags == ["yaml", "test"]
+    assert skill.steps == []
+    assert len(skill.pitfalls) == 2
+    assert "production" in skill.pitfalls[0]
+    assert skill.metadata == {"author": "test"}
+
+
+def test_parser_yaml_trigger_list():
+    parser = SkillParser()
+    skill = parser.parse_string(SAMPLE_YAML_SKILL)
+    assert skill.trigger.patterns == ["yaml pattern", "another pattern"]
+
+
+def test_parser_invalid_format():
+    parser = SkillParser()
+    with pytest.raises(ValueError, match="must start with TOML frontmatter|must start with YAML frontmatter"):
+        parser.parse_string("# Just markdown\nNo frontmatter here.")

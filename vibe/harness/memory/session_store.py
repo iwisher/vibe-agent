@@ -173,6 +173,37 @@ class SessionStore:
             result = conn.execute("SELECT COUNT(*) FROM session_checkpoints").fetchone()
             return result[0] if result else 0
 
+    def count_stale(self, max_age_hours: float = 24.0) -> int:
+        """Count checkpoints older than max_age_hours that are not terminal."""
+        from datetime import timedelta
+
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=max_age_hours)).isoformat()
+        with closing(sqlite3.connect(self.db_path, timeout=5.0)) as conn:
+            cursor = conn.execute(
+                """
+                SELECT COUNT(*) FROM session_checkpoints
+                WHERE updated_at < ?
+                  AND state NOT IN ('COMPLETED', 'ERROR', 'STOPPED', 'INCOMPLETE')
+                """,
+                (cutoff,),
+            )
+            result = cursor.fetchone()
+            return result[0] if result else 0
+
+    def count_all(self, max_age_hours: float = 168.0) -> int:
+        """Count ALL checkpoints older than max_age_hours regardless of state."""
+        from datetime import timedelta
+
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=max_age_hours)).isoformat()
+        with closing(sqlite3.connect(self.db_path, timeout=5.0)) as conn:
+            cursor = conn.execute(
+                "SELECT COUNT(*) FROM session_checkpoints WHERE updated_at < ?",
+                (cutoff,),
+            )
+            result = cursor.fetchone()
+            return result[0] if result else 0
+
+
     def cleanup_stale(self, max_age_hours: float = 24.0) -> int:
         """Remove checkpoints older than max_age_hours that are not COMPLETED.
 

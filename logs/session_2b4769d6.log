@@ -1,4 +1,0 @@
-2026-05-11 22:08:18,333 [INFO] vibe.session.2b4769d6: Starting session 2b4769d6 in /Users/rsong/DevSpace/vibe-agent
-2026-05-11 22:08:29,520 [DEBUG] vibe.session.2b4769d6: LLM Request: model=qwen3.6:27b url=http://192.168.68.78:11434/v1/chat/completions messages=6
-2026-05-11 22:08:31,735 [DEBUG] vibe.session.2b4769d6: LLM Request: model=qwen3.6:27b url=http://192.168.68.78:11434/v1/chat/completions messages=6
-2026-05-11 22:08:35,713 [DEBUG] vibe.session.2b4769d6: LLM Request: model=qwen3.6:27b url=http://192.168.68.78:11434/v1/chat/completions messages=6

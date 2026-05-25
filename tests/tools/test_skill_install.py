@@ -64,13 +64,10 @@ async def test_skill_install_tool_local_path_success():
         result = await tool.execute(source=str(source_dir))
 
         assert result.success
-        assert result.content["skill_id"] == "sample-skill"
-        assert result.content["name"] == "Sample Skill"
-        assert result.content["description"] == "A sample skill"
-        assert result.content["version"] == "2.0.0"
-        assert result.content["category"] == "test"
-        assert result.content["tags"] == ["test"]
-        assert result.content["steps_count"] == 1
+        assert isinstance(result.content, str)
+        assert "sample-skill" in result.content
+        assert "Sample Skill" in result.content
+        assert "A sample skill" in result.content
         assert (skills_dir / "sample-skill" / "SKILL.md").exists()
 
 
@@ -89,7 +86,8 @@ async def test_skill_install_tool_skill_id_override():
         result = await tool.execute(source=str(source_dir), skill_id="custom-id")
 
         assert result.success
-        assert result.content["skill_id"] == "custom-id"
+        assert isinstance(result.content, str)
+        assert "custom-id" in result.content
         assert (skills_dir / "custom-id" / "SKILL.md").exists()
 
 
@@ -129,8 +127,8 @@ async def test_skill_list_tool_empty():
         tool = SkillListTool(skills_dir=skills_dir)
         result = await tool.execute()
         assert result.success
-        assert result.content["count"] == 0
-        assert result.content["skills"] == []
+        assert isinstance(result.content, str)
+        assert "No skills installed" in result.content
 
 
 @pytest.mark.asyncio
@@ -152,12 +150,10 @@ async def test_skill_list_tool_with_skills():
         list_tool = SkillListTool(skills_dir=skills_dir)
         result = await list_tool.execute()
         assert result.success
-        assert result.content["count"] == 1
-        skill_info = result.content["skills"][0]
-        assert skill_info["id"] == "sample-skill"
-        assert skill_info["version"] == "2.0.0"
-        assert "installed_at" in skill_info
-        assert skill_info["path"] == str(skills_dir / "sample-skill")
+        assert isinstance(result.content, str)
+        assert "Installed skills: 1" in result.content
+        assert "sample-skill" in result.content
+        assert "2.0.0" in result.content
 
 
 def test_chat_approval_gate_blocks_risks():
@@ -190,10 +186,9 @@ async def test_format_result_includes_metadata():
         result = await tool.execute(source=str(source_dir))
 
         assert result.success
-        assert "name" in result.content
-        assert "description" in result.content
-        assert "version" in result.content
-        assert "category" in result.content
-        assert "tags" in result.content
-        assert "steps_count" in result.content
-        assert "variables" in result.content
+        assert isinstance(result.content, str)
+        assert "Sample Skill" in result.content
+        assert "A sample skill" in result.content
+        assert "2.0.0" in result.content
+        assert "test" in result.content
+        assert "Steps: 1" in result.content

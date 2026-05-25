@@ -135,36 +135,29 @@ class SkillInstallTool(Tool):
                 error=result.message,
             )
 
-        # Build a rich response with skill metadata
-        content = {
-            "skill_id": result.skill_id,
-            "path": str(result.path) if result.path else None,
-            "message": result.message,
-        }
+        lines = [result.message]
+        if result.path:
+            lines.append(f"Path: {result.path}")
 
         # Try to read the installed skill's metadata for richer output
         if result.path:
             try:
                 parser = SkillParser()
                 skill = parser.parse_file(result.path / "SKILL.md")
-                content["name"] = skill.name
-                content["description"] = skill.description
-                content["version"] = skill.vibe_skill_version
-                content["category"] = skill.category
-                content["tags"] = skill.tags
-                content["steps_count"] = len(skill.steps)
-                content["variables"] = [
-                    {"name": v.get("name"), "description": v.get("description")}
-                    for v in skill.variables
-                    if isinstance(v, dict)
-                ]
+                lines.append(f"Name: {skill.name}")
+                lines.append(f"Description: {skill.description}")
+                lines.append(f"Version: {skill.vibe_skill_version}")
+                lines.append(f"Category: {skill.category}")
+                if skill.tags:
+                    lines.append(f"Tags: {', '.join(skill.tags)}")
+                lines.append(f"Steps: {len(skill.steps)}")
             except Exception:
                 # If parsing fails post-install, still report success
                 pass
 
         return ToolResult(
             success=True,
-            content=content,
+            content="\n".join(lines),
         )
 
 
@@ -187,19 +180,18 @@ class SkillListTool(Tool):
     async def execute(self, **kwargs) -> ToolResult:
         try:
             skills = self.installer.list_installed()
-            content = {
-                "count": len(skills),
-                "skills": [
-                    {
-                        "id": skill_id,
-                        "version": info.get("version", "?"),
-                        "installed_at": info.get("installed_at", "?"),
-                        "path": info.get("path", "?"),
-                    }
-                    for skill_id, info in skills.items()
-                ],
-            }
-            return ToolResult(success=True, content=content)
+            if not skills:
+                return ToolResult(success=True, content="No skills installed.")
+
+            lines = [f"Installed skills: {len(skills)}"]
+            for skill_id, info in skills.items():
+                version = info.get("version", "?")
+                installed = info.get("installed_at", "?")[:10]
+                path = info.get("path", "?")
+                lines.append(f"- {skill_id} (v{version}, installed {installed})")
+                lines.append(f"  Path: {path}")
+
+            return ToolResult(success=True, content="\n".join(lines))
         except Exception as e:
             return ToolResult(
                 success=False,
