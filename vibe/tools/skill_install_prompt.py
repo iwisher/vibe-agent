@@ -45,11 +45,7 @@ class PromptSkillInstallTool(Tool):
     async def execute(self, *, source: str, name: str | None = None, **kwargs) -> ToolResult:
         """Install a prompt skill from source."""
         try:
-            import asyncio
-            content = await asyncio.wait_for(
-                asyncio.to_thread(self._fetch_content, source),
-                timeout=35.0
-            )
+            content = await self._fetch_content(source)
         except Exception as e:
             return ToolResult(
                 success=False,
@@ -104,12 +100,14 @@ class PromptSkillInstallTool(Tool):
             error=None,
         )
 
-    def _fetch_content(self, source: str) -> str:
+    async def _fetch_content(self, source: str) -> str:
         """Fetch content from URL or local path."""
         if source.startswith("http://") or source.startswith("https://"):
-            import urllib.request
-            with urllib.request.urlopen(source, timeout=30) as resp:
-                return resp.read().decode("utf-8")
+            import aiohttp
+            async with aiohttp.ClientSession() as session:
+                async with session.get(source, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                    resp.raise_for_status()
+                    return await resp.text()
         else:
             path = Path(source).expanduser().resolve()
             return path.read_text(encoding="utf-8")

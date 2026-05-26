@@ -224,10 +224,7 @@ class SkillRunnerTool(Tool):
         if verification.output_contains:
             expected_output = verification.output_contains
             if variables:
-                try:
-                    expected_output = SkillRunnerTool._substitute_vars(expected_output, variables)
-                except ValueError:
-                    pass
+                expected_output = SkillRunnerTool._substitute_vars(expected_output, variables)
             output = str(result.content or "")
             if expected_output not in output:
                 return False
@@ -235,10 +232,7 @@ class SkillRunnerTool(Tool):
         if verification.file_exists:
             expected_file = verification.file_exists
             if variables:
-                try:
-                    expected_file = SkillRunnerTool._substitute_vars(expected_file, variables)
-                except ValueError:
-                    pass
+                expected_file = SkillRunnerTool._substitute_vars(expected_file, variables)
             # Resolve relative to command context or CWD
             path = Path(expected_file)
             if not path.exists():

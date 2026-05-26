@@ -150,7 +150,7 @@ class QueryLoopFactory:
                 )
         except Exception as e:
             if self.logger:
-                self.logger.warning(f"Failed to load skills: {e}")
+                self.logger.error(f"Failed to load skills: {e}", exc_info=True)
 
         # Register SkillRunnerTool if executable skills exist
         if executable_skills:
