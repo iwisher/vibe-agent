@@ -92,12 +92,12 @@ class ChatApprovalGate(ApprovalGate):
 
 
 
-class SkillInstallTool(Tool):
-    """Install a vibe skill from git, local path, or tarball URL.
+class SkillInstallExecutableTool(Tool):
+    """Install an executable vibe skill from git, local path, or tarball URL.
 
-    This tool enables interactive skill installation during chat sessions.
-    The user can say "install skill from https://github.com/..." and the
-    agent will fetch, validate, and install it automatically.
+    Executable skills contain [[steps]] that run via the ToolSystem when
+    triggered by the `run_skill` tool. They are validated for security
+    (dangerous commands, pipe-to-shell attacks, etc.) before installation.
     """
 
     def __init__(
@@ -106,12 +106,12 @@ class SkillInstallTool(Tool):
         approval_gate: ApprovalGate | None = None,
     ):
         super().__init__(
-            name="skill_install",
+            name="skill_install_executable",
             description=(
-                "Install a vibe skill from a git repository URL, local directory path, "
-                "or tarball URL. The skill will be fetched, validated for security, "
-                "and installed into the local skills directory. "
-                "Returns the installed skill's metadata on success."
+                "Install an executable vibe skill from a git repository URL, "
+                "local directory path, or tarball URL. Executable skills contain "
+                "steps that run via the ToolSystem. They are validated for security "
+                "before installation. Returns the installed skill's metadata on success."
             ),
         )
         self.skills_dir = Path(skills_dir).expanduser().resolve()

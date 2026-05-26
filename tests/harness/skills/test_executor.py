@@ -139,49 +139,84 @@ class TestSkillExecutor:
         assert "Mode: dev" in result.output
 
     def test_shell_execution(self):
-        """Should execute shell commands."""
-        executor = SkillExecutor(timeout=5.0)
+        """Should execute shell commands via SkillRunnerTool."""
+        from unittest.mock import AsyncMock, MagicMock
+        from vibe.tools.skill_runner import SkillRunnerTool
+        from vibe.tools.tool_system import ToolSystem, ToolResult
 
-        skill = Skill(
-            name="echo_skill",
-            description="Echo skill",
-            content="echo 'hello world'",
-            tags=["test"],
+        tool_system = ToolSystem()
+        mock_bash = MagicMock()
+        mock_bash.name = "bash"
+        mock_bash.execute = AsyncMock(return_value=ToolResult(success=True, content="hello world", error=None, metadata={"exit_code": 0}))
+        tool_system.register_tool(mock_bash)
+
+        from vibe.harness.skills.models import Skill as ExecutableSkill, SkillStep, SkillVerification
+        skill = ExecutableSkill(
+            id="echo_skill",
+            vibe_skill_version="2.0.0",
+            name="Echo Skill",
+            description="Echo test",
+            steps=[SkillStep(id="s1", description="Echo", tool="bash", command="echo 'hello world'", verification=SkillVerification(exit_code=0))],
         )
 
-        result = executor.execute_shell(skill)
+        runner = SkillRunnerTool({"echo_skill": skill}, tool_system)
+        import asyncio
+        result = asyncio.run(runner.execute(skill_id="echo_skill"))
         assert result.success is True
-        assert "hello world" in result.output
+        assert "hello world" in result.content
 
     def test_shell_timeout(self):
-        """Should handle shell timeout."""
-        executor = SkillExecutor(timeout=0.1)
+        """Should handle shell timeout via SkillRunnerTool."""
+        from unittest.mock import AsyncMock, MagicMock
+        from vibe.tools.skill_runner import SkillRunnerTool
+        from vibe.tools.tool_system import ToolSystem, ToolResult
 
-        skill = Skill(
-            name="sleep_skill",
-            description="Sleep skill",
-            content="sleep 10",
-            tags=["test"],
+        tool_system = ToolSystem()
+        mock_bash = MagicMock()
+        mock_bash.name = "bash"
+        mock_bash.execute = AsyncMock(return_value=ToolResult(success=False, content="", error="timed out", metadata={"exit_code": -1}))
+        tool_system.register_tool(mock_bash)
+
+        from vibe.harness.skills.models import Skill as ExecutableSkill, SkillStep, SkillVerification
+        skill = ExecutableSkill(
+            id="sleep_skill",
+            vibe_skill_version="2.0.0",
+            name="Sleep Skill",
+            description="Sleep test",
+            steps=[SkillStep(id="s1", description="Sleep", tool="bash", command="sleep 10", verification=SkillVerification(exit_code=0))],
         )
 
-        result = executor.execute_shell(skill)
+        runner = SkillRunnerTool({"sleep_skill": skill}, tool_system)
+        import asyncio
+        result = asyncio.run(runner.execute(skill_id="sleep_skill"))
         assert result.success is False
         assert "timed out" in result.error.lower()
 
     def test_shell_error(self):
-        """Should handle shell errors."""
-        executor = SkillExecutor()
+        """Should handle shell errors via SkillRunnerTool."""
+        from unittest.mock import AsyncMock, MagicMock
+        from vibe.tools.skill_runner import SkillRunnerTool
+        from vibe.tools.tool_system import ToolSystem, ToolResult
 
-        skill = Skill(
-            name="error_skill",
-            description="Error skill",
-            content="exit 1",
-            tags=["test"],
+        tool_system = ToolSystem()
+        mock_bash = MagicMock()
+        mock_bash.name = "bash"
+        mock_bash.execute = AsyncMock(return_value=ToolResult(success=False, content="", error="exit 1", metadata={"exit_code": 1}))
+        tool_system.register_tool(mock_bash)
+
+        from vibe.harness.skills.models import Skill as ExecutableSkill, SkillStep, SkillVerification
+        skill = ExecutableSkill(
+            id="error_skill",
+            vibe_skill_version="2.0.0",
+            name="Error Skill",
+            description="Error test",
+            steps=[SkillStep(id="s1", description="Error", tool="bash", command="exit 1", verification=SkillVerification(exit_code=0))],
         )
 
-        result = executor.execute_shell(skill)
+        runner = SkillRunnerTool({"error_skill": skill}, tool_system)
+        import asyncio
+        result = asyncio.run(runner.execute(skill_id="error_skill"))
         assert result.success is False
-        assert result.exit_code == 1
 
     def test_execution_result(self):
         """Should create ExecutionResult."""

@@ -171,3 +171,27 @@ class TestSkillRunnerTool:
         result_missing = await tool.execute(skill_id="test", variables={})
         assert result_missing.success is False
         assert "Variable 'count' is required" in result_missing.error
+
+    def test_substitute_vars_spacing_insensitive(self):
+        result = SkillRunnerTool._substitute_vars("echo {{ name  }}", {"name": "world"})
+        assert result == "echo world"
+        result2 = SkillRunnerTool._substitute_vars("echo {{name }}", {"name": "world"})
+        assert result2 == "echo world"
+
+    @pytest.mark.asyncio
+    async def test_circular_execution_guard(self):
+        tool_system = ToolSystem()
+        step = FakeStep(command="nested", tool="run_skill")
+        skill = FakeSkill(steps=[step])
+        tool = SkillRunnerTool({"test-circular": skill}, tool_system)
+        result = await tool.execute(skill_id="test-circular")
+        assert result.success is False
+        assert "Circular execution blocked" in result.error
+
+    def test_verify_step_output_contains_with_substitution(self):
+        result = ToolResult(success=True, content="hello world-substituted", metadata={"exit_code": 0})
+        verification = MagicMock()
+        verification.exit_code = None
+        verification.output_contains = "world-{{suffix}}"
+        verification.file_exists = None
+        assert SkillRunnerTool._verify_step(result, verification, "cmd", {"suffix": "substituted"}) is True

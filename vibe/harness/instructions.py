@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -61,12 +62,14 @@ class InstructionLoader:
         global_agents_path: str | None = None,
         project_agents_path: str | None = None,
         skills_dir: str | None = None,
+        skills_dirs: list[str] | None = None,
     ):
         self.global_agents_path = Path(
             global_agents_path or Path.home() / ".vibe" / "AGENTS.md"
         )
         self.project_agents_path = Path(project_agents_path or "./AGENTS.md")
         self.skills_dir = Path(skills_dir or Path.home() / ".vibe" / "skills")
+        self.skills_dirs = skills_dirs or []
 
     def load(self) -> InstructionSet:
         return InstructionSet(
@@ -74,6 +77,73 @@ class InstructionLoader:
             project_agents=self._read_file(self.project_agents_path),
             skills=self._load_skills(),
         )
+
+    def load_unified(self) -> tuple[list[Skill], dict[str, Any]]:
+        """Load both prompt skills (YAML) and executable skills (TOML).
+
+        Returns:
+            (prompt_skills, executable_skills) where:
+            - prompt_skills: list[Skill] for system prompt injection
+            - executable_skills: dict[str, Any] for SkillRunnerTool
+        """
+        from vibe.harness.skills.parser import SkillParser
+
+        prompt_skills: list[Skill] = []
+        executable_skills: dict[str, Any] = {}
+
+        all_dirs = [self.skills_dir] + [Path(d) for d in self.skills_dirs]
+
+        for base_dir in all_dirs:
+            if not base_dir.exists():
+                continue
+
+            for file_path in self._scan_skill_files(base_dir):
+                text = file_path.read_text(encoding="utf-8")
+                fmt = self._detect_format(text)
+
+                if fmt == "yaml":
+                    # YAML → prompt skill (v1)
+                    frontmatter, content = self._parse_frontmatter(text)
+                    prompt_skills.append(
+                        Skill(
+                            name=frontmatter.get("name", file_path.stem),
+                            description=frontmatter.get("description", ""),
+                            content=content.strip(),
+                            auto_load=bool(frontmatter.get("auto_load", False)),
+                            tags=frontmatter.get("tags", []) or [],
+                        )
+                    )
+                elif fmt == "toml":
+                    # TOML → executable skill (v2)
+                    try:
+                        parser = SkillParser()
+                        skill = parser.parse_string(text)
+                        executable_skills[skill.id] = skill
+                    except Exception:
+                        # Skip malformed TOML skills
+                        continue
+
+        return prompt_skills, executable_skills
+
+    @staticmethod
+    def _scan_skill_files(base_dir: Path) -> set[Path]:
+        """Scan for skill files: flat *.md and nested */SKILL.md."""
+        files: set[Path] = set()
+        # Flat layout: ~/.vibe/skills/*.md
+        files.update(base_dir.glob("*.md"))
+        # Nested layout: ~/.vibe/skills/<category>/<skill>/SKILL.md
+        files.update(base_dir.rglob("SKILL.md"))
+        return files
+
+    @staticmethod
+    def _detect_format(text: str) -> str:
+        """Detect skill format by frontmatter delimiter."""
+        stripped = text.lstrip()
+        if stripped.startswith("+++"):
+            return "toml"
+        elif stripped.startswith("---"):
+            return "yaml"
+        return "unknown"
 
     @staticmethod
     def _read_file(path: Path) -> str:
@@ -106,7 +176,7 @@ class InstructionLoader:
 
         Supports both --- delimited frontmatter and raw markdown.
         """
-        if not text.startswith("---"):
+        if not text.lstrip().startswith("---"):
             return {}, text
 
         try:

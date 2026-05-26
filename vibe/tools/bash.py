@@ -216,6 +216,7 @@ class BashTool(Tool):
                 success=proc.returncode == 0,
                 content=output.strip(),
                 error=f"Exit code: {proc.returncode}" if proc.returncode != 0 else None,
+                metadata={"exit_code": proc.returncode},
             )
         except asyncio.TimeoutError:
             try:

@@ -8,7 +8,7 @@ from unittest.mock import patch, MagicMock
 import sys
 from unittest.mock import MagicMock, patch
 
-from vibe.tools.skill_install import SkillInstallTool, SkillListTool, ChatApprovalGate
+from vibe.tools.skill_install import SkillInstallExecutableTool, SkillListTool, ChatApprovalGate
 from vibe.tools.tool_system import ToolResult
 
 SAMPLE_SKILL = """+++
@@ -36,7 +36,7 @@ command = "echo hello"
 
 @pytest.mark.asyncio
 async def test_skill_install_tool_schema():
-    tool = SkillInstallTool()
+    tool = SkillInstallExecutableTool()
     schema = tool.get_schema()
     assert schema["type"] == "object"
     assert "source" in schema["properties"]
@@ -46,7 +46,7 @@ async def test_skill_install_tool_schema():
 
 @pytest.mark.asyncio
 async def test_skill_install_tool_missing_source():
-    tool = SkillInstallTool()
+    tool = SkillInstallExecutableTool()
     result = await tool.execute()
     assert not result.success
     assert "Missing required parameter: 'source'" in result.error
@@ -64,7 +64,7 @@ async def test_skill_install_tool_local_path_success():
         source_dir.mkdir()
         (source_dir / "SKILL.md").write_text(SAMPLE_SKILL, encoding="utf-8")
 
-        tool = SkillInstallTool(skills_dir=skills_dir)
+        tool = SkillInstallExecutableTool(skills_dir=skills_dir)
         result = await tool.execute(source=str(source_dir))
 
         assert result.success
@@ -86,7 +86,7 @@ async def test_skill_install_tool_skill_id_override():
         source_dir.mkdir()
         (source_dir / "SKILL.md").write_text(SAMPLE_SKILL, encoding="utf-8")
 
-        tool = SkillInstallTool(skills_dir=skills_dir)
+        tool = SkillInstallExecutableTool(skills_dir=skills_dir)
         result = await tool.execute(source=str(source_dir), skill_id="custom-id")
 
         assert result.success
@@ -101,7 +101,7 @@ async def test_skill_install_tool_invalid_skill_id_rejected():
         skills_dir = Path(tmpdir) / "skills"
         skills_dir.mkdir()
 
-        tool = SkillInstallTool(skills_dir=skills_dir)
+        tool = SkillInstallExecutableTool(skills_dir=skills_dir)
         result = await tool.execute(source="/nonexistent", skill_id="../../../etc/passwd")
 
         assert not result.success
@@ -116,7 +116,7 @@ async def test_skill_install_tool_local_path_not_found():
         skills_dir = Path(tmpdir) / "skills"
         skills_dir.mkdir()
 
-        tool = SkillInstallTool(skills_dir=skills_dir)
+        tool = SkillInstallExecutableTool(skills_dir=skills_dir)
         result = await tool.execute(source="/nonexistent/path/to/skill")
         assert not result.success
         assert "Path not found" in result.error
@@ -142,12 +142,12 @@ async def test_skill_list_tool_with_skills():
         skills_dir = (tmp_path / "skills").resolve()
         skills_dir.mkdir()
 
-        # Pre-install a skill by using SkillInstallTool
+        # Pre-install a skill by using SkillInstallExecutableTool
         source_dir = tmp_path / "my-skill"
         source_dir.mkdir()
         (source_dir / "SKILL.md").write_text(SAMPLE_SKILL, encoding="utf-8")
 
-        install_tool = SkillInstallTool(skills_dir=skills_dir)
+        install_tool = SkillInstallExecutableTool(skills_dir=skills_dir)
         install_res = await install_tool.execute(source=str(source_dir))
         assert install_res.success
 
@@ -186,7 +186,7 @@ async def test_format_result_includes_metadata():
         source_dir.mkdir()
         (source_dir / "SKILL.md").write_text(SAMPLE_SKILL, encoding="utf-8")
 
-        tool = SkillInstallTool(skills_dir=skills_dir)
+        tool = SkillInstallExecutableTool(skills_dir=skills_dir)
         result = await tool.execute(source=str(source_dir))
 
         assert result.success

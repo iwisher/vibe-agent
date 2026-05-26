@@ -1,5 +1,5 @@
 import abc
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
@@ -12,6 +12,7 @@ class ToolResult:
     success: bool
     content: Any
     error: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 class Tool(abc.ABC):
     def __init__(self, name: str, description: str):

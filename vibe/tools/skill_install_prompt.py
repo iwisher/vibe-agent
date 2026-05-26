@@ -45,7 +45,11 @@ class PromptSkillInstallTool(Tool):
     async def execute(self, *, source: str, name: str | None = None, **kwargs) -> ToolResult:
         """Install a prompt skill from source."""
         try:
-            content = self._fetch_content(source)
+            import asyncio
+            content = await asyncio.wait_for(
+                asyncio.to_thread(self._fetch_content, source),
+                timeout=35.0
+            )
         except Exception as e:
             return ToolResult(
                 success=False,

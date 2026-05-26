@@ -109,6 +109,14 @@ class SkillRunnerTool(Tool):
 
         step_results = []
         for step in skill.steps:
+            # Circular check to prevent infinite nested run_skill loops
+            if step.tool == "run_skill":
+                return ToolResult(
+                    success=False,
+                    content=None,
+                    error=f"Circular execution blocked: step '{step.id}' cannot call 'run_skill' recursively.",
+                )
+
             command = self._substitute_vars(step.command, variables)
 
             # Detect if shell mode is needed
@@ -127,7 +135,7 @@ class SkillRunnerTool(Tool):
                     error=f"Tool execution failed: {e}",
                 )
 
-            verified = self._verify_step(result, step.verification, command)
+            verified = self._verify_step(result, step.verification, command, variables)
 
             step_results.append({
                 "step_id": step.id,
@@ -162,9 +170,10 @@ class SkillRunnerTool(Tool):
         """
         result = command
 
-        # Jinja2-style {{var}}
+        # Jinja2-style {{var}} with optional whitespace (spacing-insensitive)
         for key, value in variables.items():
-            result = result.replace(f"{{{{{key}}}}}", str(value))
+            pattern = r"\{\{\s*" + re.escape(key) + r"\s*\}\}"
+            result = re.sub(pattern, str(value), result)
 
         # Shell-style ${VAR} and ${VAR:-default} — only for declared vars
         def replace_env(match: re.Match) -> str:
@@ -179,8 +188,8 @@ class SkillRunnerTool(Tool):
 
         result = re.sub(r"\$\{(\w+)(?::-([^}]*))?\}", replace_env, result)
 
-        # Check for unresolved {{var}} placeholders
-        unresolved = re.findall(r"\{\{\w+\}\}", result)
+        # Check for unresolved {{var}} placeholders spacing-insensitively
+        unresolved = re.findall(r"\{\{\s*[^}]+\s*\}\}", result)
         if unresolved:
             raise ValueError(f"Unresolved variables in command: {unresolved}")
 
@@ -204,6 +213,7 @@ class SkillRunnerTool(Tool):
         result: ToolResult,
         verification: Any,
         command: str,
+        variables: dict[str, Any] | None = None,
     ) -> bool:
         """Verify step output against criteria."""
         if verification.exit_code is not None:
@@ -212,13 +222,25 @@ class SkillRunnerTool(Tool):
                 return False
 
         if verification.output_contains:
+            expected_output = verification.output_contains
+            if variables:
+                try:
+                    expected_output = SkillRunnerTool._substitute_vars(expected_output, variables)
+                except ValueError:
+                    pass
             output = str(result.content or "")
-            if verification.output_contains not in output:
+            if expected_output not in output:
                 return False
 
         if verification.file_exists:
+            expected_file = verification.file_exists
+            if variables:
+                try:
+                    expected_file = SkillRunnerTool._substitute_vars(expected_file, variables)
+                except ValueError:
+                    pass
             # Resolve relative to command context or CWD
-            path = Path(verification.file_exists)
+            path = Path(expected_file)
             if not path.exists():
                 return False
 

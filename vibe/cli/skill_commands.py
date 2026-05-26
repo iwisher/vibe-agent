@@ -10,6 +10,8 @@ from vibe.harness.skills.approval import CLIApprovalGate
 from vibe.harness.skills.installer import SkillInstaller
 from vibe.harness.skills.parser import SkillParser
 from vibe.harness.skills.validator import SkillValidator
+from vibe.tools.skill_runner import SkillRunnerTool
+from vibe.tools.tool_system import ToolSystem
 
 app = typer.Typer(help="Manage vibe skills")
 console = Console()
@@ -133,8 +135,7 @@ def run_skill(
     args: list[str] = typer.Argument(None, help="Variable assignments (key=value)"),
 ):
     """Run an installed skill."""
-    from vibe.harness.skills.executor import SkillExecutor
-    from vibe.tools.bash import BashTool
+    from vibe.harness.instructions import InstructionLoader
 
     installer = SkillInstaller()
     skills = installer.list_installed()
@@ -143,11 +144,14 @@ def run_skill(
         console.print(f"[red]Skill '{skill_id}' not found.[/red]")
         raise typer.Exit(code=1)
 
-    skill_path = Path(skills[skill_id]["path"])
-    skill_file = skill_path / "SKILL.md"
+    # Load executable skills
+    skills_dir = Path.home() / ".vibe" / "skills"
+    loader = InstructionLoader(skills_dir=str(skills_dir))
+    _, executable_skills = loader.load_unified()
 
-    parser = SkillParser()
-    skill = parser.parse_file(skill_file)
+    if skill_id not in executable_skills:
+        console.print(f"[red]Skill '{skill_id}' is not an executable skill.[/red]")
+        raise typer.Exit(code=1)
 
     # Parse variables
     variables = {}
@@ -156,25 +160,30 @@ def run_skill(
             key, value = arg.split("=", 1)
             variables[key] = value
 
-    bash = BashTool()
-    executor = SkillExecutor(bash_tool=bash)
+    # Create ToolSystem with BashTool and run skill
+    tool_system = ToolSystem()
+    from vibe.tools.bash import BashTool, BashSandbox
+    tool_system.register_tool(BashTool(sandbox=BashSandbox()))
+
+    runner = SkillRunnerTool(executable_skills, tool_system)
 
     async def _run():
         with console.status(f"Running skill '{skill_id}'..."):
-            return await executor.execute_skill(skill, variables, skill_dir=skill_path)
+            return await runner.execute(skill_id=skill_id, variables=variables)
 
-    results = asyncio.run(_run())
+    result = asyncio.run(_run())
 
-    for i, result in enumerate(results):
-        step = skill.steps[i]
-        if result.success:
-            console.print(f"[green]Step '{step.id}': OK[/green]")
-            if result.output:
-                console.print(result.output)
-        else:
-            console.print(f"[red]Step '{step.id}': FAILED[/red]")
+    if result.success:
+        console.print(f"[green]Skill '{skill_id}' completed successfully.[/green]")
+        if result.content:
+            console.print(result.content)
+    else:
+        console.print(f"[red]Skill '{skill_id}' failed.[/red]")
+        if result.error:
             console.print(f"[red]Error: {result.error}[/red]")
-            raise typer.Exit(code=1)
+        if result.content:
+            console.print(result.content)
+        raise typer.Exit(code=1)
 
 
 @app.command("create")

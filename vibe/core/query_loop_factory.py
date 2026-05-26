@@ -1,5 +1,6 @@
 """Factory for creating wired QueryLoop instances."""
 
+from pathlib import Path
 from typing import Any
 
 from vibe.core.context_compactor import ContextCompactor
@@ -9,9 +10,13 @@ from vibe.core.query_loop import QueryLoop
 from vibe.harness.constraints import HookPipeline
 from vibe.tools.bash import BashSandbox, BashTool
 from vibe.tools.file import ReadFileTool, WriteFileTool
-from vibe.tools.skill_install import SkillInstallTool, SkillListTool
+from vibe.tools.skill_install import SkillInstallExecutableTool, SkillListTool
+from vibe.tools.skill_install_prompt import PromptSkillInstallTool
 from vibe.tools.skill_manage import SkillManageTool
+from vibe.tools.skill_runner import SkillRunnerTool
 from vibe.tools.tool_system import ToolSystem
+from vibe.harness.instructions import InstructionLoader, InstructionSet
+from vibe.harness.planner import HybridPlanner
 
 
 class QueryLoopFactory:
@@ -114,19 +119,50 @@ class QueryLoopFactory:
         )
         tool_system.register_tool(ReadFileTool())
         tool_system.register_tool(WriteFileTool())
-        tool_system.register_tool(SkillInstallTool())
+        tool_system.register_tool(SkillInstallExecutableTool())
         tool_system.register_tool(SkillListTool())
+        tool_system.register_tool(PromptSkillInstallTool())
         tool_system.register_tool(SkillManageTool())
         return tool_system
 
     def create(self, max_iterations: int | None = None) -> QueryLoop:
         llm = self.create_llm()
         tools = self.create_tool_system()
+
+        # Load skills from ~/.vibe/skills/ and ./skills/
+        instruction_set = None
+        executable_skills: dict[str, Any] = {}
+        planner = None
+        skills_dir = Path.home() / ".vibe" / "skills"
+
+        try:
+            loader = InstructionLoader(
+                skills_dir=str(skills_dir),
+                skills_dirs=["./skills"] if Path("./skills").exists() else [],
+            )
+            prompt_skills, executable_skills = loader.load_unified()
+            instruction_set = InstructionSet(skills=prompt_skills)
+
+            if prompt_skills:
+                planner = HybridPlanner(
+                    llm_client=llm,
+                    trace_store=None,
+                )
+        except Exception as e:
+            if self.logger:
+                self.logger.warning(f"Failed to load skills: {e}")
+
+        # Register SkillRunnerTool if executable skills exist
+        if executable_skills:
+            tools.register_tool(SkillRunnerTool(executable_skills, tools))
+
         kwargs: dict[str, Any] = {
             "llm_client": llm,
             "tool_system": tools,
             "max_iterations": max_iterations if max_iterations is not None else self.max_iterations,
             "stream": self.stream,
+            "instruction_set": instruction_set,
+            "context_planner": planner,
         }
         if self.max_context_tokens is not None:
             kwargs["max_context_tokens"] = self.max_context_tokens
