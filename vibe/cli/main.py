@@ -11,6 +11,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from vibe.cli.input_buffer import get_patch_stdout, get_prompt_session, prompt_input
 from vibe.cli.skill_commands import app as skill_app
 from vibe.core.config import VibeConfig
 from vibe.core.logger import setup_session_logger
@@ -73,11 +74,17 @@ async def interactive_mode(controller: Any) -> None:
         query_loop = controller
         _setup_readline_history()
         verbose_mode = False
-        show_reasoning = query_loop.config.llm.show_reasoning if (query_loop.config and hasattr(query_loop.config, "llm")) else True
-        console.print("[bold green]Vibe Agent[/bold green] ready. Type /exit to quit, /clear to reset.")
+        show_reasoning = (
+            query_loop.config.llm.show_reasoning
+            if (query_loop.config and hasattr(query_loop.config, "llm"))
+            else True
+        )
+        console.print(
+            "[bold green]Vibe Agent[/bold green] ready. Type /exit to quit, /clear to reset."
+        )
         while True:
             try:
-                console.print("[bold cyan]>[/bold cyan] ", end="")
+                console.print("[bold bright_blue]❯ [/bold bright_blue]", end="")
                 user_input = input().strip()
             except (EOFError, KeyboardInterrupt):
                 _save_readline_history()
@@ -135,6 +142,11 @@ async def interactive_mode(controller: Any) -> None:
                     console.print(f"[red]Failed to resume: {e}[/red]")
                 continue
 
+            from rich.rule import Rule
+
+            console.print(
+                Rule(style="bold orchid", title="[bold orchid]🤖 Vibe Agent[/bold orchid]")
+            )
             query_loop.add_user_message(user_input)
             streamed_any = False
             status_spinner = None
@@ -145,7 +157,9 @@ async def interactive_mode(controller: Any) -> None:
                             console.print(f"[dim]  → {result.status_message}[/dim]")
                         else:
                             if status_spinner is None:
-                                status_spinner = console.status("[dim]Thinking...[/dim]", spinner="dots")
+                                status_spinner = console.status(
+                                    "[dim]Thinking...[/dim]", spinner="dots"
+                                )
                                 status_spinner.start()
                             status_spinner.update(f"[dim]{result.status_message}[/dim]")
                         continue
@@ -189,7 +203,7 @@ async def interactive_mode(controller: Any) -> None:
                         m = result.metrics
                         if not streamed_any:
                             console.print()
-                        
+
                         reasoning_part = ""
                         if getattr(m, "reasoning_tokens", 0) > 0:
                             reasoning_part = f" ({m.reasoning_tokens} reasoning)"
@@ -199,7 +213,10 @@ async def interactive_mode(controller: Any) -> None:
                             f"{m.elapsed_seconds:.1f}s | "
                             f"{m.tokens_per_second:.1f} tok/s"
                         )
-                        if getattr(result, "model_used", None) and result.model_used != query_loop.llm.model:
+                        if (
+                            getattr(result, "model_used", None)
+                            and result.model_used != query_loop.llm.model
+                        ):
                             metrics_str += f" (via fallback model: {result.model_used})"
                         console.print(f"[dim]{metrics_str}[/dim]")
             finally:
@@ -209,128 +226,302 @@ async def interactive_mode(controller: Any) -> None:
 
     _setup_readline_history()
     verbose_mode = False
-    show_reasoning = controller.main_loop.config.llm.show_reasoning if (controller.main_loop.config and hasattr(controller.main_loop.config, "llm")) else True
-    
+    show_reasoning = (
+        controller.main_loop.config.llm.show_reasoning
+        if (controller.main_loop.config and hasattr(controller.main_loop.config, "llm"))
+        else True
+    )
+
     console.print("[bold green]Vibe Agent[/bold green] ready.")
-    console.print("Commands: /exit, /clear, /verbose, /reasoning, /resume, /bg <msg>, /btw <msg>")
-    
+    console.print(
+        "Commands: /exit, /clear, /verbose, /reasoning, /resume, "
+        "/queue <msg>, /bg <msg>, /btw <msg>"
+    )
+
     # Start controller
     await controller.start()
-    
-    # Start output consumer
-    output_task = asyncio.create_task(_output_consumer(controller))
-    
-    try:
-        while True:
-            try:
-                console.print("[bold cyan]>[/bold cyan] ", end="")
-                user_input = input().strip()
-            except (EOFError, KeyboardInterrupt):
-                break
 
-            if not user_input:
-                continue
-                
-            if user_input.lower() in ("/exit", "exit", "quit"):
-                break
-                
-            if user_input.lower() == "/clear":
-                controller.main_loop.clear_history()
-                console.print("History cleared.")
-                continue
-                
-            if user_input.lower() == "/verbose":
-                verbose_mode = not verbose_mode
-                console.print(f"Verbose mode {'enabled' if verbose_mode else 'disabled'}.")
-                continue
-                
-            if user_input.lower() == "/reasoning":
-                show_reasoning = not show_reasoning
-                if controller.main_loop.config and hasattr(controller.main_loop.config, "llm"):
-                    controller.main_loop.config.llm.show_reasoning = show_reasoning
-                console.print(f"Reasoning display {'enabled' if show_reasoning else 'disabled'}.")
-                continue
-                
-            if user_input.lower() == "/resume":
-                # Existing resume logic adapted for controller
-                from vibe.harness.memory.session_store import SessionStore
-                store = SessionStore()
-                incomplete = store.list_incomplete(limit=1)
-                if not incomplete:
-                    console.print("[yellow]No incomplete sessions found.[/yellow]")
-                    continue
-                session_id = incomplete[0]["session_id"]
-                factory = QueryLoopFactory(
-                    base_url=DEFAULT_CONFIG.llm.base_url,
-                    model=controller.main_loop.llm.model,
-                    api_key=DEFAULT_CONFIG.resolve_api_key(),
-                    working_dir=str(Path.cwd()),
-                    fallback_chain=DEFAULT_CONFIG.get_fallback_chain(),
-                    config=DEFAULT_CONFIG,
-                    logger=controller.main_loop.logger,
-                )
+    prompt_session = get_prompt_session(str(_HISTORY_FILE))
+    controller.prompt_shown = True
+    if not prompt_session:
+        console.print("[bold bright_blue]❯ [/bold bright_blue]", end="")
+
+    pt_ctx = get_patch_stdout()
+    original_console_file = None
+
+    with pt_ctx:
+        if prompt_session:
+            import sys
+
+            original_console_file = console.file
+            console.file = sys.stdout
+
+        # Start output consumer
+        output_task = asyncio.create_task(
+            _output_consumer(controller, prompt_session is not None)
+        )
+
+        try:
+            while True:
                 try:
-                    controller.main_loop = await QueryLoop.resume(session_id, store, factory)
-                    console.print(f"[green]Resumed session {session_id[:16]}...[/green]")
-                except ValueError as e:
-                    console.print(f"[red]Failed to resume: {e}[/red]")
-                continue
+                    user_input = (await prompt_input("❯ ", prompt_session)).strip()
+                    controller.prompt_shown = False
+                except (EOFError, KeyboardInterrupt):
+                    break
 
-            if user_input.lower().startswith("/bg "):
-                query = user_input[4:].strip()
-                if query:
-                    agent_id = await controller.send_bg(query)
-                    console.print(f"[dim]Background agent {agent_id} started...[/dim]")
-                continue
-                
-            if user_input.lower().startswith("/btw "):
-                query = user_input[5:].strip()
-                if query:
-                    await controller.send_btw(query)
-                    console.print("[dim]Side query running... result will be injected when done.[/dim]")
-                continue
+                if not user_input:
+                    if controller.queue.pending_count == 0 and not controller.prompt_shown:
+                        console.print("[bold bright_blue]❯ [/bold bright_blue]", end="")
+                        controller.prompt_shown = True
+                    continue
 
-            # Normal message — queue to main session
-            await controller.queue.enqueue(user_input)
-            
-    finally:
-        _save_readline_history()
-        await controller.shutdown()
-        if not output_task.done():
-            output_task.cancel()
+                if user_input.lower() in ("/exit", "exit", "quit"):
+                    break
+
+                if user_input.lower() == "/clear":
+                    controller.main_loop.clear_history()
+                    console.print("History cleared.")
+                    if controller.queue.pending_count == 0 and not controller.prompt_shown:
+                        console.print("[bold bright_blue]❯ [/bold bright_blue]", end="")
+                        controller.prompt_shown = True
+                    continue
+
+                if user_input.lower() == "/verbose":
+                    verbose_mode = not verbose_mode
+                    console.print(f"Verbose mode {'enabled' if verbose_mode else 'disabled'}.")
+                    if controller.queue.pending_count == 0 and not controller.prompt_shown:
+                        console.print("[bold bright_blue]❯ [/bold bright_blue]", end="")
+                        controller.prompt_shown = True
+                    continue
+
+                if user_input.lower() == "/reasoning":
+                    show_reasoning = not show_reasoning
+                    if controller.main_loop.config and hasattr(controller.main_loop.config, "llm"):
+                        controller.main_loop.config.llm.show_reasoning = show_reasoning
+                    status = "enabled" if show_reasoning else "disabled"
+                    console.print(f"Reasoning display {status}.")
+                    if controller.queue.pending_count == 0 and not controller.prompt_shown:
+                        console.print("[bold bright_blue]❯ [/bold bright_blue]", end="")
+                        controller.prompt_shown = True
+                    continue
+
+                if user_input.lower() == "/resume":
+                    # Existing resume logic adapted for controller
+                    from vibe.harness.memory.session_store import SessionStore
+
+                    store = SessionStore()
+                    incomplete = store.list_incomplete(limit=1)
+                    if not incomplete:
+                        console.print("[yellow]No incomplete sessions found.[/yellow]")
+                        if controller.queue.pending_count == 0 and not controller.prompt_shown:
+                            console.print("[bold bright_blue]❯ [/bold bright_blue]", end="")
+                            controller.prompt_shown = True
+                        continue
+                    session_id = incomplete[0]["session_id"]
+                    factory = QueryLoopFactory(
+                        base_url=DEFAULT_CONFIG.llm.base_url,
+                        model=controller.main_loop.llm.model,
+                        api_key=DEFAULT_CONFIG.resolve_api_key(),
+                        working_dir=str(Path.cwd()),
+                        fallback_chain=DEFAULT_CONFIG.get_fallback_chain(),
+                        config=DEFAULT_CONFIG,
+                        logger=controller.main_loop.logger,
+                    )
+                    try:
+                        controller.main_loop = await QueryLoop.resume(session_id, store, factory)
+                        console.print(f"[green]Resumed session {session_id[:16]}...[/green]")
+                    except ValueError as e:
+                        console.print(f"[red]Failed to resume: {e}[/red]")
+                    if controller.queue.pending_count == 0 and not controller.prompt_shown:
+                        console.print("[bold bright_blue]❯ [/bold bright_blue]", end="")
+                        controller.prompt_shown = True
+                    continue
+
+                if user_input.lower().startswith("/bg "):
+                    query = user_input[4:].strip()
+                    if query:
+                        agent_id = await controller.send_bg(query)
+                        console.print(f"[dim]Background agent {agent_id} started...[/dim]")
+                    if controller.queue.pending_count == 0 and not controller.prompt_shown:
+                        console.print("[bold bright_blue]❯ [/bold bright_blue]", end="")
+                        controller.prompt_shown = True
+                    continue
+
+                if user_input.lower().startswith("/btw "):
+                    query = user_input[5:].strip()
+                    if query:
+                        await controller.send_btw(query)
+                        console.print(
+                            "[dim]Side query running... result will be injected when done.[/dim]"
+                        )
+                    if controller.queue.pending_count == 0 and not controller.prompt_shown:
+                        console.print("[bold bright_blue]❯ [/bold bright_blue]", end="")
+                        controller.prompt_shown = True
+                    continue
+
+                # Normal message — queue directly to main session and interrupt current turn
+                # /queue messages are enqueued without interrupting
+                is_queued = user_input.lower().startswith("/queue ")
+                if is_queued:
+                    clean_input = user_input[7:].strip()
+                    await controller.queue.enqueue(clean_input)
+                else:
+                    await controller.queue.enqueue(user_input)
+                    # Interrupt the current LLM response immediately so the new message
+                    # is processed next. Safe to call even when idle.
+                    controller.main_loop.stop()
+
+                # At the end of loop iteration, print prompt if queue is empty
+                if controller.queue.pending_count == 0 and not controller.prompt_shown:
+                    console.print("[bold bright_blue]❯ [/bold bright_blue]", end="")
+                    controller.prompt_shown = True
+
+        finally:
+            if original_console_file is not None:
+                console.file = original_console_file
+            _save_readline_history()
+            await controller.shutdown()
+            if not output_task.done():
+                output_task.cancel()
 
 
-async def _output_consumer(controller: SessionController) -> None:
+async def _output_consumer(controller: SessionController, pt_active: bool = False) -> None:
     """Consume output events and print them with source labels."""
+    streamed_sources = set()
+    from rich.panel import Panel
+    from rich.rule import Rule
+
+    prompt_str = "[bold bright_blue]❯ [/bold bright_blue]"
+
     while True:
         try:
             event = await controller.output_queue.get()
         except asyncio.CancelledError:
             break
-            
+
         result = event.result
         source = event.source
-        
+
         if source.startswith("bg_"):
             prefix = f"[dim][{source}][/dim] "
         elif source == "btw":
             prefix = "[dim][btw][/dim] "
         else:
             prefix = ""
-        
+
         if result.is_status:
             continue  # Skip status messages for cleaner output
-            
+
+        # Check if we should print the turn divider and header
+        if source not in controller.started_sources:
+            controller.started_sources.add(source)
+            if controller.prompt_shown and not pt_active:
+                console.print("\r\033[K", end="")
+                controller.prompt_shown = False
+
+            if source == "main":
+                console.print(
+                    Rule(style="bold orchid", title="[bold orchid]🤖 Vibe Agent[/bold orchid]")
+                )
+            elif source.startswith("bg_"):
+                console.print(
+                    Rule(
+                        style="bold yellow",
+                        title=f"[bold yellow]👤 Background Agent ({source})[/bold yellow]",
+                    )
+                )
+            elif source == "btw":
+                console.print(
+                    Rule(style="bold cyan", title="[bold cyan]👤 Side Agent (btw)[/bold cyan]")
+                )
+
+        if result.is_stream_chunk:
+            if controller.prompt_shown and not pt_active:
+                console.print("\r\033[K", end="")
+                controller.prompt_shown = False
+
+            if result.response:
+                console.print(result.response, end="")
+                streamed_sources.add(source)
+            if result.reasoning_content:
+                console.print(f"[dim]{result.reasoning_content}[/dim]", end="")
+                streamed_sources.add(source)
+            continue
+
+        # Handle final output print
         if result.error:
+            if controller.prompt_shown and not pt_active:
+                console.print("\r\033[K", end="")
+                controller.prompt_shown = False
+            if source in streamed_sources:
+                console.print()
+                streamed_sources.remove(source)
             console.print(f"{prefix}[red]Error: {result.error}[/red]")
         elif result.response:
-            console.print(f"{prefix}{result.response}")
+            if source in streamed_sources:
+                console.print()
+                streamed_sources.remove(source)
+            else:
+                if controller.prompt_shown and not pt_active:
+                    console.print("\r\033[K", end="")
+                    controller.prompt_shown = False
+                console.print(f"{prefix}{result.response}")
+
+        # Handle tool results
+        for tr in result.tool_results:
+            if controller.prompt_shown and not pt_active:
+                console.print("\r\033[K", end="")
+                controller.prompt_shown = False
+            style = "green" if tr.success else "red"
+            title = f"{prefix}Tool Result" if tr.success else f"{prefix}Tool Error"
+            panel_content = tr.content if tr.content else (tr.error or "")
+            console.print(Panel(panel_content, title=title, border_style=style))
+
+        # Handle metrics
+        if result.metrics:
+            if controller.prompt_shown and not pt_active:
+                console.print("\r\033[K", end="")
+                controller.prompt_shown = False
+            m = result.metrics
+            reasoning_part = ""
+            if getattr(m, "reasoning_tokens", 0) > 0:
+                reasoning_part = f" ({m.reasoning_tokens} reasoning)"
+            metrics_str = (
+                f"{m.total_tokens} tokens{reasoning_part} | "
+                f"{m.elapsed_seconds:.1f}s | "
+                f"{m.tokens_per_second:.1f} tok/s"
+            )
+
+            current_model = None
+            if source == "main":
+                current_model = controller.main_loop.llm.model
+            elif source.startswith("bg_") and source in controller.bg_agents:
+                current_model = controller.bg_agents[source].main_loop.llm.model
+
+            if (
+                getattr(result, "model_used", None)
+                and current_model
+                and result.model_used != current_model
+            ):
+                metrics_str += f" (via fallback model: {result.model_used})"
+            console.print(f"[dim]{prefix}{metrics_str}[/dim]")
+            console.print()  # Spacer line
+
+        # Draw prompt at the end if the system is fully idle
+        if controller.queue.pending_count == 0 and not controller.prompt_shown:
+            if not pt_active:
+                console.print(prompt_str, end="")
+            controller.prompt_shown = True
 
 
 async def single_query_mode(query_loop: QueryLoop, query: str) -> None:
     query_loop.add_user_message(query)
     streamed_any = False
-    show_reasoning = query_loop.config.llm.show_reasoning if (query_loop.config and hasattr(query_loop.config, "llm")) else True
+    show_reasoning = (
+        query_loop.config.llm.show_reasoning
+        if (query_loop.config and hasattr(query_loop.config, "llm"))
+        else True
+    )
     status_spinner = None
     try:
         async for result in query_loop.run():
@@ -382,7 +573,7 @@ async def single_query_mode(query_loop: QueryLoop, query: str) -> None:
                 # Ensure metrics start on a new line
                 if not streamed_any:
                     console.print()
-                
+
                 reasoning_part = ""
                 if getattr(m, "reasoning_tokens", 0) > 0:
                     reasoning_part = f" ({m.reasoning_tokens} reasoning)"
@@ -392,7 +583,10 @@ async def single_query_mode(query_loop: QueryLoop, query: str) -> None:
                     f"{m.elapsed_seconds:.1f}s | "
                     f"{m.tokens_per_second:.1f} tok/s"
                 )
-                if getattr(result, "model_used", None) and result.model_used != query_loop.llm.model:
+                if (
+                    getattr(result, "model_used", None)
+                    and result.model_used != query_loop.llm.model
+                ):
                     metrics_str += f" (via fallback model: {result.model_used})"
                 console.print(f"[dim]{metrics_str}[/dim]")
     finally:
@@ -411,7 +605,9 @@ def main(
     debug: bool = typer.Option(
         False, "--debug", "-d", help="Print request URL and redacted headers to stderr"
     ),
-    stream: bool = typer.Option(True, "--stream/--no-stream", help="Enable/disable streaming responses"),
+    stream: bool = typer.Option(
+        True, "--stream/--no-stream", help="Enable/disable streaming responses"
+    ),
 ):
     """Run Vibe Agent in interactive or single-query mode."""
     working_dir = str(Path(working_dir).expanduser().resolve())
@@ -443,9 +639,7 @@ def main(
             if getattr(session_cfg, "auto_resume", False):
                 should_resume = True
                 resumed_session_id = latest_id
-                console.print(
-                    f"[dim]Auto-resuming session {latest_id[:16]}...[/dim]"
-                )
+                console.print(f"[dim]Auto-resuming session {latest_id[:16]}...[/dim]")
             elif getattr(session_cfg, "prompt_on_resume", True):
                 console.print(
                     f"[yellow]You have an incomplete session ({latest_id[:16]}...).[/yellow]"
@@ -1569,7 +1763,9 @@ def pref_prune(
 
 @pref_app.command("style-set")
 def pref_style_set(
-    key: str = typer.Argument(..., help="Style key: verbosity|plan_format|confirm_threshold|show_commands"),
+    key: str = typer.Argument(
+        ..., help="Style key: verbosity|plan_format|confirm_threshold|show_commands"
+    ),
     value: str = typer.Argument(..., help="Value for the key"),
 ):
     """Set a response style preference."""
