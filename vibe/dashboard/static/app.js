@@ -21,6 +21,10 @@ const Icons = {
   BookOpen: () => React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
     React.createElement('path', { d: 'M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z' }),
     React.createElement('path', { d: 'M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z' })),
+  Beaker: () => React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
+    React.createElement('path', { d: 'M4.5 3h15' }),
+    React.createElement('path', { d: 'M6 3v16a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V3' }),
+    React.createElement('path', { d: 'M6 14h12' })),
   Wrench: () => React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
     React.createElement('path', { d: 'M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z' })),
   AlertTriangle: () => React.createElement('svg', { width: 16, height: 16, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 2 },
@@ -717,6 +721,132 @@ function SystemInfo() {
   );
 }
 
+// ─── ResearchPaperPage ───
+function ResearchPaperPage({ paperId, onBack }) {
+  const [paper, setPaper] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [activeTab, setActiveTab] = useState('overview');
+
+  useEffect(() => {
+    let active = true;
+    api.get(`/api/research/papers/${paperId}`)
+      .then(data => {
+        if (active) {
+          setPaper(data);
+          setLoading(false);
+        }
+      })
+      .catch(err => {
+        if (active) {
+          setError(err.message);
+          setLoading(false);
+        }
+      });
+    return () => { active = false; };
+  }, [paperId]);
+
+  if (loading) return React.createElement('div', { className: 'loading' },
+    React.createElement('div', { className: 'loading-spinner' }),
+    'Loading research paper...'
+  );
+
+  if (error || !paper || paper.error) return React.createElement('div', { className: 'error' },
+    React.createElement(Icons.AlertTriangle),
+    'Error: ', error || paper?.error || 'Paper not found.'
+  );
+
+  const tabs = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'method', label: 'Method' },
+    { id: 'results', label: 'Results' },
+  ];
+
+  return React.createElement('div', { className: 'research-page' },
+    React.createElement('div', { className: 'research-header' },
+      React.createElement('button', { className: 'back-button', onClick: onBack },
+        React.createElement(Icons.ArrowLeft),
+        ' Back to Dashboard'
+      ),
+      React.createElement('h2', { className: 'research-title' }, paper.title),
+      React.createElement('div', { className: 'research-meta' },
+        React.createElement('span', { className: 'research-venue' }, paper.venue),
+        React.createElement('span', { className: 'research-date' }, paper.published),
+        React.createElement('a', {
+          className: 'research-link',
+          href: paper.url,
+          target: '_blank',
+          rel: 'noopener noreferrer'
+        }, 'Open arXiv ↗')
+      ),
+      paper.tags?.length > 0 && React.createElement('div', { className: 'wiki-tags' },
+        paper.tags.map(tag =>
+          React.createElement('span', { key: tag, className: 'wiki-tag' },
+            React.createElement(Icons.Tag),
+            ' ',
+            tag
+          )
+        )
+      )
+    ),
+
+    React.createElement('div', { className: 'research-tabs' },
+      tabs.map(tab =>
+        React.createElement('button', {
+          key: tab.id,
+          className: `research-tab ${activeTab === tab.id ? 'active' : ''}`,
+          onClick: () => setActiveTab(tab.id)
+        }, tab.label)
+      )
+    ),
+
+    React.createElement('div', { className: 'research-content' },
+      activeTab === 'overview' && React.createElement('div', { className: 'research-section' },
+        React.createElement('h3', null, 'Abstract'),
+        React.createElement('p', { className: 'research-abstract' }, paper.abstract),
+        React.createElement('h3', null, 'Problem'),
+        React.createElement('p', null, paper.problem),
+        React.createElement('h3', null, 'Key Contributions'),
+        React.createElement('ul', { className: 'research-list' },
+          paper.contributions.map((c, i) => React.createElement('li', { key: i }, c))
+        )
+      ),
+
+      activeTab === 'method' && React.createElement('div', { className: 'research-section' },
+        React.createElement('p', { className: 'research-lead' }, paper.method.overview),
+        paper.method.steps.map((step, i) =>
+          React.createElement('div', { key: i, className: 'research-step' },
+            React.createElement('div', { className: 'research-step-number' }, i + 1),
+            React.createElement('div', null,
+              React.createElement('h4', null, step.title),
+              React.createElement('p', null, step.body)
+            )
+          )
+        ),
+        React.createElement('h3', null, 'Variation Operators'),
+        React.createElement('div', { className: 'research-operators' },
+          paper.variation_operators.map((op, i) =>
+            React.createElement('div', { key: i, className: 'research-operator-card' },
+              React.createElement('h4', null, op.name),
+              React.createElement('p', null, op.purpose)
+            )
+          )
+        )
+      ),
+
+      activeTab === 'results' && React.createElement('div', { className: 'research-section' },
+        React.createElement('h3', null, 'Main Findings'),
+        paper.results.map((r, i) =>
+          React.createElement('div', { key: i, className: 'research-result-card' },
+            React.createElement('h4', null, r.task),
+            React.createElement('p', null, r.finding)
+          )
+        )
+      )
+    )
+  );
+}
+
 // ─── Main App ───
 function App() {
   const [stats, setStats] = useState(null);
@@ -724,6 +854,7 @@ function App() {
   const [view, setView] = useState('dashboard');
   const [selectedWikiSlug, setSelectedWikiSlug] = useState(null);
   const [selectedSessionId, setSelectedSessionId] = useState(null);
+  const [selectedResearchPaperId, setSelectedResearchPaperId] = useState(null);
 
   useEffect(() => {
     Promise.all([
@@ -754,6 +885,12 @@ function App() {
     setView('dashboard');
     setSelectedWikiSlug(null);
     setSelectedSessionId(null);
+    setSelectedResearchPaperId(null);
+  }, []);
+
+  const handleShowResearch = useCallback(() => {
+    setSelectedResearchPaperId('evox');
+    setView('research');
   }, []);
 
   const handleShowWikiList = useCallback(() => {
@@ -848,6 +985,30 @@ function App() {
     );
   }
 
+  // ─── Research Paper View ───
+  if (view === 'research' && selectedResearchPaperId) {
+    return React.createElement('div', { className: 'dashboard' },
+      React.createElement('header', { className: 'header' },
+        React.createElement('div', { className: 'header-brand' },
+          React.createElement('div', { className: 'header-logo' }, '\u25C8'),
+          React.createElement('div', null,
+            React.createElement('h1', { className: 'header-title' }, 'Vibe Agent Dashboard',
+              React.createElement('span', null, 'v0.3.5')
+            )
+          )
+        ),
+        React.createElement('div', { className: 'header-meta' },
+          React.createElement('span', { className: 'status-badge' }, 'Live'),
+          React.createElement('span', { className: 'version-tag' }, 'v0.3.5')
+        )
+      ),
+      React.createElement(ResearchPaperPage, {
+        paperId: selectedResearchPaperId,
+        onBack: handleBackToDashboard
+      })
+    );
+  }
+
   // ─── Dashboard View ───
   return React.createElement('div', { className: 'dashboard' },
     // Header
@@ -861,6 +1022,14 @@ function App() {
         )
       ),
       React.createElement('div', { className: 'header-meta' },
+        React.createElement('button', {
+          className: 'header-nav-btn',
+          onClick: handleShowResearch,
+          title: 'View curated research papers'
+        },
+          React.createElement(Icons.Beaker),
+          ' Research'
+        ),
         React.createElement('span', { className: 'status-badge' }, 'Live'),
         React.createElement('span', { className: 'version-tag' }, 'v0.3.5')
       )
