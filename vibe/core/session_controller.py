@@ -4,7 +4,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any
 
-from vibe.core.conversation_queue import ConversationQueue, QueuedMessage, SteerCommand
+from vibe.core.conversation_queue import ConversationQueue, SteerCommand
 from vibe.core.query_loop import QueryLoop, QueryResult
 from vibe.core.query_loop_factory import QueryLoopFactory
 from vibe.core.sub_agent import SubAgentRunner
@@ -28,6 +28,8 @@ class SessionController:
         self.btw_agent: SubAgentRunner | None = None
         self.output_queue: asyncio.Queue[OutputEvent] = asyncio.Queue()
         self._shutting_down = False
+        self.started_sources: set[str] = set()
+        self.prompt_shown = True
 
     async def start(self) -> None:
         """Start the main session worker."""
@@ -45,10 +47,32 @@ class SessionController:
                     await self._handle_steer(item)
                     continue
 
+                # Extract clean content, stripping /queue if present
+                raw_content = item.content
+                if raw_content.lower().startswith("/queue "):
+                    clean_content = raw_content[7:].strip()
+                elif raw_content.lower() == "/queue":
+                    clean_content = ""
+                else:
+                    clean_content = raw_content
+
                 # Normal message (including btw_result)
-                self.main_loop.add_user_message(item.content)
+                self.started_sources.discard("main")
+                self.main_loop.add_user_message(clean_content)
                 async for result in self.main_loop.run():
                     await self.output_queue.put(OutputEvent("main", result))
+
+                    # Interrupt check: if next message in queue is an immediate message (no /queue),
+                    # stop the query loop early after the current response/tool iteration finishes.
+                    if not result.is_stream_chunk and not result.is_status:
+                        next_msg = self.queue.peek()
+                        if next_msg and next_msg.source == "user":
+                            is_queued_cmd = (
+                                next_msg.content.lower().startswith("/queue ")
+                                or next_msg.content.lower() == "/queue"
+                            )
+                            if not is_queued_cmd:
+                                self.main_loop.stop()
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -70,6 +94,7 @@ class SessionController:
     async def send_bg(self, query: str) -> str:
         """Start a /bg sub-agent. Returns agent_id."""
         agent_id = f"bg_{len(self.bg_agents)}"
+        self.started_sources.discard(agent_id)
         runner = SubAgentRunner(self.factory, agent_id)
         await runner.start(query)
         self.bg_agents[agent_id] = runner
@@ -94,6 +119,7 @@ class SessionController:
 
     async def send_btw(self, query: str) -> str:
         """Start a /btw sub-agent. When done, inject result into main queue."""
+        self.started_sources.discard("btw")
         runner = SubAgentRunner(self.factory, "btw")
         await runner.start(query)
         self.btw_agent = runner

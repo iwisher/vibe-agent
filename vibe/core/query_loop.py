@@ -443,6 +443,8 @@ class QueryLoop:
                             nonlocal model_used, finish_reason, error, error_type
                             try:
                                 async for chunk in self.llm.complete_stream(llm_msgs, tools=tools_for_llm):
+                                    if not self._running:
+                                        break
                                     if chunk.is_error:
                                         error = chunk.error
                                         error_type = chunk.error_type
@@ -482,6 +484,10 @@ class QueryLoop:
                                     is_chunk=True,
                                     is_stream_chunk=True,
                                 )
+
+                        # If the loop was stopped mid-stream, do not process partial output
+                        if not self._running:
+                            return
 
                         if error:
                             response = LLMResponse(
@@ -1227,10 +1233,14 @@ class QueryLoop:
 
     def add_user_message(self, content: str) -> None:
         self.messages.append(Message(role="user", content=content))
+        self._iteration = 0
+        if self._state == QueryState.STOPPED:
+            self._state = QueryState.IDLE
 
     def clear_history(self) -> None:
         self.messages.clear()
         self._state = QueryState.IDLE
+        self._iteration = 0
         self._feedback_retries = 0
         self._running = False
         self._plan_result = None
