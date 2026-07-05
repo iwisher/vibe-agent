@@ -32,6 +32,14 @@ tests/evox/
 
 **Files modified:**
 - `vibe/cli/main.py` — registered the new `vibe evox` Typer subcommand.
+- `vibe/dashboard/server.py` — added `/api/research/papers` REST endpoints.
+- `vibe/dashboard/static/app.js` — added React `ResearchPaperPage` for EvoX.
+- `vibe/dashboard/static/style.css` — added dark-themed research paper styles.
+- `tests/test_dashboard_api.py` — added coverage for research paper endpoints.
+
+**Files added (documentation & demo):**
+- `docs/EvoX_implementation.md` — this document.
+- `scripts/evox_self_evolution_demo.py` — runnable 3-case self-evolution demo.
 
 ## 3. Core Data Model
 
@@ -133,7 +141,7 @@ When stagnation is detected:
 - `MockStrategyGenerator` — rotates through a small set of predefined strategies to demonstrate adaptation without an LLM.
 - `CirclePackingMockGenerator` — domain-aware generator that produces JSON circle lists and supports grid/hex structural variations.
 
-The CLI and validation tests use the mock generators by default so they run quickly and deterministically.
+The CLI, validation tests, and self-evolution demo use the mock generators by default so they run quickly and deterministically.
 
 ## 6. Usage
 
@@ -152,6 +160,28 @@ python -m vibe evox run --evaluator keywords --target "fast,safe,simple" --itera
 # Circle packing (target = number of circles)
 python -m vibe evox run --evaluator circle_packing --target 12 --iterations 80
 ```
+
+### Self-evolution demo
+
+```bash
+python scripts/evox_self_evolution_demo.py
+```
+
+The demo runs three real self-evolution cases and writes `evox_self_evolution_results.json`:
+
+1. **String match target "hello"** — demonstrates strategy cycling when stuck at a local optimum.
+2. **Keyword coverage "fast,safe,simple"** — shows repeated stagnation due to a generator expressiveness ceiling.
+3. **Circle packing n=12** — shows a big jump in packing density after meta-evolution switches to structural variation and discovers a grid layout.
+
+The saved JSON records every deployed strategy, its `window_size`, `score_signal`, `delta`, and the full evolved Python source code, making the evolution trajectory inspectable.
+
+### Dashboard research page
+
+Open the dashboard and navigate to the EvoX paper page to view:
+
+- Paper metadata (authors, affiliations, venue, URL)
+- Tabbed sections: Overview, Problem, Method, Results
+- Live data served by `/api/research/papers` and `/api/research/papers/{id}`
 
 ### Library API
 
@@ -191,6 +221,16 @@ Baseline-comparison tests (`TestEvoXBaselines`):
 - Assert that the adaptive run switches strategy at least once and achieves a score **greater than or equal to** the fixed-strategy baseline on the same budget.
 - Tests cover both string match and circle packing.
 
+**Self-evolution demo results:**
+
+Running `python scripts/evox_self_evolution_demo.py` produced:
+
+| Case | Best score | Iterations | Strategy switches | Key evolved behavior |
+|---|---|---|---|---|
+| String match "hello" | -3 (candidate "0eo") | 80 | 4 | uniform_random/free_form → best/local_refinement → diverse/structural_variation → ucb/frontier/free_form |
+| Keyword coverage | 0.0 | 100 | 4 | Cycled through strategies but could not overcome the 2-char mock generator ceiling |
+| Circle packing n=12 | 0.368 | 100 | 2 | Random/free_form hit a plateau; diverse/structural_variation discovered a grid layout and boosted density by ~0.197 |
+
 **Test results:**
 
 ```
@@ -202,12 +242,22 @@ tests/cli/test_memory_commands.py 3 passed
 
 ## 8. Integration with Existing Vibe Agent Code
 
-- **No existing files were changed except** `vibe/cli/main.py` (to register the new subcommand).
-- The implementation is **additive**: it does not modify `QueryLoop`, `EvalRunner`, `ModelGateway`, or any other core component.
+- The EvoX package is **additive**: it does not modify `QueryLoop`, `EvalRunner`, `ModelGateway`, or other core components.
+- `vibe/cli/main.py` was updated to register the new `vibe evox` subcommand.
+- `vibe/dashboard/server.py`, `app.js`, `style.css`, and `tests/test_dashboard_api.py` were extended to add the EvoX research paper page.
 - `LLMSolutionGenerator` and `LLMStrategyGenerator` reuse the existing `vibe.core.model_gateway.LLMClient` for real LLM calls.
 - The package can be used standalone or wrapped into an eval case in the future.
 
-## 9. Design Decisions & Limitations
+## 9. Commits
+
+The implementation was committed and pushed to `main` as four focused commits:
+
+1. `3690cf3` — `feat(evox): implement core meta-evolution library with executable strategies`
+2. `09dd383` — `feat(cli): add EvoX subcommand integration`
+3. `36ee3a6` — `feat(dashboard): add research paper page for EvoX`
+4. `7c1c8b0` — `docs: add EvoX implementation guide and self-evolution demo`
+
+## 10. Design Decisions & Limitations
 
 - **Evolvable code, not just config**: The biggest departure from the initial minimal implementation is that strategies are now Python source code edited by the meta-generator. This matches the paper's `EvolvedProgramDatabase` concept.
 - **Restricted execution environment**: Strategy code may only import `random` and `math`, and `from ... import` is disallowed. This provides a lightweight sandbox.
@@ -217,6 +267,6 @@ tests/cli/test_memory_commands.py 3 passed
 - **No checkpointing**: The loop runs in memory. Persistence can be added by serializing the population and strategy database.
 - **No full benchmark suite**: Only one paper-inspired domain (circle packing) is included. The math, systems, Frontier-CS, and ARC-AGI-2 benchmarks from the paper are out of scope.
 
-## 10. References
+## 11. References
 
 - Shu Liu et al., *EvoX: Meta-Evolution for Automated Discovery*, arXiv:2602.23413v1 [cs.LG], 26 Feb 2026.
