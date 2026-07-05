@@ -19,6 +19,7 @@ from vibe.core.query_loop_factory import QueryLoopFactory
 from vibe.core.session_controller import SessionController
 from vibe.evals.model_registry import ModelRegistry
 from vibe.evals.runner import EvalRunner
+from vibe.evox.cli import evox_app
 from vibe.harness.memory.eval_store import EvalStore
 from vibe.harness.memory.trace_store import TraceStore
 
@@ -28,6 +29,7 @@ app.add_typer(eval_app, name="eval")
 memory_app = typer.Typer(help="Inspect stored traces and eval results")
 app.add_typer(memory_app, name="memory")
 app.add_typer(skill_app, name="skill")
+app.add_typer(evox_app, name="evox")
 
 # Phase 3.2: Session management commands
 session_app = typer.Typer(help="Session management — list and resume incomplete sessions")
