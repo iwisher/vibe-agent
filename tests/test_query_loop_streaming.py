@@ -292,3 +292,35 @@ async def test_query_loop_stream_metrics_mixed_ascii_cjk(mock_llm, tool_system):
     assert m.completion_tokens == 3
     assert m.tokens_per_second > 0.0
 
+
+
+@pytest.mark.asyncio
+async def test_query_loop_stream_interrupt_mid_stream(mock_llm, tool_system):
+    """Calling stop() mid-stream should halt chunk yielding and skip partial output."""
+    async def mock_stream(*args, **kwargs):
+        yield LLMResponse(content="Hello ", finish_reason=None)
+        yield LLMResponse(content="world", finish_reason=None)
+        yield LLMResponse(content="!", finish_reason="stop")
+
+    mock_llm.complete_stream.side_effect = mock_stream
+    loop = QueryLoop(llm_client=mock_llm, tool_system=tool_system)
+
+    results = []
+    async for r in loop.run("hi", stream=True):
+        results.append(r)
+        # Simulate user interrupt after first content chunk
+        if r.is_stream_chunk and r.response == "Hello ":
+            loop.stop()
+
+    # Should have yielded the planning status and first chunk
+    chunks = [r for r in results if r.is_stream_chunk]
+    assert len(chunks) == 1
+    assert chunks[0].response == "Hello "
+
+    # Should NOT have yielded a final aggregated response
+    finals = [r for r in results if not r.is_status and not r.is_stream_chunk]
+    assert len(finals) == 0
+
+    # The assistant message should NOT have been appended to history
+    assistant_msgs = [m for m in loop.messages if m.role == "assistant"]
+    assert len(assistant_msgs) == 0
