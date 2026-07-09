@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from vibe.evox.circle_packing import CirclePackingMockGenerator, circle_packing_evaluator
@@ -17,6 +19,7 @@ from vibe.evox.metrics import compute_proxy_score, normalize_metric_value
 from vibe.evox.population import PopulationDescriptor
 from vibe.evox.strategy import SearchStrategy, StrategyDatabase, StrategyRecord
 from vibe.evox.strategy_code import EvolvableStrategy
+from vibe.evox.tsp import TSPMockGenerator, tsp_evaluator
 from vibe.evox.types import Candidate, VariationOperator
 
 
@@ -392,6 +395,81 @@ class TestEvoXMultiObjective:
         result = await loop.run()
         assert result.iterations == 30
         assert len(loop.strategy_db.records) >= 1
+
+
+class TestEvoXTSP:
+    """Guardrail tests for TSP as a representative complex case."""
+
+    def test_tsp_evaluator_scores_valid_tour(self):
+        evaluator = tsp_evaluator(n=5, seed=1)
+        tour = [0, 1, 2, 3, 4]
+        score, artifacts = evaluator(json.dumps(tour))
+        assert artifacts["valid"] is True
+        assert score < 0  # negative normalized distance
+        assert artifacts["distance"] > 0
+
+    def test_tsp_evaluator_rejects_invalid_tour(self):
+        evaluator = tsp_evaluator(n=5, seed=1)
+        score, artifacts = evaluator(json.dumps([0, 1, 2, 3]))
+        assert artifacts["valid"] is False
+        assert score == -1e9
+
+    @pytest.mark.asyncio
+    async def test_tsp_generator_produces_valid_tours(self):
+        gen = TSPMockGenerator(n=6, seed=1)
+        from vibe.evox.types import VariationOperator
+
+        for op in VariationOperator:
+            content = await gen.generate(
+                parent=json.dumps(list(range(6))),
+                operator=op,
+                inspiration=[json.dumps([5, 4, 3, 2, 1, 0])],
+                problem_description="tsp",
+            )
+            tour = json.loads(content)
+            assert set(tour) == set(range(6))
+            assert len(tour) == 6
+
+    @pytest.mark.asyncio
+    async def test_evox_improves_tsp_tour(self):
+        """EvoX with meta-evolution should find a shorter TSP tour than random baseline."""
+        n = 10
+        budget = 60
+        seed = 5
+
+        # Random baseline: fixed uniform-random strategy
+        fixed = MetaEvolutionLoop(
+            evaluator=tsp_evaluator(n=n, seed=seed),
+            solution_generator=TSPMockGenerator(n=n, seed=seed),
+            strategy_generator=MockStrategyGenerator(seed=seed),
+            config=MetaEvolutionConfig(
+                total_iterations=budget,
+                window_size=budget + 1,
+                stagnation_threshold=float("inf"),
+                problem_description=f"TSP with {n} cities",
+            ),
+            seed=seed,
+        )
+        fixed_result = await fixed.run()
+
+        # Adaptive EvoX
+        adaptive = MetaEvolutionLoop(
+            evaluator=tsp_evaluator(n=n, seed=seed),
+            solution_generator=TSPMockGenerator(n=n, seed=seed),
+            strategy_generator=MockStrategyGenerator(seed=seed),
+            config=MetaEvolutionConfig(
+                total_iterations=budget,
+                window_size=10,
+                stagnation_threshold=1e-4,
+                problem_description=f"TSP with {n} cities",
+            ),
+            seed=seed,
+        )
+        adaptive_result = await adaptive.run()
+
+        assert adaptive_result.strategy_switches >= 1
+        assert adaptive_result.best_candidate.score >= fixed_result.best_candidate.score
+        assert adaptive_result.best_candidate.artifacts["valid"] is True
 
 
 class TestEvoXStrategySandbox:

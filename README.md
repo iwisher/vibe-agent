@@ -220,6 +220,9 @@ python -m vibe evox run --evaluator circle_packing --target 12 --iterations 80
 
 # Multi-objective signal-filter demo
 python -m vibe evox run --evaluator signal_filter --iterations 50
+
+# Traveling Salesman Problem (representative complex case)
+python -m vibe evox run --evaluator tsp --target 10 --iterations 60
 ```
 
 ### Integration with memory and skills

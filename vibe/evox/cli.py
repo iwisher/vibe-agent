@@ -15,6 +15,7 @@ from vibe.evox.evaluators import (
 )
 from vibe.evox.generators import MockSolutionGenerator, MockStrategyGenerator
 from vibe.evox.loop import MetaEvolutionConfig, MetaEvolutionLoop
+from vibe.evox.tsp import TSPMockGenerator, tsp_evaluator
 
 evox_app = typer.Typer(help="Run EvoX meta-evolution experiments")
 
@@ -41,6 +42,11 @@ async def _run_experiment(evaluator_name: str, target: str, iterations: int, see
         evaluator = toy_signal_filter_evaluator()
         solution_generator = MockSolutionGenerator(seed=seed)
         problem = "Multi-objective signal filter: balance smoothness and responsiveness"
+    elif evaluator_name == "tsp":
+        n = int(target) if target else 10
+        evaluator = tsp_evaluator(n=n, seed=seed)
+        solution_generator = TSPMockGenerator(n=n, seed=seed)
+        problem = f"Traveling Salesman Problem with {n} cities"
     else:
         raise typer.BadParameter(f"Unknown evaluator: {evaluator_name}")
 
@@ -69,7 +75,7 @@ def evox_run(
         "string",
         "--evaluator",
         "-e",
-        help="Evaluator: string, expression, keywords, circle_packing, signal_filter",
+        help="Evaluator: string, expression, keywords, circle_packing, signal_filter, tsp",
     ),
     target: str = typer.Option(
         "hello world",

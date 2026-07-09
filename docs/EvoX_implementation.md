@@ -25,6 +25,7 @@ vibe/evox/
 ├── metrics.py         # Multi-objective proxy scoring (AdaEvolve evaluation logic)
 ├── evaluators.py      # Toy evaluators (string, expression, keywords, signal filter)
 ├── circle_packing.py  # Paper-inspired benchmark evaluator + domain generator
+├── tsp.py             # Traveling Salesman Problem evaluator + domain-aware generator
 └── cli.py             # `vibe evox run` command
 
 tests/evox/
@@ -160,6 +161,9 @@ python -m vibe evox run --evaluator keywords --target "fast,safe,simple" --itera
 
 # Circle packing (target = number of circles)
 python -m vibe evox run --evaluator circle_packing --target 12 --iterations 80
+
+# Traveling Salesman Problem (target = number of cities)
+python -m vibe evox run --evaluator tsp --target 10 --iterations 60
 ```
 
 ### Self-evolution demo
@@ -315,7 +319,8 @@ The latest update added the AdaEvolve-style multi-objective evaluation layer:
 - **Real UCB parent selection**: `SearchStrategy` synthesizes code that uses `context["selection_counts"]` and the UCB1 formula (`score + sqrt(2*ln(total)/(count+1))`).
 - **LLM prompt guidance**: `LLMStrategyGenerator` now includes task-objective text and a diversity note, and explicitly tells the LLM to prefer parents/inspirations with complementary objective strengths when `pareto_objectives` are present.
 - **Toy signal-filter evaluator**: `toy_signal_filter_evaluator()` demonstrates multi-objective evaluation with competing `smoothness` and `responsiveness` objectives.
-- **Guardrail tests**: 21 tests now cover metrics, UCB selection, and multi-objective loop behavior.
+- **TSP evaluator**: `tsp_evaluator()` and `TSPMockGenerator` demonstrate a representative complex case — structured JSON candidates, hard permutation constraints, and domain-aware 2-opt / order-crossover variation.
+- **Guardrail tests**: 28 tests now cover metrics, UCB selection, multi-objective loop behavior, sandbox escapes, and TSP optimization.
 
 ### What is still missing
 
@@ -368,7 +373,7 @@ What these implementations confirm about my understanding:
 - **Mock-first validation**: Tests use mock generators so they are fast and deterministic. LLM-backed generators are available for real experiments.
 - **String-based candidates**: The current `Candidate.content` is a string, which covers prompts, programs, JSON circle lists, and symbolic expressions. Structured candidates (e.g., ASTs) would require extending `Candidate`.
 - **Multi-objective scaffolding present, objective-aware pairing missing**: The loop can compute a scalar proxy from `pareto_objectives`, but it does not yet pair a parent strong on one objective with an inspiration strong on a complementary objective (Phase 2 of the signal-processing case study).
-- **No real signal-processing benchmark**: The paper's four-phase signal-processing task is not included; only a toy two-objective filter evaluator, plus string match, keyword coverage, expression, and circle packing, are implemented.
+- **Limited complex benchmarks**: TSP demonstrates structured candidates and domain-aware variation, but the paper's full suite (Heilbronn triangle, MinMaxMinDist, PRISM, Cloudcast, Frontier-CS, ARC-AGI-2) is not implemented.
 - **Lightweight sandbox, not full isolation**: The strategy-code sandbox restricts imports and builtins, but because it runs `exec()` in the main process, sophisticated Python object-introspection escapes are still theoretically possible. True isolation would require a subprocess or RestrictedPython.
 - **No checkpointing**: The loop runs in memory. Persistence can be added by serializing the population and strategy database.
 - **No full benchmark suite**: Only one paper-inspired domain (circle packing) is included. The math, systems, Frontier-CS, and ARC-AGI-2 benchmarks from the paper are out of scope.
