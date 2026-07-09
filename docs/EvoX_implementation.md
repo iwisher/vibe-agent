@@ -364,11 +364,12 @@ What these implementations confirm about my understanding:
 ## 11. Design Decisions & Limitations
 
 - **Evolvable code, not just config**: The biggest departure from the initial minimal implementation is that strategies are now Python source code edited by the meta-generator. This matches the paper's `EvolvedProgramDatabase` concept.
-- **Restricted execution environment**: Strategy code may only import `random` and `math`, and `from ... import` is disallowed. This provides a lightweight sandbox.
+- **Restricted execution environment**: Strategy code may only import `random` and `math`, `from ... import` is disallowed, and builtins are restricted to a small allowlist. This is a lightweight sandbox that blocks obvious escapes, but it is not a full isolation boundary (see limitations below).
 - **Mock-first validation**: Tests use mock generators so they are fast and deterministic. LLM-backed generators are available for real experiments.
 - **String-based candidates**: The current `Candidate.content` is a string, which covers prompts, programs, JSON circle lists, and symbolic expressions. Structured candidates (e.g., ASTs) would require extending `Candidate`.
 - **Multi-objective scaffolding present, objective-aware pairing missing**: The loop can compute a scalar proxy from `pareto_objectives`, but it does not yet pair a parent strong on one objective with an inspiration strong on a complementary objective (Phase 2 of the signal-processing case study).
 - **No real signal-processing benchmark**: The paper's four-phase signal-processing task is not included; only a toy two-objective filter evaluator, plus string match, keyword coverage, expression, and circle packing, are implemented.
+- **Lightweight sandbox, not full isolation**: The strategy-code sandbox restricts imports and builtins, but because it runs `exec()` in the main process, sophisticated Python object-introspection escapes are still theoretically possible. True isolation would require a subprocess or RestrictedPython.
 - **No checkpointing**: The loop runs in memory. Persistence can be added by serializing the population and strategy database.
 - **No full benchmark suite**: Only one paper-inspired domain (circle packing) is included. The math, systems, Frontier-CS, and ARC-AGI-2 benchmarks from the paper are out of scope.
 

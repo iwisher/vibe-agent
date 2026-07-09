@@ -158,7 +158,7 @@ class PopulationDescriptor:
     @staticmethod
     def _compute_objective_stats(
         population: list[Candidate],
-    ) -> dict[str, dict[str, float]]:
+    ) -> dict[str, dict[str, float | int]]:
         """Aggregate per-objective statistics from candidate objectives."""
         if not population:
             return {}

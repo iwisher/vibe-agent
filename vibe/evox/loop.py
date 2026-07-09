@@ -184,7 +184,7 @@ class MetaEvolutionLoop:
                     return False
             return True
         except Exception:
-            logger.debug("Strategy validation failed for strategy %s", strategy.id, exc_info=True)
+            logger.warning("Strategy validation failed for strategy %s", strategy.id, exc_info=True)
             return False
 
     async def _meta_evolve_strategy(self) -> SearchStrategy:

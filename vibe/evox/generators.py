@@ -266,7 +266,7 @@ Output ONLY the new Python code, inside a single fenced code block. Do not add e
                 description="LLM-mutated strategy",
             )
         except Exception:
-            logger.debug(
+            logger.warning(
                 "LLM strategy mutation failed for strategy %s", parent_strategy.id, exc_info=True
             )
             return parent_strategy.copy()

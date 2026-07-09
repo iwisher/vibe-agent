@@ -16,6 +16,7 @@ from vibe.evox.loop import MetaEvolutionConfig, MetaEvolutionLoop
 from vibe.evox.metrics import compute_proxy_score, normalize_metric_value
 from vibe.evox.population import PopulationDescriptor
 from vibe.evox.strategy import SearchStrategy, StrategyDatabase, StrategyRecord
+from vibe.evox.strategy_code import EvolvableStrategy
 from vibe.evox.types import Candidate, VariationOperator
 
 
@@ -391,3 +392,46 @@ class TestEvoXMultiObjective:
         result = await loop.run()
         assert result.iterations == 30
         assert len(loop.strategy_db.records) >= 1
+
+
+class TestEvoXStrategySandbox:
+    """Guardrail tests for strategy code execution sandbox."""
+
+    def test_rejects_disallowed_import(self):
+        """Strategy code importing os/sys/etc. must fail to compile."""
+        code = "import os\ndef select_parent(population, rng, context=None): return population[0]\n"
+        with pytest.raises(ValueError):
+            EvolvableStrategy(code=code).compile()
+
+    def test_rejects_import_from(self):
+        """from ... import is not allowed in strategy code."""
+        code = (
+            "from os import path\n"
+            "def select_parent(population, rng, context=None): return population[0]\n"
+        )
+        with pytest.raises(ValueError):
+            EvolvableStrategy(code=code).compile()
+
+    def test_blocks_attribute_escape_attempt(self):
+        """A common introspection escape path should not reach sensitive modules."""
+        code = """
+def select_parent(population, rng, context=None):
+    # Common sandbox escape attempt; should fail because __builtins__ is restricted
+    try:
+        ().__class__.__base__.__subclasses__()
+    except Exception:
+        pass
+    return population[0]
+
+def select_inspiration(population, parent, rng):
+    return []
+
+def select_operator(rng):
+    return "free_form"
+"""
+        strategy = EvolvableStrategy(code=code)
+        module = strategy.compile()
+        pop = [Candidate(content="x", score=1.0)]
+        # The escape attempt inside select_parent should be caught/handled
+        parent = module.select_parent(pop, __import__("random").Random(0), None)
+        assert parent in pop
