@@ -22,6 +22,7 @@ class Candidate:
     content: str
     score: float
     artifacts: dict[str, Any] = field(default_factory=dict)
+    objectives: dict[str, float] = field(default_factory=dict)
     generation: int = 0
     parent_id: str | None = None
     strategy_id: str | None = None
@@ -34,5 +35,7 @@ class Candidate:
             object.__setattr__(self, "id", uuid.uuid4().hex[:12])
 
 
-# Evaluator: maps candidate content -> (score, artifacts)
+# Evaluator: maps candidate content -> (score, artifacts).
+# artifacts may contain an "objectives" key; when MetaEvolutionConfig.pareto_objectives
+# is set, the loop will recompute the scalar score from those objectives.
 Evaluator = Callable[[str], tuple[float, dict[str, Any]]]

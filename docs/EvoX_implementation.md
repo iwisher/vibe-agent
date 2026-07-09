@@ -16,18 +16,19 @@ It is delivered as a new `vibe.evox` package, a `vibe evox run` CLI command, and
 ```
 vibe/evox/
 ├── __init__.py        # Public API exports
-├── types.py           # Candidate, VariationOperator, Evaluator protocol
+├── types.py           # Candidate (now with objectives), VariationOperator, Evaluator protocol
 ├── strategy_code.py   # EvolvableStrategy: compile + execute Python strategy code
 ├── strategy.py        # SearchStrategy, StrategyRecord, StrategyDatabase
-├── population.py      # PopulationDescriptor φ(D_t)
+├── population.py      # PopulationDescriptor φ(D_t) with objective stats
 ├── generators.py      # SolutionGenerator + StrategyGenerator (LLM + mock)
 ├── loop.py            # MetaEvolutionLoop (core algorithm)
-├── evaluators.py      # Toy evaluators (string, expression, keywords)
+├── metrics.py         # Multi-objective proxy scoring (AdaEvolve evaluation logic)
+├── evaluators.py      # Toy evaluators (string, expression, keywords, signal filter)
 ├── circle_packing.py  # Paper-inspired benchmark evaluator + domain generator
 └── cli.py             # `vibe evox run` command
 
 tests/evox/
-└── test_evox.py       # Unit tests + 4 use-case tests + baseline-comparison tests
+└── test_evox.py       # Unit tests + use-case tests + baseline + multi-objective + UCB tests
 ```
 
 **Files modified:**
@@ -303,15 +304,25 @@ The paper's signal-processing case study (Section 5, Figure 2) shows how EvoX ev
 | 3 | UCB (rarely selected) | multi-objective / diverse | structural_variation | Explore new families |
 | 4 | UCB | top / frontier | local_refinement | Final polishing |
 
-### What is still missing from my implementation
+### What is now implemented
 
-My current `MockStrategyGenerator` rotates through simple templates (`uniform_random`, `best`, `diverse`, `ucb` × `free_form`/`local_refinement`/`structural_variation`). It does **not** implement:
+The latest update added the AdaEvolve-style multi-objective evaluation layer:
 
-- **True multi-objective descriptors**: `Candidate.artifacts` would need to carry per-objective scores, not just a scalar.
-- **Objective-aware pairing**: selecting a parent and inspiration based on complementary objective strengths.
-- **UCB parent selection**: tracking selection counts and rewarding under-sampled candidates.
+- **`vibe/evox/metrics.py`**: `compute_proxy_score()` mirrors SkyDiscover's `_get_progress_score()`. It supports a `fitness_key`, a list of `pareto_objectives`, and per-objective `higher_is_better` directions.
+- **`Candidate.objectives`**: every candidate now carries a `dict[str, float]` of per-objective scores in addition to its scalar `score`.
+- **`MetaEvolutionConfig.pareto_objectives` / `higher_is_better` / `fitness_key`**: configure multi-objective mode; when set, the loop replaces the evaluator's raw score with the proxy.
+- **`PopulationDescriptor.objective_stats`**: aggregates best/worst/mean/count per objective.
+- **Real UCB parent selection**: `SearchStrategy` synthesizes code that uses `context["selection_counts"]` and the UCB1 formula (`score + sqrt(2*ln(total)/(count+1))`).
+- **LLM prompt guidance**: `LLMStrategyGenerator` now includes task-objective text and a diversity note, and explicitly tells the LLM to prefer parents/inspirations with complementary objective strengths when `pareto_objectives` are present.
+- **Toy signal-filter evaluator**: `toy_signal_filter_evaluator()` demonstrates multi-objective evaluation with competing `smoothness` and `responsiveness` objectives.
+- **Guardrail tests**: 21 tests now cover metrics, UCB selection, and multi-objective loop behavior.
+
+### What is still missing
+
+- **Objective-aware inspiration pairing**: the loop tracks per-objective stats but does not yet select an inspiration specifically to complement the parent's weakest objective.
 - **Domain-specific structural variation prompts**: e.g., telling the generator to use SciPy filters or merge SSA with Whittaker smoothing.
-- **The signal-processing benchmark itself**: the four-phase trajectory was observed on that specific task.
+- **The signal-processing benchmark itself**: the four-phase trajectory was observed on that specific task; only a toy two-objective evaluator exists.
+- **Guide-LLM summaries**: SkyDiscover uses a cheaper guide model to summarize population stats and reference algorithms; my implementation passes raw descriptor JSON to the strategy LLM.
 
 ### Validation against reference implementations
 
@@ -340,10 +351,10 @@ What these implementations confirm about my understanding:
 ### Critique of my implementation
 
 - **Correct core abstraction**: The two-level loop, executable strategies, window-based signal, and strategy database are all sound and match the reference architecture.
-- **Prompts are under-engineered**: The reference uses a dedicated context builder + guide LLM + templates. My `LLMStrategyGenerator` builds a single inline prompt. This is fine for a minimal implementation but would underperform on complex domains.
-- **Missing multi-objective plumbing**: I have no `pareto_objectives` config, no scalar proxy, and no objective-aware pairing. Phase 2 cannot happen in my current code.
-- **Missing UCB selection**: My `ucb` template is a placeholder string comparison; the reference explicitly uses UCB to explore rarely-selected parents.
-- **No paradigm/sibling mechanisms**: These are adaptive features that make the search more robust; my code lacks them.
+- **Multi-objective plumbing is now present**: `pareto_objectives`, `higher_is_better`, scalar proxy scoring, and objective stats in the descriptor are implemented. Objective-aware inspiration pairing is still a gap.
+- **UCB selection is now real**: selection counts are tracked and passed to strategy code; the synthesized UCB branch uses the UCB1 formula.
+- **Prompts are still under-engineered**: The reference uses a dedicated context builder + guide LLM + templates. My `LLMStrategyGenerator` builds a single inline prompt with multi-objective hints. This is better than before but still simpler than the reference.
+- **No paradigm/sibling mechanisms**: These adaptive features make the search more robust; my code lacks them.
 - **Benchmark coverage is thin**: The reference supports many domains via evaluator configs; I only have toy evaluators plus circle packing.
 
 ### Future tasks
@@ -356,8 +367,8 @@ What these implementations confirm about my understanding:
 - **Restricted execution environment**: Strategy code may only import `random` and `math`, and `from ... import` is disallowed. This provides a lightweight sandbox.
 - **Mock-first validation**: Tests use mock generators so they are fast and deterministic. LLM-backed generators are available for real experiments.
 - **String-based candidates**: The current `Candidate.content` is a string, which covers prompts, programs, JSON circle lists, and symbolic expressions. Structured candidates (e.g., ASTs) would require extending `Candidate`.
-- **Single-objective focus**: The current evaluator returns one scalar score. Multi-objective Pareto handling and objective-aware parent/inspiration pairing (Phase 2 of the signal-processing case study) are not implemented.
-- **No signal-processing benchmark**: The paper's four-phase signal-processing task is not included; only string match, keyword coverage, expression, and circle packing are implemented.
+- **Multi-objective scaffolding present, objective-aware pairing missing**: The loop can compute a scalar proxy from `pareto_objectives`, but it does not yet pair a parent strong on one objective with an inspiration strong on a complementary objective (Phase 2 of the signal-processing case study).
+- **No real signal-processing benchmark**: The paper's four-phase signal-processing task is not included; only a toy two-objective filter evaluator, plus string match, keyword coverage, expression, and circle packing, are implemented.
 - **No checkpointing**: The loop runs in memory. Persistence can be added by serializing the population and strategy database.
 - **No full benchmark suite**: Only one paper-inspired domain (circle packing) is included. The math, systems, Frontier-CS, and ARC-AGI-2 benchmarks from the paper are out of scope.
 

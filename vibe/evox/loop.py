@@ -8,6 +8,7 @@ import random
 from dataclasses import dataclass
 from typing import Protocol
 
+from vibe.evox.metrics import PROGRESS_SCORE_MISSING, compute_proxy_score
 from vibe.evox.population import PopulationDescriptor
 from vibe.evox.strategy import SearchStrategy, StrategyDatabase, StrategyRecord
 from vibe.evox.types import Candidate, Evaluator, VariationOperator
@@ -20,8 +21,7 @@ class SolutionGenerator(Protocol):
         operator: VariationOperator,
         inspiration: list[str],
         problem_description: str,
-    ) -> str:
-        ...
+    ) -> str: ...
 
 
 class StrategyGenerator(Protocol):
@@ -30,8 +30,7 @@ class StrategyGenerator(Protocol):
         parent_strategy: SearchStrategy,
         descriptor: PopulationDescriptor,
         history: list[StrategyRecord],
-    ) -> SearchStrategy:
-        ...
+    ) -> SearchStrategy: ...
 
 
 @dataclass
@@ -44,6 +43,17 @@ class MetaEvolutionConfig:
     max_strategy_retries: int = 3
     validation_trials: int = 3
     problem_description: str = "Optimize the candidate solution."
+
+    # Multi-objective evaluation (matches AdaEvolve builder.py semantics)
+    pareto_objectives: list[str] = None  # type: ignore[assignment]
+    higher_is_better: dict[str, bool] = None  # type: ignore[assignment]
+    fitness_key: str | None = None
+
+    def __post_init__(self):
+        if self.pareto_objectives is None:
+            self.pareto_objectives = []
+        if self.higher_is_better is None:
+            self.higher_is_better = {}
 
 
 @dataclass
@@ -101,7 +111,8 @@ class MetaEvolutionLoop:
 
     async def _evolve_one(self) -> Candidate:
         module = self.current_strategy.compile()
-        parent = module.select_parent(self.population, self.rng)
+        context = {"selection_counts": self._selection_counts}
+        parent = module.select_parent(self.population, self.rng, context)
         self._record_selection(parent)
         operator = module.select_operator(self.rng)
         inspiration = module.select_inspiration(self.population, parent, self.rng)
@@ -113,10 +124,14 @@ class MetaEvolutionLoop:
             problem_description=self.config.problem_description,
         )
         score, artifacts = self.evaluator(content)
+        objectives = artifacts.get("objectives", {}) if isinstance(artifacts, dict) else {}
+        score = self._resolve_score(score, objectives)
+
         candidate = Candidate(
             content=content,
             score=score,
             artifacts=artifacts,
+            objectives=objectives,
             generation=self.iteration,
             parent_id=parent.id,
             strategy_id=self.current_strategy.id,
@@ -125,9 +140,19 @@ class MetaEvolutionLoop:
         self.population.append(candidate)
         return candidate
 
-    def _strategy_score(
-        self, start_score: float, end_score: float, window_size: int
-    ) -> float:
+    def _resolve_score(self, raw_score: float, objectives: dict[str, float]) -> float:
+        """Use AdaEvolve-style proxy score when objectives are configured."""
+        if not self.config.pareto_objectives:
+            return raw_score
+        proxy = compute_proxy_score(
+            objectives,
+            fitness_key=self.config.fitness_key,
+            pareto_objectives=self.config.pareto_objectives,
+            higher_is_better=self.config.higher_is_better,
+        )
+        return proxy if proxy != PROGRESS_SCORE_MISSING else raw_score
+
+    def _strategy_score(self, start_score: float, end_score: float, window_size: int) -> float:
         """J(S) = (s_end - s_start) * log(1 + s_start) / sqrt(W)."""
         delta = end_score - start_score
         if start_score == -math.inf:
@@ -144,8 +169,9 @@ class MetaEvolutionLoop:
             return False
         try:
             module = strategy.compile()
+            context = {"selection_counts": self._selection_counts}
             for _ in range(self.config.validation_trials):
-                parent = module.select_parent(self.population, self.rng)
+                parent = module.select_parent(self.population, self.rng, context)
                 operator = module.select_operator(self.rng)
                 inspiration = module.select_inspiration(self.population, parent, self.rng)
                 content = await self.solution_generator.generate(
@@ -154,7 +180,9 @@ class MetaEvolutionLoop:
                     inspiration=inspiration,
                     problem_description=self.config.problem_description,
                 )
-                score, _ = self.evaluator(content)
+                score, artifacts = self.evaluator(content)
+                objectives = artifacts.get("objectives", {}) if isinstance(artifacts, dict) else {}
+                score = self._resolve_score(score, objectives)
                 if not math.isfinite(score):
                     return False
             return True
@@ -214,11 +242,14 @@ class MetaEvolutionLoop:
             for _ in range(3):
                 content = self._random_seed_content()
                 score, artifacts = self.evaluator(content)
+                objectives = artifacts.get("objectives", {}) if isinstance(artifacts, dict) else {}
+                score = self._resolve_score(score, objectives)
                 self.population.append(
                     Candidate(
                         content=content,
                         score=score,
                         artifacts=artifacts,
+                        objectives=objectives,
                         generation=0,
                     )
                 )

@@ -9,9 +9,11 @@ from vibe.evox.evaluators import (
     expression_evaluator,
     keyword_coverage_evaluator,
     string_match_evaluator,
+    toy_signal_filter_evaluator,
 )
 from vibe.evox.generators import MockSolutionGenerator, MockStrategyGenerator
 from vibe.evox.loop import MetaEvolutionConfig, MetaEvolutionLoop
+from vibe.evox.metrics import compute_proxy_score, normalize_metric_value
 from vibe.evox.population import PopulationDescriptor
 from vibe.evox.strategy import SearchStrategy, StrategyDatabase, StrategyRecord
 from vibe.evox.types import Candidate, VariationOperator
@@ -240,3 +242,148 @@ class TestEvoXBaselines:
 
         assert adaptive_result.strategy_switches >= 1
         assert adaptive_result.best_candidate.score >= fixed_result.best_candidate.score
+
+
+class TestEvoXMetrics:
+    """Guardrail tests for AdaEvolve-style multi-objective evaluation."""
+
+    def test_normalize_metric_value_maximize(self):
+        assert normalize_metric_value("x", 5.0, {"x": True}) == 5.0
+
+    def test_normalize_metric_value_minimize(self):
+        assert normalize_metric_value("x", 5.0, {"x": False}) == -5.0
+
+    def test_compute_proxy_score_fitness_key(self):
+        metrics = {"a": 1.0, "b": 2.0}
+        assert compute_proxy_score(metrics, fitness_key="b") == 2.0
+
+    def test_compute_proxy_score_pareto_average(self):
+        metrics = {"x": 4.0, "y": 6.0}
+        assert compute_proxy_score(
+            metrics, pareto_objectives=["x", "y"], higher_is_better={"x": True, "y": True}
+        ) == pytest.approx(5.0)
+
+    def test_compute_proxy_score_pareto_with_minimize(self):
+        metrics = {"x": 4.0, "y": 6.0}
+        assert compute_proxy_score(
+            metrics, pareto_objectives=["x", "y"], higher_is_better={"x": True, "y": False}
+        ) == pytest.approx(-1.0)
+
+    def test_compute_proxy_score_missing_objective(self):
+        metrics = {"x": 4.0}
+        assert compute_proxy_score(
+            metrics, pareto_objectives=["x", "y"], higher_is_better={"x": True, "y": True}
+        ) == pytest.approx(2.0)
+
+
+class TestEvoXUCB:
+    """Guardrail tests for UCB parent selection."""
+
+    def test_ucb_selects_underexplored_candidate(self):
+        """UCB should favor a high-scoring candidate that has been selected less often."""
+        strategy = SearchStrategy(
+            parent_selection="ucb",
+            operator_preference=VariationOperator.FREE_FORM,
+            instructions="Use UCB to balance exploration and exploitation.",
+        )
+        module = strategy.compile()
+
+        pop = [
+            Candidate(content="a", score=10.0),
+            Candidate(content="b", score=9.0),
+            Candidate(content="c", score=8.0),
+        ]
+        counts = {pop[0].id: 100, pop[1].id: 1, pop[2].id: 1}
+        context = {"selection_counts": counts}
+
+        # With many samples, UCB should almost always pick the underexplored high-ish scorer
+        rng = __import__("random").Random(42)
+        selected = [module.select_parent(pop, rng, context).id for _ in range(50)]
+        # Candidate b has high score and very low count, so it should dominate
+        assert selected.count(pop[1].id) > selected.count(pop[0].id)
+
+    def test_ucb_falls_back_without_context(self):
+        strategy = SearchStrategy(parent_selection="ucb")
+        module = strategy.compile()
+        pop = [Candidate(content="a", score=1.0), Candidate(content="b", score=2.0)]
+        parent = module.select_parent(pop, __import__("random").Random(0), None)
+        assert parent in pop
+
+
+class TestEvoXMultiObjective:
+    """Guardrail tests for multi-objective EvoX loop behavior."""
+
+    @pytest.mark.asyncio
+    async def test_multi_objective_mode_uses_proxy_score(self):
+        """When pareto_objectives are configured, the loop uses the proxy score."""
+        loop = MetaEvolutionLoop(
+            evaluator=toy_signal_filter_evaluator(),
+            solution_generator=MockSolutionGenerator(seed=10),
+            strategy_generator=MockStrategyGenerator(seed=10),
+            config=MetaEvolutionConfig(
+                total_iterations=20,
+                window_size=10,
+                stagnation_threshold=1e-6,
+                pareto_objectives=["smoothness", "responsiveness"],
+                higher_is_better={"smoothness": True, "responsiveness": True},
+            ),
+            seed=10,
+        )
+        result = await loop.run()
+        best = result.best_candidate
+        assert best.objectives
+        assert "smoothness" in best.objectives
+        assert "responsiveness" in best.objectives
+        # Proxy score should be the average of the two objectives
+        expected_proxy = (best.objectives["smoothness"] + best.objectives["responsiveness"]) / 2.0
+        assert best.score == pytest.approx(expected_proxy)
+
+    @pytest.mark.asyncio
+    async def test_multi_objective_population_descriptor_includes_objective_stats(self):
+        loop = MetaEvolutionLoop(
+            evaluator=toy_signal_filter_evaluator(),
+            solution_generator=MockSolutionGenerator(seed=11),
+            strategy_generator=MockStrategyGenerator(seed=11),
+            config=MetaEvolutionConfig(
+                total_iterations=10,
+                window_size=5,
+                stagnation_threshold=1e-6,
+                pareto_objectives=["smoothness", "responsiveness"],
+                higher_is_better={"smoothness": True, "responsiveness": True},
+            ),
+            seed=11,
+        )
+        await loop.run()
+        descriptor = PopulationDescriptor.from_population(
+            loop.population,
+            recent_window=loop.population[-5:],
+            steps_since_improvement=0,
+            selection_counts=loop._selection_counts,
+        )
+        assert "smoothness" in descriptor.objective_stats
+        assert "responsiveness" in descriptor.objective_stats
+        assert "best" in descriptor.objective_stats["smoothness"]
+
+    @pytest.mark.asyncio
+    async def test_ucb_strategy_switches_in_loop(self):
+        """UCB parent selection can be deployed and used without crashing."""
+        loop = MetaEvolutionLoop(
+            evaluator=string_match_evaluator("ucb"),
+            solution_generator=MockSolutionGenerator(seed=20),
+            strategy_generator=MockStrategyGenerator(seed=20),
+            config=MetaEvolutionConfig(
+                total_iterations=30,
+                window_size=10,
+                stagnation_threshold=0.001,
+            ),
+            seed=20,
+        )
+        # Seed initial population so UCB has scores to work with
+        loop.population = [
+            Candidate(content="ucb", score=-1.0),
+            Candidate(content="test", score=-2.0),
+            Candidate(content="best", score=-3.0),
+        ]
+        result = await loop.run()
+        assert result.iterations == 30
+        assert len(loop.strategy_db.records) >= 1

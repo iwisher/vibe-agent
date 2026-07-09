@@ -21,8 +21,7 @@ class SolutionGenerator(Protocol):
         operator: VariationOperator,
         inspiration: list[str],
         problem_description: str,
-    ) -> str:
-        ...
+    ) -> str: ...
 
 
 class StrategyGenerator(Protocol):
@@ -33,8 +32,7 @@ class StrategyGenerator(Protocol):
         parent_strategy: SearchStrategy,
         descriptor: PopulationDescriptor,
         history: list[StrategyRecord],
-    ) -> SearchStrategy:
-        ...
+    ) -> SearchStrategy: ...
 
 
 class LLMSolutionGenerator:
@@ -160,9 +158,36 @@ class LLMStrategyGenerator:
     that defines the strategy's behavior.
     """
 
-    def __init__(self, llm_client, model: str | None = None):
+    def __init__(self, llm_client, model: str | None = None, config=None):
         self.llm = llm_client
         self.model = model
+        self.config = config
+
+    def _task_objective_text(self) -> str:
+        if not self.config or not getattr(self.config, "pareto_objectives", None):
+            return "Suggest improvements that will improve the COMBINED_SCORE."
+        objectives = getattr(self.config, "pareto_objectives", [])
+        higher_is_better = getattr(self.config, "higher_is_better", {}) or {}
+        descriptions = []
+        for obj in objectives:
+            direction = "maximize" if higher_is_better.get(obj, True) else "minimize"
+            descriptions.append(f"{obj} ({direction})")
+        return (
+            "Suggest improvements that improve Pareto trade-offs across: "
+            + ", ".join(descriptions)
+            + "."
+        )
+
+    def _diversity_note_text(self) -> str:
+        if not self.config or not getattr(self.config, "pareto_objectives", None):
+            return (
+                "Different solutions with similar combined_score but different "
+                "features are valuable."
+            )
+        return (
+            "Different solutions with similar overall trade-offs but different "
+            "objective balances are valuable."
+        )
 
     async def mutate(
         self,
@@ -171,17 +196,26 @@ class LLMStrategyGenerator:
         history: list[StrategyRecord],
     ) -> SearchStrategy:
         history_text = "\n\n".join(
-            f"Strategy {i+1} (score {r.score:.4f}):\n{r.strategy.code}"
+            f"Strategy {i + 1} (score {r.score:.4f}):\n{r.strategy.code}"
             for i, r in enumerate(history[-3:])
         )
+
+        descriptor_dict = descriptor.to_dict()
+        # Compact descriptor for prompt: drop raw selection counts and score lists
+        compact_descriptor = {
+            k: v
+            for k, v in descriptor_dict.items()
+            if k not in {"selection_counts", "recent_window_scores", "top_k_scores"}
+        }
 
         prompt = f"""You are evolving a search strategy for an LLM-driven evolutionary optimizer.
 
 The strategy is implemented as Python code with three functions:
 
-def select_parent(population, rng) -> Candidate:
-    # population is a list of Candidate objects with .id, .content, .score
+def select_parent(population, rng, context=None) -> Candidate:
+    # population is a list of Candidate objects with .id, .content, .score, .objectives
     # rng is a random.Random instance
+    # context is a dict that may contain "selection_counts" for UCB exploration
     ...
 
 def select_inspiration(population, parent, rng) -> list[str]:
@@ -192,8 +226,11 @@ def select_operator(rng) -> str:
     # return one of "local_refinement", "structural_variation", "free_form"
     ...
 
+Task objective: {self._task_objective_text()}
+Diversity note: {self._diversity_note_text()}
+
 Current population descriptor:
-{json.dumps(descriptor.to_dict(), indent=2)}
+{json.dumps(compact_descriptor, indent=2)}
 
 Recent strategy history:
 {history_text}
@@ -205,7 +242,9 @@ Parent strategy code to mutate:
 
 Edit the code to improve optimization progress. You may change parent selection
 (e.g., best, tournament, diverse, ucb), inspiration selection, and operator
-preferences. You may import only `random` and `math`.
+preferences. When pareto_objectives are present, prefer parents and inspirations
+with complementary objective strengths rather than only the highest combined score.
+You may import only `random` and `math`.
 
 Output ONLY the new Python code, inside a single fenced code block. Do not add explanation."""
 

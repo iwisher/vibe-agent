@@ -13,21 +13,20 @@ from vibe.evox.types import Candidate, VariationOperator
 class StrategyModule(Protocol):
     """Protocol for a dynamically loaded strategy module."""
 
-    def select_parent(self, population: list[Candidate], rng: Any) -> Candidate:
-        ...
+    def select_parent(
+        self, population: list[Candidate], rng: Any, context: dict[str, Any] | None = None
+    ) -> Candidate: ...
 
     def select_inspiration(
         self, population: list[Candidate], parent: Candidate, rng: Any
-    ) -> list[str]:
-        ...
+    ) -> list[str]: ...
 
-    def select_operator(self, rng: Any) -> VariationOperator:
-        ...
+    def select_operator(self, rng: Any) -> VariationOperator: ...
 
 
 # Default strategy source code used when no code is provided.
 DEFAULT_STRATEGY_CODE = '''\
-def select_parent(population, rng):
+def select_parent(population, rng, context=None):
     """Select a parent uniformly at random."""
     return rng.choice(population)
 
@@ -121,8 +120,10 @@ class _StrategyWrapper:
     def __init__(self, module_globals: dict[str, Any]):
         self._g = module_globals
 
-    def select_parent(self, population: list[Candidate], rng: Any) -> Candidate:
-        result = self._g["select_parent"](population, rng)
+    def select_parent(
+        self, population: list[Candidate], rng: Any, context: dict[str, Any] | None = None
+    ) -> Candidate:
+        result = self._g["select_parent"](population, rng, context)
         if not isinstance(result, Candidate):
             raise ValueError("select_parent must return a Candidate")
         return result

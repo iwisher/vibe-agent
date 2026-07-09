@@ -34,6 +34,7 @@ class PopulationDescriptor:
     selection_counts: dict[str, int]  # candidate id -> times selected as parent
     max_selection_ratio: float  # max(counts) / total selections
     overused_ids: list[str]  # ids with count > 2 * expected uniform frequency
+    objective_stats: dict[str, dict[str, float]]  # per-objective best/mean stats
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -54,6 +55,7 @@ class PopulationDescriptor:
             "selection_counts": self.selection_counts,
             "max_selection_ratio": self.max_selection_ratio,
             "overused_ids": self.overused_ids,
+            "objective_stats": self.objective_stats,
         }
 
     @classmethod
@@ -70,6 +72,8 @@ class PopulationDescriptor:
         max_ratio = max(counts.values(), default=0) / total_selections
         expected_uniform = total_selections / max(1, len(population))
         overused = [cid for cid, cnt in counts.items() if cnt > 2 * expected_uniform]
+
+        objective_stats = cls._compute_objective_stats(population)
 
         if not population:
             return cls(
@@ -90,6 +94,7 @@ class PopulationDescriptor:
                 selection_counts=counts,
                 max_selection_ratio=max_ratio,
                 overused_ids=overused,
+                objective_stats=objective_stats,
             )
 
         scores = [c.score for c in population]
@@ -147,4 +152,31 @@ class PopulationDescriptor:
             selection_counts=counts,
             max_selection_ratio=max_ratio,
             overused_ids=overused,
+            objective_stats=objective_stats,
         )
+
+    @staticmethod
+    def _compute_objective_stats(
+        population: list[Candidate],
+    ) -> dict[str, dict[str, float]]:
+        """Aggregate per-objective statistics from candidate objectives."""
+        if not population:
+            return {}
+        objective_names = set()
+        for c in population:
+            objective_names.update(c.objectives.keys())
+        if not objective_names:
+            return {}
+
+        stats: dict[str, dict[str, float]] = {}
+        for name in objective_names:
+            values = [c.objectives[name] for c in population if name in c.objectives]
+            if not values:
+                continue
+            stats[name] = {
+                "best": max(values),
+                "worst": min(values),
+                "mean": sum(values) / len(values),
+                "count": float(len(values)),
+            }
+        return stats

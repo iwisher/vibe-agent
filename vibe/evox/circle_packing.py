@@ -167,11 +167,14 @@ class CirclePackingMockGenerator:
         if pattern == "hex":
             return self._hex_pattern()
         # random_dense: many small circles
-        return [[
-            self.rng.uniform(0.05, self.box_size - 0.05),
-            self.rng.uniform(0.05, self.box_size - 0.05),
-            self.rng.uniform(0.02, 0.04),
-        ] for _ in range(self.n)]
+        return [
+            [
+                self.rng.uniform(0.05, self.box_size - 0.05),
+                self.rng.uniform(0.05, self.box_size - 0.05),
+                self.rng.uniform(0.02, 0.04),
+            ]
+            for _ in range(self.n)
+        ]
 
     def _grid_pattern(self) -> list[list[float]]:
         cols = max(1, int(math.sqrt(self.n)))

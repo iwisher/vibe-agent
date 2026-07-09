@@ -6,7 +6,6 @@ from typing import Any, Callable
 
 
 def string_match_evaluator(target: str) -> "Callable[[str], tuple[float, dict[str, Any]]]":
-
     """Score a candidate by negative Levenshtein distance to a target string.
 
     Higher score is better (closer to zero).
@@ -59,6 +58,37 @@ def keyword_coverage_evaluator(
         hits = sum(1 for kw in keywords if kw.lower() in content_lower)
         score = hits / len(keywords)
         return score, {"keywords": keywords, "hits": hits}
+
+    return _eval
+
+
+def toy_signal_filter_evaluator() -> "Callable[[str], tuple[float, dict[str, Any]]]":
+    """Toy multi-objective evaluator inspired by the paper's signal-processing case study.
+
+    Treats a candidate string as a filtering program and evaluates it on two
+    competing objectives:
+      - smoothness: longer, more repetitive programs are smoother
+      - responsiveness: shorter, more varied programs are more responsive
+
+    The combined score is the average, but the per-objective values are returned
+    in artifacts["objectives"] so the loop can compute a Pareto proxy.
+    """
+
+    def _eval(content: str) -> tuple[float, dict[str, Any]]:
+        if not content:
+            return 0.0, {"objectives": {"smoothness": 0.0, "responsiveness": 0.0}}
+
+        # Smoothness: prefer longer, more uniform content
+        length = len(content)
+        unique_ratio = len(set(content)) / max(1, length)
+        smoothness = min(1.0, length / 50.0) * (1.0 - unique_ratio * 0.3)
+
+        # Responsiveness: prefer shorter, more varied content
+        responsiveness = (1.0 - min(1.0, length / 60.0)) * (0.3 + unique_ratio * 0.7)
+
+        objectives = {"smoothness": smoothness, "responsiveness": responsiveness}
+        combined = (smoothness + responsiveness) / 2.0
+        return combined, {"objectives": objectives}
 
     return _eval
 

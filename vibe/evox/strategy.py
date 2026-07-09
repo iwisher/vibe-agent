@@ -70,8 +70,8 @@ class SearchStrategy:
             )
 
         return f'''\
-def select_parent(population, rng):
-    """{self.instructions or 'Select a parent using ' + self.parent_selection}"""
+def select_parent(population, rng, context=None):
+    """{self.instructions or "Select a parent using " + self.parent_selection}"""
     if not population:
         raise ValueError("empty population")
     if "{self.parent_selection}" == "best":
@@ -87,6 +87,18 @@ def select_parent(population, rng):
         start = tier * len(sorted_pop) // 4
         end = max((tier + 1) * len(sorted_pop) // 4, start + 1)
         return rng.choice(sorted_pop[start:end])
+    if "{self.parent_selection}" == "ucb":
+        import math
+        if context is None:
+            return rng.choice(population)
+        counts = context.get("selection_counts", {{}})
+        total = max(1, sum(counts.values()))
+        def _ucb_score(c):
+            exploit = c.score
+            count = counts.get(c.id, 0)
+            explore = math.sqrt(2.0 * math.log(total) / (count + 1))
+            return exploit + explore
+        return max(population, key=_ucb_score)
     # default
     return rng.choice(population)
 
