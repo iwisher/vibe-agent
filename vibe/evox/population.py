@@ -168,7 +168,7 @@ class PopulationDescriptor:
         if not objective_names:
             return {}
 
-        stats: dict[str, dict[str, float]] = {}
+        stats: dict[str, dict[str, float | int]] = {}
         for name in objective_names:
             values = [c.objectives[name] for c in population if name in c.objectives]
             if not values:
