@@ -257,16 +257,51 @@ The implementation was committed and pushed to `main` as four focused commits:
 3. `36ee3a6` — `feat(dashboard): add research paper page for EvoX`
 4. `7c1c8b0` — `docs: add EvoX implementation guide and self-evolution demo`
 
-## 10. Design Decisions & Limitations
+## 10. What I Learned from the Paper's Signal-Processing Case Study
+
+The paper's signal-processing case study (Section 5, Figure 2) shows how EvoX evolves its search strategy through four phases. The most instructive is **Phase 2: The Breakthrough (Stratified + Multi-Objective)**.
+
+### Why greedy selection hides complementary candidates
+
+Ranking by a single combined score can make two very different candidates look equally mediocre:
+
+- Candidate A: very smooth but high lag
+- Candidate B: very responsive but noisy
+
+Both may receive the same average score, so a greedy strategy treats them as uninteresting. In reality they have **complementary strengths** along different objective axes.
+
+### What the Phase 2 strategy does
+
+Instead of selecting parents and inspirations by the single combined score, the evolved strategy:
+
+1. Looks at individual component metrics (e.g., smoothness, lag, fidelity, noise).
+2. Samples parents and inspirations from **diverse score tiers and objective-specific groups**.
+3. Pairs a parent strong on one objective with an inspiration strong on a complementary objective.
+4. Tells the generator to merge those specific strengths.
+
+In the paper this pairing led to a novel hybrid: **singular spectrum analysis (SSA) combined with Whittaker smoothing**.
+
+### Why my current `diverse` strategy is not enough
+
+My current implementation has a `diverse` parent-selection template that picks from score quartiles. That is only **single-objective stratification**. It does not:
+
+- Track per-objective metrics in `Candidate.artifacts`.
+- Pair parents and inspirations by complementary objective strengths.
+- Prompt the generator to merge specific trade-offs.
+
+To reproduce the paper's Phase 2 behavior I would need to extend `Candidate`/`artifacts` to carry objective vectors, add objective-aware selection rules, and add a variation operator that explicitly asks the LLM to combine strengths.
+
+## 11. Design Decisions & Limitations
 
 - **Evolvable code, not just config**: The biggest departure from the initial minimal implementation is that strategies are now Python source code edited by the meta-generator. This matches the paper's `EvolvedProgramDatabase` concept.
 - **Restricted execution environment**: Strategy code may only import `random` and `math`, and `from ... import` is disallowed. This provides a lightweight sandbox.
 - **Mock-first validation**: Tests use mock generators so they are fast and deterministic. LLM-backed generators are available for real experiments.
 - **String-based candidates**: The current `Candidate.content` is a string, which covers prompts, programs, JSON circle lists, and symbolic expressions. Structured candidates (e.g., ASTs) would require extending `Candidate`.
-- **Single-objective focus**: The current evaluator returns one scalar score. Multi-objective Pareto handling is not implemented.
+- **Single-objective focus**: The current evaluator returns one scalar score. Multi-objective Pareto handling and objective-aware parent/inspiration pairing (Phase 2 of the signal-processing case study) are not implemented.
+- **No signal-processing benchmark**: The paper's four-phase signal-processing task is not included; only string match, keyword coverage, expression, and circle packing are implemented.
 - **No checkpointing**: The loop runs in memory. Persistence can be added by serializing the population and strategy database.
 - **No full benchmark suite**: Only one paper-inspired domain (circle packing) is included. The math, systems, Frontier-CS, and ARC-AGI-2 benchmarks from the paper are out of scope.
 
-## 11. References
+## 12. References
 
 - Shu Liu et al., *EvoX: Meta-Evolution for Automated Discovery*, arXiv:2602.23413v1 [cs.LG], 26 Feb 2026.
