@@ -12,6 +12,7 @@ Vibe Agent is an open, visual-first interactive CLI agent harness. It is designe
 - **Phase 2 Skill System**: Native vibe skill format with TOML frontmatter, validation, security scanning, atomic installation, typed variables, orchestration, marketplace, and dynamic tool declaration.
 - **Skill-Maker (Self-Improving)**: Automatically detects recurring task patterns from wiki extractions, generates SKILL.md drafts via LLM, validates through sandbox, and proposes installation via approval gate.
 - **Tripartite Memory System**: Automated async knowledge extraction, FlashLLM contradiction detection, telemetry-triggered RLM analysis, vector search with sentence-transformers, wiki graph database, and per-tag novelty thresholds.
+- **EvoX Meta-Evolution (Offline Pipeline)**: Self-improving offline search that jointly evolves candidate solutions and the search strategies used to generate them. Uses AdaEvolve-style multi-objective proxy scoring, UCB parent selection, and a lightweight strategy-code sandbox.
 - **Shadow Workspace Rollbacks**: Auto-creates hidden git branch (`vibe/shadow-<session-id>`) before write-heavy operations. One-command restore if the session fails.
 - **Multi-Agent Swarm**: DAG-based orchestration of specialized sub-agents (Research, Coding, Critic, Planner) with Pub/Sub message bus, broadcast deduplication, and shared wiki.
 - **React Trace Dashboard**: Web UI for session observability — timeline, wiki graph, telemetry charts, system stats. Dark theme, real-time WebSocket updates.
@@ -26,7 +27,9 @@ Vibe Agent is an open, visual-first interactive CLI agent harness. It is designe
 > [!TIP]
 > **Interactive Version Available:** View the [Interactive System Architecture Diagram](docs/assets/system_architecture.html) directly in your browser to explore detailed component breakdowns, hover effects, and the complete tech stack.
 
-The system is built on a modular **Harness** pattern. The **Query Loop State Machine** is the central orchestrator that connects the **Model Gateway** (for multi-provider LLM access), the **Tool Executor** (for secure sandboxed actions), and the **Tripartite Memory System** (for long-term knowledge persistence). New capabilities — **Skill-Maker**, **Shadow Workspace**, **Swarm Orchestration**, and **Preference Layer** — all integrate through the same harness hooks.
+The system is built on a modular **Harness** pattern. The **Query Loop State Machine** is the central orchestrator that connects the **Model Gateway** (for multi-provider LLM access), the **Tool Executor** (for secure sandboxed actions), and the **Tripartite Memory System** (for long-term knowledge persistence). New capabilities — **Skill-Maker**, **Shadow Workspace**, **Swarm Orchestration**, **Preference Layer**, and **EvoX** — all integrate through the same harness hooks.
+
+**EvoX** operates as an offline pipeline stage. While the Query Loop handles live interactive sessions, EvoX runs longer, budgeted meta-evolution searches over tasks (prompts, programs, algorithms) and can feed discovered strategies or high-quality solutions back into the Skill System and Wiki memory.
 
 ```
 User CLI / Dashboard
@@ -43,11 +46,15 @@ Query Loop State Machine (IDLE → PLANNING → TOOL_EXECUTION → SYNTHESIZING 
   ├── Security Coordinator (5-layer defense)
   ├── Preference Layer (8 heuristics)
   ├── Swarm Orchestrator (multi-agent DAG)
-  └── Tripartite Memory System
-       ├── LLMWiki + PageIndex + SharedDB (SQLite)
-       ├── Knowledge Extractor (async background)
-       ├── RLM Threshold Analyzer (telemetry-triggered LoRA training)
-       └── WikiGraph + Semantic Deduplication
+  ├── Tripartite Memory System
+  │    ├── LLMWiki + PageIndex + SharedDB (SQLite)
+  │    ├── Knowledge Extractor (async background)
+  │    ├── RLM Threshold Analyzer (telemetry-triggered LoRA training)
+  │    └── WikiGraph + Semantic Deduplication
+  └── EvoX Meta-Evolution (offline search)
+       ├── Executable strategy code (parent / inspiration / operator selection)
+       ├── Multi-objective proxy scoring + UCB exploration
+       └── Discovered strategies → Skill System + Wiki memory
 ```
 
 Read more in the [Architecture Document](docs/ARCHITECTURE.md).
@@ -178,6 +185,52 @@ vibe shadow list
 # Clean old shadows
 vibe shadow clean --older-than-days 7
 ```
+
+---
+
+## 🧬 EvoX Meta-Evolution (Offline Pipeline)
+
+EvoX is Vibe Agent's self-improving offline search component. It implements the two-level evolution process from the [EvoX paper](https://arxiv.org/pdf/2602.23413v1):
+
+1. **Inner loop** evolves candidate solutions under an active search strategy.
+2. **Outer loop** meta-evolves the search strategy itself when progress stagnates.
+
+### Why it matters
+
+Most LLM-driven optimizers use a fixed search strategy (e.g., always pick the best candidate and refine it). EvoX treats the strategy as an evolvable object: it can switch from greedy refinement to multi-objective pairing, to UCB-driven structural variation, and back to local polishing as the search landscape changes.
+
+### Key capabilities
+
+| Capability | What it does |
+|---|---|
+| Executable strategies | Strategies are Python code (`select_parent`, `select_inspiration`, `select_operator`) compiled in a lightweight sandbox. |
+| Window-based stagnation | Monitors score improvement over a sliding window; triggers meta-evolution when `Δ` falls below a threshold. |
+| Multi-objective proxy | AdaEvolve-style scalarization across `pareto_objectives` with per-objective `higher_is_better` directions. |
+| UCB parent selection | Balances exploitation of high-scoring candidates with exploration of under-sampled ones. |
+| Strategy database | Remembers deployed strategies and their score signals for score-biased parent selection. |
+
+### Run EvoX
+
+```bash
+# String-match evolution
+python -m vibe evox run --evaluator string --target "hello" --iterations 60
+
+# Circle packing (paper-inspired benchmark)
+python -m vibe evox run --evaluator circle_packing --target 12 --iterations 80
+
+# Multi-objective signal-filter demo
+python -m vibe evox run --evaluator signal_filter --iterations 50
+```
+
+### Integration with memory and skills
+
+EvoX does not replace the live Query Loop; it runs **offline** and produces artifacts that feed back into the agent's long-term systems:
+
+- **Skill System**: A successful evolved strategy can be captured as a reusable skill prompt or installed as a SKILL.md template. For example, a strategy that discovered effective prompt-rewriting patterns for a class of tasks can be promoted to a skill trigger.
+- **Tripartite Memory / Wiki**: High-performing candidates and the final strategy trajectory are written to the wiki (via `vibe memory wiki`) so future sessions can retrieve them. The memory system can also suggest seed candidates from similar past tasks, warm-starting the next EvoX run.
+- **Eval Store**: EvoX results are recorded in the eval store, contributing to the baseline scorecard and enabling regression detection.
+
+Read the full implementation notes in [`docs/EvoX_implementation.md`](docs/EvoX_implementation.md).
 
 ---
 

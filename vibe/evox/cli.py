@@ -11,6 +11,7 @@ from vibe.evox.evaluators import (
     expression_evaluator,
     keyword_coverage_evaluator,
     string_match_evaluator,
+    toy_signal_filter_evaluator,
 )
 from vibe.evox.generators import MockSolutionGenerator, MockStrategyGenerator
 from vibe.evox.loop import MetaEvolutionConfig, MetaEvolutionLoop
@@ -36,6 +37,10 @@ async def _run_experiment(evaluator_name: str, target: str, iterations: int, see
         evaluator = circle_packing_evaluator(n=n)
         solution_generator = CirclePackingMockGenerator(n=n, seed=seed)
         problem = "Maximize circle packing density in a unit square"
+    elif evaluator_name == "signal_filter":
+        evaluator = toy_signal_filter_evaluator()
+        solution_generator = MockSolutionGenerator(seed=seed)
+        problem = "Multi-objective signal filter: balance smoothness and responsiveness"
     else:
         raise typer.BadParameter(f"Unknown evaluator: {evaluator_name}")
 
@@ -64,7 +69,7 @@ def evox_run(
         "string",
         "--evaluator",
         "-e",
-        help="Evaluator: string, expression, keywords, circle_packing",
+        help="Evaluator: string, expression, keywords, circle_packing, signal_filter",
     ),
     target: str = typer.Option(
         "hello world",
