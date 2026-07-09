@@ -259,37 +259,59 @@ The implementation was committed and pushed to `main` as four focused commits:
 
 ## 10. What I Learned from the Paper's Signal-Processing Case Study
 
-The paper's signal-processing case study (Section 5, Figure 2) shows how EvoX evolves its search strategy through four phases. The most instructive is **Phase 2: The Breakthrough (Stratified + Multi-Objective)**.
+The paper's signal-processing case study (Section 5, Figure 2) shows how EvoX evolves its search strategy through **four phases** under a 100-iteration budget. The task is to build a filtering program for a noisy, changing time series, balancing four competing objectives: fidelity, smoothness, lag, and false trend changes.
 
-### Why greedy selection hides complementary candidates
+### Phase 1: Random Search and Greedy Search
 
-Ranking by a single combined score can make two very different candidates look equally mediocre:
+- **Behavior**: EvoX starts with the same uniform-random strategy as the static baseline (random parent, random inspiration, free-form variation).
+- **Stagnation**: Around iteration 20, progress stops.
+- **Response**: Switch to a **greedy strategy** that refines only the single best program found so far.
+- **Why it fails**: The current best program still relies on simple moving-average (MA) or exponential-moving-average (EMA) structures. Tiny local refinements cannot escape that structural ceiling.
+- **Lesson**: Greedy exploitation is ineffective when the current best has the wrong structure.
 
-- Candidate A: very smooth but high lag
-- Candidate B: very responsive but noisy
+### Phase 2: The Breakthrough (Stratified + Multi-Objective)
 
-Both may receive the same average score, so a greedy strategy treats them as uninteresting. In reality they have **complementary strengths** along different objective axes.
+- **Trigger**: Around iteration 40, after the greedy strategy also stagnates.
+- **Key insight**: Ranking by a single combined score can hide complementary candidates. Two "mediocre" average scores may come from opposite strengths (e.g., one very smooth but high-lag, another responsive but noisy).
+- **Strategy**: Stop selecting purely by combined score. Instead, sample parents and inspirations from **diverse score tiers and objective-specific groups**, then pair a parent strong on one objective with an inspiration strong on a complementary objective.
+- **Result**: The LLM is prompted to merge complementary strengths, leading to novel hybrid designs such as **singular spectrum analysis (SSA) combined with Whittaker smoothing** — the largest single performance jump.
+- **Lesson**: Multi-objective stratification can recombine partial strengths that single-score ranking would discard.
 
-### What the Phase 2 strategy does
+### Phase 3: Structural Exploration (UCB + Structural Variation)
 
-Instead of selecting parents and inspirations by the single combined score, the evolved strategy:
+- **Trigger**: Around iteration 60, the population descriptor shows many recent candidates with similar scores.
+- **Diagnosis**: Simple refinements and combinations are no longer producing novelty.
+- **Strategy**: Increase use of **structural variation** for bold redesigns, and apply a **UCB selection rule** that prioritizes rarely selected parents (encouraging exploration). Multi-objective inspiration selection is retained because it proved useful.
+- **Result**: New solutions begin using advanced SciPy building blocks — higher-order filters, smoothing kernels, and forward–backward filtering (`filtfilt`).
+- **Lesson**: When the population clusters around similar scores, the right response is exploratory structural variation plus under-sampled parent selection (UCB), not more refinement.
 
-1. Looks at individual component metrics (e.g., smoothness, lag, fidelity, noise).
-2. Samples parents and inspirations from **diverse score tiers and objective-specific groups**.
-3. Pairs a parent strong on one objective with an inspiration strong on a complementary objective.
-4. Tells the generator to merge those specific strengths.
+### Phase 4: Final Polishing (UCB + Local Refinement)
 
-In the paper this pairing led to a novel hybrid: **singular spectrum analysis (SSA) combined with Whittaker smoothing**.
+- **Trigger**: Around iteration 90, large structural changes start destabilizing performance.
+- **Diagnosis**: The search is near the frontier; big moves are more likely to hurt than help.
+- **Strategy**: Shift back to **local refinement** on the top discovered solutions, while keeping UCB parent selection to avoid premature convergence.
+- **Result**: Small, precise adjustments yield final incremental gains (+0.022).
+- **Lesson**: Late-stage optimization should favor refinement over structural variation, but still maintain some exploration pressure to avoid getting trapped.
 
-### Why my current `diverse` strategy is not enough
+### Mapping the four phases to strategy knobs
 
-My current implementation has a `diverse` parent-selection template that picks from score quartiles. That is only **single-objective stratification**. It does not:
+| Phase | Parent selection | Inspiration selection | Operator | Purpose |
+|---|---|---|---|---|
+| 1a | uniform_random | none / uniform_random | free_form | Baseline exploration |
+| 1b | best | none | local_refinement | Greedy exploitation (fails) |
+| 2 | diverse / objective-stratified | objective-complementary | free_form / combine | Breakthrough hybrids |
+| 3 | UCB (rarely selected) | multi-objective / diverse | structural_variation | Explore new families |
+| 4 | UCB | top / frontier | local_refinement | Final polishing |
 
-- Track per-objective metrics in `Candidate.artifacts`.
-- Pair parents and inspirations by complementary objective strengths.
-- Prompt the generator to merge specific trade-offs.
+### What is still missing from my implementation
 
-To reproduce the paper's Phase 2 behavior I would need to extend `Candidate`/`artifacts` to carry objective vectors, add objective-aware selection rules, and add a variation operator that explicitly asks the LLM to combine strengths.
+My current `MockStrategyGenerator` rotates through simple templates (`uniform_random`, `best`, `diverse`, `ucb` × `free_form`/`local_refinement`/`structural_variation`). It does **not** implement:
+
+- **True multi-objective descriptors**: `Candidate.artifacts` would need to carry per-objective scores, not just a scalar.
+- **Objective-aware pairing**: selecting a parent and inspiration based on complementary objective strengths.
+- **UCB parent selection**: tracking selection counts and rewarding under-sampled candidates.
+- **Domain-specific structural variation prompts**: e.g., telling the generator to use SciPy filters or merge SSA with Whittaker smoothing.
+- **The signal-processing benchmark itself**: the four-phase trajectory was observed on that specific task.
 
 ## 11. Design Decisions & Limitations
 
