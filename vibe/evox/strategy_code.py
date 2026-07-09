@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import ast
+import math
+import random
 import textwrap
+import uuid
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -62,11 +65,19 @@ class EvolvableStrategy:
 
     code: str = DEFAULT_STRATEGY_CODE
     description: str = "Default random search strategy"
-    id: str = field(default_factory=lambda: __import__("uuid").uuid4().hex[:12])
+    id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
 
     def __post_init__(self):
         self._compiled: Any | None = None
         self._module: Any | None = None
+
+    def __deepcopy__(self, memo):
+        """Deep-copy without pickling the compiled module (may contain math/random modules)."""
+        return EvolvableStrategy(
+            code=self.code,
+            description=self.description,
+            id=self.id,
+        )
 
     def compile(self) -> StrategyModule:
         """Compile the strategy code into an executable module-like object.
@@ -89,10 +100,18 @@ class EvolvableStrategy:
             elif isinstance(node, ast.ImportFrom):
                 raise ValueError("from ... import is not allowed in strategy code")
 
+        def _safe_import(name: str, *args, **kwargs):
+            """Restricted import hook that only allows random and math."""
+            if name not in {"random", "math"}:
+                raise ImportError(f"Import of '{name}' is not allowed in strategy code")
+            if name == "random":
+                return random
+            return math
+
         # Restrict builtins to a small allowlist so LLM-generated strategy code
         # cannot perform arbitrary file/network/execution operations.
         allowed_builtins = {
-            "__import__": __import__,
+            "__import__": _safe_import,
             "abs": abs,
             "all": all,
             "any": any,
@@ -108,7 +127,11 @@ class EvolvableStrategy:
             "sum": sum,
             "zip": zip,
         }
-        module_globals: dict[str, Any] = {"__builtins__": allowed_builtins}
+        module_globals: dict[str, Any] = {
+            "__builtins__": allowed_builtins,
+            "math": math,
+            "random": random,
+        }
         exec(compile(tree, filename="<strategy>", mode="exec"), module_globals)  # noqa: S102
 
         required = {"select_parent", "select_inspiration", "select_operator"}

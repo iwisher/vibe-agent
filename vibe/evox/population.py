@@ -34,7 +34,7 @@ class PopulationDescriptor:
     selection_counts: dict[str, int]  # candidate id -> times selected as parent
     max_selection_ratio: float  # max(counts) / total selections
     overused_ids: list[str]  # ids with count > 2 * expected uniform frequency
-    objective_stats: dict[str, dict[str, float]]  # per-objective best/mean stats
+    objective_stats: dict[str, dict[str, float | int]]  # per-objective best/mean/count stats
 
     def to_dict(self) -> dict[str, Any]:
         return {

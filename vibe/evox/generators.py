@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import random
 from typing import Protocol
 
 from vibe.evox.population import PopulationDescriptor
 from vibe.evox.strategy import SearchStrategy, StrategyRecord
+from vibe.evox.strategy_code import EvolvableStrategy
 from vibe.evox.types import VariationOperator
+
+logger = logging.getLogger(__name__)
 
 
 class SolutionGenerator(Protocol):
@@ -256,14 +260,15 @@ Output ONLY the new Python code, inside a single fenced code block. Do not add e
         try:
             code = self._extract_code(response.content)
             # Eager compile to validate syntax
-            from vibe.evox.strategy_code import EvolvableStrategy
-
             EvolvableStrategy(code=code).compile()
             return SearchStrategy(
                 code=code,
                 description="LLM-mutated strategy",
             )
         except Exception:
+            logger.debug(
+                "LLM strategy mutation failed for strategy %s", parent_strategy.id, exc_info=True
+            )
             return parent_strategy.copy()
 
     @staticmethod
