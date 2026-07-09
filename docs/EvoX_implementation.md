@@ -346,6 +346,10 @@ What these implementations confirm about my understanding:
 - **No paradigm/sibling mechanisms**: These are adaptive features that make the search more robust; my code lacks them.
 - **Benchmark coverage is thin**: The reference supports many domains via evaluator configs; I only have toy evaluators plus circle packing.
 
+### Future tasks
+
+1. **Register EvoX as the agent's offline process pipeline**: Currently `vibe evox run` is a standalone CLI command. The next step is to make EvoX a first-class offline pipeline stage inside Vibe Agent, so it can be invoked by the harness/eval system (e.g., `vibe pipeline evox --task <config>` or as an eval case type). This would allow EvoX to run against real agent tasks, persist populations and strategy databases to the trace store, and feed discovered strategies back into the main query loop.
+
 ## 11. Design Decisions & Limitations
 
 - **Evolvable code, not just config**: The biggest departure from the initial minimal implementation is that strategies are now Python source code edited by the meta-generator. This matches the paper's `EvolvedProgramDatabase` concept.
