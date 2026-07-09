@@ -313,6 +313,39 @@ My current `MockStrategyGenerator` rotates through simple templates (`uniform_ra
 - **Domain-specific structural variation prompts**: e.g., telling the generator to use SciPy filters or merge SSA with Whittaker smoothing.
 - **The signal-processing benchmark itself**: the four-phase trajectory was observed on that specific task.
 
+### Validation against reference implementations
+
+I inspected the SkyDiscover reference implementations:
+
+- [`skydiscover/context_builder/evox/builder.py`](https://github.com/skydiscover-ai/skydiscover/blob/main/skydiscover/context_builder/evox/builder.py) — context builder for discovering search algorithms
+- [`skydiscover/context_builder/evox/formatters.py`](https://github.com/skydiscover-ai/skydiscover/blob/main/skydiscover/context_builder/evox/formatters.py) — population/state formatting
+- [`skydiscover/context_builder/adaevolve/builder.py`](https://github.com/skydiscover-ai/skydiscover/blob/main/skydiscover/context_builder/adaevolve/builder.py) — adaptive evolution context builder with multi-objective support
+
+What these implementations confirm about my understanding:
+
+1. **Search strategy as an evolvable program**: Their `EvoxContextBuilder` treats the search algorithm itself as a `Program` object with a `solution` field containing the strategy code, plus a `combined_score` measuring how much it improved downstream solutions. This matches my design of executable `EvolvableStrategy` / `SearchStrategy` code.
+
+2. **Window-based scoring is central**: They track `search_window_start_score`, `search_window_end_score`, `window_start_iteration`, and `search_window_horizon` for every deployed algorithm. This aligns with my `MetaEvolutionLoop` window logic and `J(S) = Δ * log(1+s_start) / sqrt(W)` signal.
+
+3. **Multi-objective mode exists and uses a scalar proxy**: `AdaEvolveContextBuilder._is_multiobjective_enabled()` checks `pareto_objectives`, and `_get_progress_score()` collapses multiple objectives into a single proxy for progress descriptions. This confirms that Phase 2's objective-aware pairing requires per-objective metrics and a configured scalarization.
+
+4. **Prompt engineering is extensive**: Their context builder makes parallel calls to a cheaper "guide" LLM to generate population-statistics insights, problem-context summaries, and batch summaries of reference algorithms. It then assembles everything through templates (`search_evolution_user_message.txt`, `system_message.txt`, etc.). My implementation has minimal prompt templating in `generators.py` and does not use a guide LLM for summaries.
+
+5. **Stagnation response includes paradigm guidance**: `AdaEvolveContextBuilder._format_paradigm_guidance()` injects a "BREAKTHROUGH IDEA" block when the search is globally stagnating, with concrete implementation instructions and cautions. My implementation detects stagnation but does not inject paradigm-level guidance into prompts.
+
+6. **Sibling context prevents repeated failures**: They track previous mutations of the same parent (`siblings`) and summarize improved/regressed/unchanged counts. My implementation records parent IDs but does not build sibling history or explicitly tell the generator to avoid failed approaches.
+
+7. **Population state formatting is much richer**: `format_population_state()` and `format_db_stats_diff()` report score tiers, reuse rates, iterations without improvement, execution traces, and SOTA gaps. My `PopulationDescriptor` is simpler (best/median/std, diversity proxy, overuse ids).
+
+### Critique of my implementation
+
+- **Correct core abstraction**: The two-level loop, executable strategies, window-based signal, and strategy database are all sound and match the reference architecture.
+- **Prompts are under-engineered**: The reference uses a dedicated context builder + guide LLM + templates. My `LLMStrategyGenerator` builds a single inline prompt. This is fine for a minimal implementation but would underperform on complex domains.
+- **Missing multi-objective plumbing**: I have no `pareto_objectives` config, no scalar proxy, and no objective-aware pairing. Phase 2 cannot happen in my current code.
+- **Missing UCB selection**: My `ucb` template is a placeholder string comparison; the reference explicitly uses UCB to explore rarely-selected parents.
+- **No paradigm/sibling mechanisms**: These are adaptive features that make the search more robust; my code lacks them.
+- **Benchmark coverage is thin**: The reference supports many domains via evaluator configs; I only have toy evaluators plus circle packing.
+
 ## 11. Design Decisions & Limitations
 
 - **Evolvable code, not just config**: The biggest departure from the initial minimal implementation is that strategies are now Python source code edited by the meta-generator. This matches the paper's `EvolvedProgramDatabase` concept.
