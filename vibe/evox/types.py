@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable
@@ -27,12 +28,7 @@ class Candidate:
     parent_id: str | None = None
     strategy_id: str | None = None
     operator: VariationOperator | None = None
-
-    def __post_init__(self):
-        if not hasattr(self, "id"):
-            import uuid
-
-            object.__setattr__(self, "id", uuid.uuid4().hex[:12])
+    id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
 
 
 # Evaluator: maps candidate content -> (score, artifacts).

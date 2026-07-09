@@ -177,6 +177,6 @@ class PopulationDescriptor:
                 "best": max(values),
                 "worst": min(values),
                 "mean": sum(values) / len(values),
-                "count": float(len(values)),
+                "count": len(values),
             }
         return stats

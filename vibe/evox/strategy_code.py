@@ -89,7 +89,26 @@ class EvolvableStrategy:
             elif isinstance(node, ast.ImportFrom):
                 raise ValueError("from ... import is not allowed in strategy code")
 
-        module_globals: dict[str, Any] = {"__builtins__": __builtins__}
+        # Restrict builtins to a small allowlist so LLM-generated strategy code
+        # cannot perform arbitrary file/network/execution operations.
+        allowed_builtins = {
+            "__import__": __import__,
+            "abs": abs,
+            "all": all,
+            "any": any,
+            "enumerate": enumerate,
+            "filter": filter,
+            "len": len,
+            "max": max,
+            "min": min,
+            "range": range,
+            "reversed": reversed,
+            "round": round,
+            "sorted": sorted,
+            "sum": sum,
+            "zip": zip,
+        }
+        module_globals: dict[str, Any] = {"__builtins__": allowed_builtins}
         exec(compile(tree, filename="<strategy>", mode="exec"), module_globals)  # noqa: S102
 
         required = {"select_parent", "select_inspiration", "select_operator"}

@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import copy
+import logging
 import math
 import random
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from vibe.evox.metrics import PROGRESS_SCORE_MISSING, compute_proxy_score
 from vibe.evox.population import PopulationDescriptor
 from vibe.evox.strategy import SearchStrategy, StrategyDatabase, StrategyRecord
 from vibe.evox.types import Candidate, Evaluator, VariationOperator
+
+logger = logging.getLogger(__name__)
 
 
 class SolutionGenerator(Protocol):
@@ -45,15 +48,9 @@ class MetaEvolutionConfig:
     problem_description: str = "Optimize the candidate solution."
 
     # Multi-objective evaluation (matches AdaEvolve builder.py semantics)
-    pareto_objectives: list[str] = None  # type: ignore[assignment]
-    higher_is_better: dict[str, bool] = None  # type: ignore[assignment]
+    pareto_objectives: list[str] = field(default_factory=list)
+    higher_is_better: dict[str, bool] = field(default_factory=dict)
     fitness_key: str | None = None
-
-    def __post_init__(self):
-        if self.pareto_objectives is None:
-            self.pareto_objectives = []
-        if self.higher_is_better is None:
-            self.higher_is_better = {}
 
 
 @dataclass
@@ -187,6 +184,7 @@ class MetaEvolutionLoop:
                     return False
             return True
         except Exception:
+            logger.debug("Strategy validation failed for strategy %s", strategy.id, exc_info=True)
             return False
 
     async def _meta_evolve_strategy(self) -> SearchStrategy:

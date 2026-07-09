@@ -95,7 +95,9 @@ class TestEvoXUseCases:
         )
         result = await loop.run()
         best = result.best_candidate
-        assert best.score > -len(target)  # better than random seed baseline
+        # Evolution should find a candidate closer to the target than a random guess.
+        assert best.score > -len(target)
+        assert best.artifacts["distance"] < len(target)
         assert result.iterations == 60
         assert len(result.population) == result.iterations + 3  # 3 seeded + evolved
 
@@ -116,7 +118,9 @@ class TestEvoXUseCases:
         )
         result = await loop.run()
         best = result.best_candidate
-        assert best.score > float("-inf")
+        # Score should be finite and not the invalid-expression penalty.
+        assert best.score > -(abs(target_value) + 1e6)
+        assert best.artifacts["error"] < abs(target_value) + 1e6
         assert result.iterations == 80
         assert len(loop.strategy_db.records) >= 1
 
