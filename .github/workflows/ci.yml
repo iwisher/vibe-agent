@@ -34,6 +34,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - run: pip install -e ".[dev,api]"
+      - run: echo "::add-matcher::.github/problem-matchers/pytest.json"
       - run: pytest -x --tb=short -q
 
   eval:

@@ -506,3 +506,14 @@ async def test_completed_run_skips_rollback_hint(mock_llm, tool_system, caplog):
     # list_shadows should NOT be called for successful runs
     shadow_manager.list_shadows.assert_not_called()
     assert not any("Rollback available" in rec.message for rec in caplog.records)
+
+
+def test_copy_creates_fresh_compactor(mock_llm, tool_system):
+    """Regression: copy() must not assume self.compactor is a CompactionCoordinator."""
+    loop = QueryLoop(llm_client=mock_llm, tool_system=tool_system)
+    copied = loop.copy()
+
+    assert copied.compactor is not None
+    assert copied.compactor is not loop.compactor
+    assert copied.compaction_coord is not loop.compaction_coord
+    assert copied.compaction_coord.compactor is copied.compactor

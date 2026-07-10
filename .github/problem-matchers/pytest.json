@@ -1,0 +1,14 @@
+{
+  "problemMatcher": [
+    {
+      "owner": "pytest",
+      "pattern": [
+        {
+          "regexp": "^\\s*([^\\s].*\.py)(::[^\\s]+)? - (.*)$",
+          "file": 1,
+          "message": 3
+        }
+      ]
+    }
+  ]
+}

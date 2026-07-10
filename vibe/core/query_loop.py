@@ -1291,9 +1291,22 @@ class QueryLoop:
             self.feedback_coord.max_retries,
         )
         if self.compactor is not None:
+            from vibe.core.context_compactor import ContextCompactor
             from vibe.core.coordinators import CompactionCoordinator
 
-            new_loop.compactor = CompactionCoordinator(self.compactor.compactor)
+            # Create a fresh compactor with the same configuration to avoid
+            # state bleed across copied query loops.
+            new_loop.compactor = ContextCompactor(
+                max_tokens=self.compactor.max_tokens,
+                chars_per_token=self.compactor.chars_per_token,
+                strategy=self.compactor.strategy,
+                summarize_fn=self.compactor.summarize_fn,
+                preserve_recent=self.compactor.preserve_recent,
+                max_chars_per_msg=self.compactor.max_chars_per_msg,
+                telemetry_collector=getattr(self.compactor, "_telemetry", None),
+                compaction_policy=getattr(self.compactor, "_compaction_policy", None),
+            )
+            new_loop.compaction_coord = CompactionCoordinator(new_loop.compactor)
         if getattr(self, "tool_executor", None) is not None:
             from vibe.core.coordinators import ToolExecutor
 
