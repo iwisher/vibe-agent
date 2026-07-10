@@ -17,6 +17,7 @@ from vibe.core.provider_registry import ProviderProfile, ProviderRegistry
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def scorer():
     return ComplexityScorer()
@@ -24,32 +25,34 @@ def scorer():
 
 @pytest.fixture
 def provider_registry():
-    return ProviderRegistry({
-        "ollama": ProviderProfile(
-            name="ollama",
-            base_url="http://localhost:11434",
-            cost_tier="free",
-            cost_per_1k_prompt=0.0,
-        ),
-        "openai": ProviderProfile(
-            name="openai",
-            base_url="https://api.openai.com",
-            cost_tier="standard",
-            cost_per_1k_prompt=0.10,
-        ),
-        "anthropic": ProviderProfile(
-            name="anthropic",
-            base_url="https://api.anthropic.com",
-            cost_tier="premium",
-            cost_per_1k_prompt=1.00,
-        ),
-        "local-budget": ProviderProfile(
-            name="local-budget",
-            base_url="http://localhost:8080",
-            cost_tier="budget",
-            cost_per_1k_prompt=0.01,
-        ),
-    })
+    return ProviderRegistry(
+        {
+            "ollama": ProviderProfile(
+                name="ollama",
+                base_url="http://localhost:11434",
+                cost_tier="free",
+                cost_per_1k_prompt=0.0,
+            ),
+            "openai": ProviderProfile(
+                name="openai",
+                base_url="https://api.openai.com",
+                cost_tier="standard",
+                cost_per_1k_prompt=0.10,
+            ),
+            "anthropic": ProviderProfile(
+                name="anthropic",
+                base_url="https://api.anthropic.com",
+                cost_tier="premium",
+                cost_per_1k_prompt=1.00,
+            ),
+            "local-budget": ProviderProfile(
+                name="local-budget",
+                base_url="http://localhost:8080",
+                cost_tier="budget",
+                cost_per_1k_prompt=0.01,
+            ),
+        }
+    )
 
 
 @pytest.fixture
@@ -73,6 +76,7 @@ def spend_tracker():
 # ComplexityScorer
 # ---------------------------------------------------------------------------
 
+
 class TestComplexityScorer:
     def test_simple_prompt_low_complexity(self, scorer):
         messages = [{"role": "user", "content": "Hello"}]
@@ -84,11 +88,15 @@ class TestComplexityScorer:
     def test_code_prompt_higher_complexity(self, scorer):
         messages = [{"role": "user", "content": "Write a Python function to sort a list"}]
         result = scorer.score(messages)
-        assert result.overall >= 0.05  # code marker detected (pattern score 0.3 * 0.25 weight = 0.075)
+        assert (
+            result.overall >= 0.05
+        )  # code marker detected (pattern score 0.3 * 0.25 weight = 0.075)
         assert result.dimensions[2].score > 0  # patterns dimension
 
     def test_reasoning_prompt_complexity(self, scorer):
-        messages = [{"role": "user", "content": "Step by step, design a distributed system architecture"}]
+        messages = [
+            {"role": "user", "content": "Step by step, design a distributed system architecture"}
+        ]
         result = scorer.score(messages)
         assert result.overall >= 0.05  # reasoning marker (pattern score 0.25 * 0.25 = 0.0625)
         assert result.dimensions[2].score > 0  # patterns dimension
@@ -108,6 +116,7 @@ class TestComplexityScorer:
 # ---------------------------------------------------------------------------
 # CostRouter
 # ---------------------------------------------------------------------------
+
 
 class TestCostRouter:
     def test_route_simple_to_free_tier(self, router):
@@ -163,11 +172,15 @@ class TestCostRouter:
         messages = [{"role": "user", "content": "x" * 1000}]
         # Force budget tier by mocking scorer
         router.scorer.score = lambda msgs, tools=None: type(
-            "obj", (object,), {
-                "tier": "budget", "overall": 0.3,
-                "estimated_tokens": 250, "estimated_tools": 0,
+            "obj",
+            (object,),
+            {
+                "tier": "budget",
+                "overall": 0.3,
+                "estimated_tokens": 250,
+                "estimated_tools": 0,
                 "dimensions": [],
-            }
+            },
         )()
         decision = router.route(messages)
         assert decision.tier == "budget"
@@ -183,6 +196,7 @@ class TestCostRouter:
 # ---------------------------------------------------------------------------
 # SpendTracker
 # ---------------------------------------------------------------------------
+
 
 class TestSpendTracker:
     def test_record_and_get_spend(self, spend_tracker):
@@ -218,6 +232,7 @@ class TestSpendTracker:
         result = spend_tracker.get_spend("sess-del")
         assert result["total_cost"] == 0.0
         assert spend_tracker.reset_session("nonexistent") is False
+
     def test_concurrent_updates(self, spend_tracker):
         """Thread-safe concurrent spend updates."""
         for i in range(20):
@@ -229,6 +244,7 @@ class TestSpendTracker:
 
     def test_db_schema_created(self, spend_tracker):
         import sqlite3
+
         with sqlite3.connect(spend_tracker.db_path) as conn:
             tables = conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='session_spend'"
@@ -240,6 +256,7 @@ class TestSpendTracker:
 # CostRouterConfig
 # ---------------------------------------------------------------------------
 
+
 class TestCostRouterConfig:
     def test_defaults(self):
         cfg = CostRouterConfig()
@@ -250,6 +267,7 @@ class TestCostRouterConfig:
     def test_from_vibe_config_disabled(self):
         class MockConfig:
             cost_router = None
+
         cfg = CostRouterConfig.from_vibe_config(MockConfig())
         assert cfg.enabled is False
 
@@ -258,8 +276,10 @@ class TestCostRouterConfig:
             enabled = True
             spend_limit = 10.0
             default_tier = "premium"
+
         class MockConfig:
             cost_router = MockCostRouter()
+
         cfg = CostRouterConfig.from_vibe_config(MockConfig())
         assert cfg.enabled is True
         assert cfg.spend_limit == 10.0

@@ -57,7 +57,7 @@ class TestSecretRedactorBasic:
 
     def test_redacts_password_param(self):
         r = SecretRedactor()
-        text = 'password=mysecret123'
+        text = "password=mysecret123"
         result = r.redact(text)
         assert "mysecret123" not in result
         assert "password=[REDACTED_PASSWORD]" in result

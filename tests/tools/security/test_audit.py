@@ -224,7 +224,7 @@ class TestSecurityAuditLogger:
             t.join()
 
         # All threads should get the same instance
-        assert len(set(id(l) for l in loggers)) == 1
+        assert len(set(id(logger) for logger in loggers)) == 1
 
         # Should be able to log without errors
         loggers[0].log_command_blocked(command="test", pattern="test")
@@ -308,7 +308,10 @@ class TestSecurityAuditLogger:
         """JWT tokens are redacted."""
         log_file = tmp_path / "security.log"
         logger = SecurityAuditLogger(log_path=str(log_file), redact_in_logs=True)
-        jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
+        jwt = (
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0."
+            "dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"
+        )
         logger.log_command_blocked(
             command=f"curl -H 'Authorization: Bearer {jwt}'",
             pattern="curl",
@@ -323,6 +326,7 @@ class TestSecurityAuditLogger:
     def test_file_permissions(self, tmp_path):
         """Log files are created with restrictive 0o600 permissions."""
         import os
+
         log_file = tmp_path / "security.log"
         logger = SecurityAuditLogger(log_path=str(log_file))
         logger.log_command_blocked(command="test", pattern="test")
@@ -360,6 +364,7 @@ class TestSecurityAuditLogger:
     def test_namedtuple_in_metadata(self, tmp_path):
         """NamedTuples in metadata don't crash during redaction."""
         from collections import namedtuple
+
         log_file = tmp_path / "security.log"
         logger = SecurityAuditLogger(log_path=str(log_file), redact_in_logs=True)
 

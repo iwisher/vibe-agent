@@ -69,7 +69,9 @@ def test_sentence_transformer_paraphrase_match(monkeypatch):
 
     idx = SentenceTransformerIndex()
     nodes = [
-        make_node("n1", "Rust Programming Guide", "How to write Rust code", ["rust", "programming"]),
+        make_node(
+            "n1", "Rust Programming Guide", "How to write Rust code", ["rust", "programming"]
+        ),
         make_node("n2", "Banana Smoothie Recipe", "Make a tasty banana drink", ["food"]),
     ]
 
@@ -99,7 +101,9 @@ def test_sentence_transformer_index_mocked(tmp_path, monkeypatch):
             # Just return random vectors
             return np.random.randn(len(texts), 384).astype(np.float32)
 
-    monkeypatch.setattr("vibe.memory.vector_index.SentenceTransformerIndex._load_model", lambda self: MockModel())
+    monkeypatch.setattr(
+        "vibe.memory.vector_index.SentenceTransformerIndex._load_model", lambda self: MockModel()
+    )
 
     cache_file = tmp_path / "cache.npy"
     idx = SentenceTransformerIndex(cache_path=cache_file)
@@ -116,7 +120,9 @@ def test_sentence_transformer_index_mocked(tmp_path, monkeypatch):
 
     # Reload from cache
     idx2 = SentenceTransformerIndex(cache_path=cache_file_npz)
-    monkeypatch.setattr("vibe.memory.vector_index.SentenceTransformerIndex._load_model", lambda self: MockModel())
+    monkeypatch.setattr(
+        "vibe.memory.vector_index.SentenceTransformerIndex._load_model", lambda self: MockModel()
+    )
 
     idx2._load_cache()
     assert "n1" in idx2._cache
@@ -146,26 +152,24 @@ def test_sentence_transformer_index_mps_fallback(monkeypatch):
     """Test that MPS fallback is handled safely without hasattr crashing."""
     import sys
     from unittest.mock import MagicMock
-    
+
     mock_torch = MagicMock()
     mock_torch.cuda.is_available.return_value = False
-    
+
     # Mock torch without backends.mps
     class MockBackends:
         pass
-    
+
     mock_torch.backends = MockBackends()
-    
+
     monkeypatch.setitem(sys.modules, "torch", mock_torch)
-    
+
     class MockSentenceTransformer:
         def __init__(self, model_name, device):
             self.device = device
 
     monkeypatch.setitem(
-        sys.modules, 
-        "sentence_transformers", 
-        MagicMock(SentenceTransformer=MockSentenceTransformer)
+        sys.modules, "sentence_transformers", MagicMock(SentenceTransformer=MockSentenceTransformer)
     )
 
     idx = SentenceTransformerIndex()

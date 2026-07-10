@@ -18,6 +18,7 @@ from vibe.core.model_gateway import LLMClient
 
 class FeedbackStatus(Enum):
     """Status of a feedback evaluation."""
+
     OK = auto()
     BELOW_THRESHOLD = auto()
     ENGINE_ERROR = auto()
@@ -26,18 +27,16 @@ class FeedbackStatus(Enum):
 
 class FeedbackSchema(BaseModel):
     """Pydantic schema for feedback results."""
+
     score: float = Field(ge=0.0, le=1.0, description="Score between 0.0 and 1.0")
     issues: list[str] = Field(default_factory=list, description="List of identified issues")
     suggested_fix: Optional[str] = Field(default=None, description="Suggested fix or improvement")
     confidence: float = Field(default=0.8, ge=0.0, le=1.0, description="Confidence in evaluation")
     category_scores: dict[str, float] = Field(
         default_factory=dict,
-        description="Per-category scores (e.g., correctness, completeness, clarity)"
+        description="Per-category scores (e.g., correctness, completeness, clarity)",
     )
-    status: FeedbackStatus = Field(
-        default=FeedbackStatus.OK,
-        description="Evaluation status"
-    )
+    status: FeedbackStatus = Field(default=FeedbackStatus.OK, description="Evaluation status")
 
     @field_validator("score")
     @classmethod
@@ -50,6 +49,7 @@ class FeedbackSchema(BaseModel):
 @dataclass
 class FeedbackResult:
     """Legacy dataclass for backward compatibility."""
+
     score: float = 0.0
     issues: list[str] = field(default_factory=list)
     suggested_fix: str | None = None
@@ -73,6 +73,7 @@ class FeedbackResult:
 @dataclass
 class BatchFeedbackResult:
     """Result for batch evaluation."""
+
     results: list[FeedbackResult] = field(default_factory=list)
     aggregate_score: float = 0.0
     common_issues: list[str] = field(default_factory=list)
@@ -110,7 +111,8 @@ class FeedbackEngine:
             f"Output:\n{output}\n\n"
             "Respond ONLY with valid JSON matching this schema:\n"
             '{"score": 0.0, "issues": ["..."], "suggested_fix": "...", '
-            '"confidence": 0.8, "category_scores": {"correctness": 0.0, "completeness": 0.0, "clarity": 0.0}}\n'
+            '"confidence": 0.8, "category_scores": {"correctness": 0.0, '
+            '"completeness": 0.0, "clarity": 0.0}}\n'
             "Score must be between 0.0 and 1.0."
         )
         return await self._run_feedback_prompt(prompt)
@@ -130,7 +132,8 @@ class FeedbackEngine:
             f"Output:\n{output}\n\n"
             "Respond ONLY with valid JSON matching this schema:\n"
             '{"score": 0.0, "issues": ["..."], "suggested_fix": "...", '
-            '"confidence": 0.8, "category_scores": {"correctness": 0.0, "completeness": 0.0, "clarity": 0.0}}\n'
+            '"confidence": 0.8, "category_scores": {"correctness": 0.0, '
+            '"completeness": 0.0, "clarity": 0.0}}\n'
             "Score must be between 0.0 and 1.0."
         )
         return await self._run_feedback_prompt(prompt)
@@ -155,8 +158,7 @@ class FeedbackEngine:
                 for issue in r.issues:
                     issue_counts[issue] = issue_counts.get(issue, 0) + 1
             common_issues = [
-                issue for issue, count in issue_counts.items()
-                if count > len(results) / 2
+                issue for issue, count in issue_counts.items() if count > len(results) / 2
             ]
         else:
             aggregate_score = 0.0

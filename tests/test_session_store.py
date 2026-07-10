@@ -58,7 +58,11 @@ class TestSessionStore:
     def test_update_existing_checkpoint(self, store):
         """Saving twice with same session_id updates the checkpoint."""
         store.save_checkpoint("sess-002", "PLANNING", [{"role": "user", "content": "hi"}])
-        store.save_checkpoint("sess-002", "PROCESSING", [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "yo"}])
+        store.save_checkpoint(
+            "sess-002",
+            "PROCESSING",
+            [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "yo"}],
+        )
 
         cp = store.load_checkpoint("sess-002")
         assert cp["state"] == "PROCESSING"
@@ -167,6 +171,7 @@ class TestSessionStore:
             assert len(tables) == 1
 
             indexes = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_checkpoints_updated'"
+                "SELECT name FROM sqlite_master WHERE type='index' "
+                "AND name='idx_checkpoints_updated'"
             ).fetchall()
             assert len(indexes) == 1

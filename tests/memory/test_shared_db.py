@@ -45,9 +45,8 @@ def test_db_creates_wiki_chunks_table(tmp_db):
     """wiki_chunks must exist (FTS5 or regular table fallback)."""
     conn = tmp_db._get_conn()
     tables_and_views = set(
-        row[0] for row in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type IN ('table', 'shadow')"
-        )
+        row[0]
+        for row in conn.execute("SELECT name FROM sqlite_master WHERE type IN ('table', 'shadow')")
     )
     assert "wiki_chunks" in tables_and_views or "wiki_chunks_content" in tables_and_views
     tmp_db.close()
@@ -81,12 +80,16 @@ def test_sync_wiki_page_skips_if_content_unchanged(tmp_db):
     tmp_db.sync_wiki_page(page)
 
     conn = tmp_db._get_conn()
-    count_before = conn.execute("SELECT COUNT(*) FROM chunk_meta WHERE page_id = ?", ("page-unchanged",)).fetchone()[0]
+    count_before = conn.execute(
+        "SELECT COUNT(*) FROM chunk_meta WHERE page_id = ?", ("page-unchanged",)
+    ).fetchone()[0]
     assert count_before > 0
 
     # Sync again with same content — should be a no-op
     tmp_db.sync_wiki_page(page)
-    count_after = conn.execute("SELECT COUNT(*) FROM chunk_meta WHERE page_id = ?", ("page-unchanged",)).fetchone()[0]
+    count_after = conn.execute(
+        "SELECT COUNT(*) FROM chunk_meta WHERE page_id = ?", ("page-unchanged",)
+    ).fetchone()[0]
     assert count_after == count_before  # No new chunks
     tmp_db.close()
 
@@ -114,7 +117,9 @@ def test_delete_wiki_page(tmp_db):
 
     tmp_db.delete_wiki_page("page-delete")
     conn = tmp_db._get_conn()
-    chunks = conn.execute("SELECT COUNT(*) FROM chunk_meta WHERE page_id = ?", ("page-delete",)).fetchone()[0]
+    chunks = conn.execute(
+        "SELECT COUNT(*) FROM chunk_meta WHERE page_id = ?", ("page-delete",)
+    ).fetchone()[0]
     assert chunks == 0
     tmp_db.close()
 

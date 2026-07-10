@@ -8,6 +8,7 @@ from vibe.memory.ingestion.parser import DocumentParser
 
 logger = logging.getLogger(__name__)
 
+
 class IngestionWorker:
     """Orchestrates the ingestion of files into the KnowledgeExtractor."""
 
@@ -28,20 +29,20 @@ class IngestionWorker:
             # Since extractor has an `extract_from_text` method (or similar)
             if hasattr(self.extractor, "extract_from_text"):
                 pages_created = await self.extractor.extract_from_text(
-                    text=chunk,
-                    source=str(source_path),
-                    metadata={"chunk_index": index}
+                    text=chunk, source=str(source_path), metadata={"chunk_index": index}
                 )
                 return len(pages_created) if isinstance(pages_created, list) else pages_created
             elif hasattr(self.extractor, "wiki"):
                 # Fallback: Just write the chunk directly as a draft Wiki page
                 slug = f"{source_path.stem.lower()}-chunk-{index}"
                 title = f"{source_path.stem} Chunk {index}"
-                citations = [{
-                    "session": "document_ingestion",
-                    "source": str(source_path),
-                    "chunk_index": index,
-                }]
+                citations = [
+                    {
+                        "session": "document_ingestion",
+                        "source": str(source_path),
+                        "chunk_index": index,
+                    }
+                ]
                 wiki = self.extractor.wiki
                 existing = await wiki.get_page_by_slug(slug)
                 if existing:
@@ -78,10 +79,7 @@ class IngestionWorker:
         logger.info(f"Broke {path.name} into {len(chunks)} chunks.")
 
         # 3. Concurrent Extraction
-        tasks = [
-            self._process_chunk(chunk, path, i)
-            for i, chunk in enumerate(chunks)
-        ]
+        tasks = [self._process_chunk(chunk, path, i) for i, chunk in enumerate(chunks)]
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # 4. Tally results

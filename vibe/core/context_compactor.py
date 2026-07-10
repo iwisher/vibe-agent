@@ -11,15 +11,17 @@ logger = logging.getLogger(__name__)
 
 class SummarizationStrategy(Enum):
     """Strategy for reducing context when token budget is exceeded."""
-    TRUNCATE = auto()       # Keep N recent messages, drop the rest
+
+    TRUNCATE = auto()  # Keep N recent messages, drop the rest
     LLM_SUMMARIZE = auto()  # Use LLM to generate a semantic summary
-    OFFLOAD = auto()        # Move old messages to external storage, keep refs
-    DROP = auto()           # Drop oldest messages without summary
+    OFFLOAD = auto()  # Move old messages to external storage, keep refs
+    DROP = auto()  # Drop oldest messages without summary
 
 
 def _get_encoding():
     try:
         import tiktoken
+
         return tiktoken.get_encoding("cl100k_base")
     except Exception:
         return None
@@ -133,7 +135,9 @@ class ContextCompactor:
         """Synchronous compaction using TRUNCATE, OFFLOAD, or DROP strategy."""
         tokens_before = self.estimate_tokens(messages)
         if not self.should_compact(messages):
-            return CompactionResult(messages=messages, tokens_before=tokens_before, tokens_after=tokens_before)
+            return CompactionResult(
+                messages=messages, tokens_before=tokens_before, tokens_after=tokens_before
+            )
 
         system_messages = [m for m in messages if m.get("role") == "system"]
         non_system = [m for m in messages if m.get("role") != "system"]
@@ -171,12 +175,16 @@ class ContextCompactor:
             "content": f"[Context summarized: {len(to_summarize)} earlier messages omitted]",
         }
         if self.strategy == SummarizationStrategy.OFFLOAD:
-            summary["content"] = f"[Context offloaded: {len(to_summarize)} earlier messages moved to storage]"
+            summary["content"] = (
+                f"[Context offloaded: {len(to_summarize)} earlier messages moved to storage]"
+            )
         compacted = system_messages + [summary] + keep_intact
         result = CompactionResult(
             messages=compacted,
             was_compacted=True,
-            strategy_used="summarize_middle" if self.strategy == SummarizationStrategy.TRUNCATE else "offload",
+            strategy_used="summarize_middle"
+            if self.strategy == SummarizationStrategy.TRUNCATE
+            else "offload",
             tokens_before=tokens_before,
             tokens_after=self.estimate_tokens(compacted),
         )
@@ -187,7 +195,9 @@ class ContextCompactor:
         """Asynchronous compaction; uses LLM summarization when configured."""
         tokens_before = self.estimate_tokens(messages)
         if not self.should_compact(messages):
-            return CompactionResult(messages=messages, tokens_before=tokens_before, tokens_after=tokens_before)
+            return CompactionResult(
+                messages=messages, tokens_before=tokens_before, tokens_after=tokens_before
+            )
 
         system_messages = [m for m in messages if m.get("role") == "system"]
         non_system = [m for m in messages if m.get("role") != "system"]

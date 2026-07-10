@@ -257,9 +257,7 @@ async def interactive_mode(controller: Any) -> None:
             console.file = sys.stdout
 
         # Start output consumer
-        output_task = asyncio.create_task(
-            _output_consumer(controller, prompt_session is not None)
-        )
+        output_task = asyncio.create_task(_output_consumer(controller, prompt_session is not None))
 
         try:
             while True:
@@ -1256,7 +1254,8 @@ def memory_status():
 
             cutoff = time.time() - 86400
             cursor = wiki.db.conn.execute(
-                "SELECT COUNT(*), AVG(duration_seconds) FROM _telemetry WHERE type = 'session' AND timestamp > ?",
+                "SELECT COUNT(*), AVG(duration_seconds) FROM _telemetry "
+                "WHERE type = 'session' AND timestamp > ?",
                 (cutoff,),
             )
             row = cursor.fetchone()
@@ -1350,7 +1349,8 @@ def import_cmd(
             try:
                 pages_created = await worker.ingest_file(path)
                 console.print(
-                    f"[green]Successfully ingested {path}. Created {pages_created} Wiki Pages.[/green]"
+                    f"[green]Successfully ingested {path}. Created {pages_created} "
+                    "Wiki Pages.[/green]"
                 )
             except Exception as e:
                 console.print(f"[red]Import failed: {e}[/red]")
@@ -1491,7 +1491,8 @@ def session_resume(
     async def _run_resume():
         loop = await QueryLoop.resume(session_id, store, factory)
         console.print(
-            f"[green]✓[/green] Resumed session [bold]{session_id[:16]}[/bold] (state: {loop.state.name}, iteration: {loop._iteration})"
+            f"[green]✓[/green] Resumed session [bold]{session_id[:16]}[/bold] "
+            f"(state: {loop.state.name}, iteration: {loop._iteration})"
         )
         console.print(
             "[dim]Continue the conversation. Type /exit to quit, /clear to reset.[/dim]\n"
@@ -1532,7 +1533,8 @@ def dashboard_start(
     if token:
         console.print(f"[green]Starting dashboard at {url}[/green]")
         console.print(
-            f"[dim]Dashboard token: {token[:16]}... (pass via ?token= or X-Dashboard-Token header)[/dim]"
+            f"[dim]Dashboard token: {token[:16]}... (pass via ?token= or "
+            "X-Dashboard-Token header)[/dim]"
         )
     else:
         console.print(f"[green]Starting dashboard at {url} (no auth)[/green]")
@@ -1575,7 +1577,8 @@ def shadow_list():
 
     if not shadows:
         console.print(
-            "[dim]No shadow branches found. Run `vibe shadow create` before write-heavy tasks.[/dim]"
+            "[dim]No shadow branches found. Run `vibe shadow create` before "
+            "write-heavy tasks.[/dim]"
         )
         return
 
@@ -1631,7 +1634,8 @@ def shadow_restore(
             f"[green]✓[/green] Restored workspace from shadow for session {session_id[:16]}"
         )
         console.print(
-            "[yellow]You are now on the shadow branch. Use `git checkout <branch>` to return to original.[/yellow]"
+            "[yellow]You are now on the shadow branch. Use `git checkout <branch>` "
+            "to return to original.[/yellow]"
         )
     else:
         console.print(f"[red]Failed to restore shadow for session {session_id[:16]}.[/red]")

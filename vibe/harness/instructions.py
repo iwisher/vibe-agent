@@ -30,10 +30,12 @@ class InstructionSet:
         parts.append(
             "# Environment Constraints\n"
             "You are operating in a restricted environment for security and stability.\n"
-            "- **Tool Usage**: Use only one tool at a time unless you are certain they are independent.\n"
+            "- **Tool Usage**: Use only one tool at a time unless you are certain they are "
+            "independent.\n"
             "- **Bash Constraints**: The `bash` tool only supports simple commands. "
-            "Pipes (|), redirects (>, >>), command chaining (&&, ;), and variable expansion ($) are strictly forbidden. "
-            "If you need to process or redirect output, do it across multiple turns or use specialized tools like `write_file`."
+            "Pipes (|), redirects (>, >>), command chaining (&&, ;), and variable expansion ($) "
+            "are strictly forbidden. If you need to process or redirect output, do it across "
+            "multiple turns or use specialized tools like `write_file`."
         )
 
         if self.global_agents:
@@ -64,9 +66,7 @@ class InstructionLoader:
         skills_dir: str | None = None,
         skills_dirs: list[str] | None = None,
     ):
-        self.global_agents_path = Path(
-            global_agents_path or Path.home() / ".vibe" / "AGENTS.md"
-        )
+        self.global_agents_path = Path(global_agents_path or Path.home() / ".vibe" / "AGENTS.md")
         self.project_agents_path = Path(project_agents_path or "./AGENTS.md")
         self.skills_dir = Path(skills_dir or Path.home() / ".vibe" / "skills")
         self.skills_dirs = skills_dirs or []

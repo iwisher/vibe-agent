@@ -14,9 +14,11 @@ runner = CliRunner()
 def test_cli_stream_flag_passed_to_query_loop():
     """Verify that --stream option is passed correctly to QueryLoopFactory."""
     mock_loop = MagicMock()
-    with patch("vibe.cli.main.QueryLoopFactory") as MockFactory, \
-         patch("vibe.cli.main.interactive_mode", new_callable=AsyncMock), \
-         patch("vibe.harness.memory.session_store.SessionStore") as MockStore:
+    with (
+        patch("vibe.cli.main.QueryLoopFactory") as MockFactory,
+        patch("vibe.cli.main.interactive_mode", new_callable=AsyncMock),
+        patch("vibe.harness.memory.session_store.SessionStore") as MockStore,
+    ):
         mock_store = MagicMock()
         mock_store.list_incomplete.return_value = []
         MockStore.return_value = mock_store
@@ -68,7 +70,7 @@ def test_cli_interactive_streaming_output():
                 elapsed_seconds=1.5,
                 tokens_per_second=13.3,
                 reasoning_tokens=5,
-            )
+            ),
         )
 
     mock_loop.run = mock_run
@@ -76,6 +78,7 @@ def test_cli_interactive_streaming_output():
     # We want input() to submit a query and then exit
     inputs = ["hello", "/exit"]
     input_idx = 0
+
     def mock_input():
         nonlocal input_idx
         if input_idx < len(inputs):
@@ -85,24 +88,28 @@ def test_cli_interactive_streaming_output():
         return "/exit"
 
     call_order = []
-    
+
     spinner_mock = MagicMock()
     spinner_mock.stop.side_effect = lambda: call_order.append("stop")
-    
+
     status_mock = MagicMock()
     status_mock.return_value = spinner_mock
 
     from vibe.cli.main import console
+
     original_print = console.print
+
     def spy_print(*args, **kwargs):
         if args and isinstance(args[0], str):
             call_order.append(f"print:{args[0]}")
         original_print(*args, **kwargs)
 
-    with patch("builtins.input", side_effect=mock_input), \
-         patch.object(console, "status", status_mock), \
-         patch.object(console, "print", side_effect=spy_print), \
-         console.capture() as capture:
+    with (
+        patch("builtins.input", side_effect=mock_input),
+        patch.object(console, "status", status_mock),
+        patch.object(console, "print", side_effect=spy_print),
+        console.capture() as capture,
+    ):
         asyncio.run(interactive_mode(mock_loop))
 
     output = capture.get()
@@ -128,10 +135,10 @@ def test_cli_interactive_streaming_output():
     # Verify stop occurred before printing chunks
     assert "stop" in call_order
     stop_idx = call_order.index("stop")
-    
+
     chunk1_prints = [i for i, x in enumerate(call_order) if "chunk1" in x]
     chunk2_prints = [i for i, x in enumerate(call_order) if "chunk2" in x]
-    
+
     assert chunk1_prints, f"Expected print call containing chunk1, got call_order: {call_order}"
     assert chunk2_prints, f"Expected print call containing chunk2, got call_order: {call_order}"
     assert stop_idx < chunk1_prints[0]
@@ -177,29 +184,33 @@ def test_cli_single_query_streaming_output():
                 elapsed_seconds=1.5,
                 tokens_per_second=13.3,
                 reasoning_tokens=5,
-            )
+            ),
         )
 
     mock_loop.run = mock_run
 
     call_order = []
-    
+
     spinner_mock = MagicMock()
     spinner_mock.stop.side_effect = lambda: call_order.append("stop")
-    
+
     status_mock = MagicMock()
     status_mock.return_value = spinner_mock
 
     from vibe.cli.main import console, single_query_mode
+
     original_print = console.print
+
     def spy_print(*args, **kwargs):
         if args and isinstance(args[0], str):
             call_order.append(f"print:{args[0]}")
         original_print(*args, **kwargs)
 
-    with patch.object(console, "status", status_mock), \
-         patch.object(console, "print", side_effect=spy_print), \
-         console.capture() as capture:
+    with (
+        patch.object(console, "status", status_mock),
+        patch.object(console, "print", side_effect=spy_print),
+        console.capture() as capture,
+    ):
         asyncio.run(single_query_mode(mock_loop, "hello"))
 
     output = capture.get()
@@ -225,10 +236,10 @@ def test_cli_single_query_streaming_output():
     # Verify stop occurred before printing chunks
     assert "stop" in call_order
     stop_idx = call_order.index("stop")
-    
+
     chunk1_prints = [i for i, x in enumerate(call_order) if "chunk1" in x]
     chunk2_prints = [i for i, x in enumerate(call_order) if "chunk2" in x]
-    
+
     assert chunk1_prints, f"Expected print call containing chunk1, got call_order: {call_order}"
     assert chunk2_prints, f"Expected print call containing chunk2, got call_order: {call_order}"
     assert stop_idx < chunk1_prints[0]

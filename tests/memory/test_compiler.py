@@ -23,16 +23,25 @@ def tmp_trace_store(tmp_path):
     session_id = "sess-001"
     with sqlite3.connect(str(db_path)) as conn:
         conn.execute(
-            "INSERT INTO sessions (id, start_time, end_time, success, model, error) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO sessions (id, start_time, end_time, success, model, error) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             (session_id, now, now, 1, "test-model", None),
         )
         conn.execute(
-            "INSERT INTO messages (session_id, role, content, tool_calls, timestamp) VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO messages (session_id, role, content, tool_calls, timestamp) "
+            "VALUES (?, ?, ?, ?, ?)",
             (session_id, "user", "Docker Compose supports network_mode host", None, now),
         )
         conn.execute(
-            "INSERT INTO messages (session_id, role, content, tool_calls, timestamp) VALUES (?, ?, ?, ?, ?)",
-            (session_id, "assistant", "Yes, you can use network_mode: host in Docker Compose.", None, now),
+            "INSERT INTO messages (session_id, role, content, tool_calls, timestamp) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (
+                session_id,
+                "assistant",
+                "Yes, you can use network_mode: host in Docker Compose.",
+                None,
+                now,
+            ),
         )
 
     return store, session_id
@@ -49,14 +58,19 @@ def mock_llm_client():
     """Mock LLM client that returns structured knowledge extraction JSON."""
     client = MagicMock()
     response = MagicMock()
-    response.content = json.dumps([
-        {
-            "title": "Docker Compose Network Mode",
-            "content": "Docker Compose supports `network_mode: host` to share the host's network namespace.",
-            "tags": ["docker", "networking", "compose"],
-            "citations": [{"session": "sess-001", "message_index": 0}],
-        }
-    ])
+    response.content = json.dumps(
+        [
+            {
+                "title": "Docker Compose Network Mode",
+                "content": (
+                    "Docker Compose supports `network_mode: host` to share the host's "
+                    "network namespace."
+                ),
+                "tags": ["docker", "networking", "compose"],
+                "citations": [{"session": "sess-001", "message_index": 0}],
+            }
+        ]
+    )
     client.complete = AsyncMock(return_value=response)
     return client
 

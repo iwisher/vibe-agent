@@ -172,6 +172,7 @@ class TestHybridPlanner:
 
     def test_memory_augmentation(self):
         """Should include historical context when trace_store available."""
+
         class MockTraceStore:
             def get_similar_sessions(self, query, limit=3):
                 return [
@@ -194,7 +195,10 @@ class TestHybridPlanner:
 
         # Should have memory hint in system prompt
         if result.system_prompt_append:
-            assert "Historical Context" in result.system_prompt_append or result.planner_tier == "fallback"
+            assert (
+                "Historical Context" in result.system_prompt_append
+                or result.planner_tier == "fallback"
+            )
 
     def test_cosine_similarity(self):
         """Cosine similarity should work correctly."""
@@ -217,7 +221,9 @@ class TestHybridPlanner:
         planner = HybridPlanner()
 
         # Without model, should return empty
-        monkeypatch.setattr("vibe.harness.embeddings.get_embedding", lambda text, model_path=None: None)
+        monkeypatch.setattr(
+            "vibe.harness.embeddings.get_embedding", lambda text, model_path=None: None
+        )
         emb1 = planner._get_embedding("test text")
         assert emb1 == []
 
@@ -251,10 +257,7 @@ class TestHybridPlanner:
         planner = HybridPlanner()
 
         # Create many tools
-        tools = [
-            {"name": f"tool_{i}", "description": f"Tool number {i}"}
-            for i in range(50)
-        ]
+        tools = [{"name": f"tool_{i}", "description": f"Tool number {i}"} for i in range(50)]
 
         request = PlanRequest(
             query="use a tool",

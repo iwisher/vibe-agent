@@ -22,6 +22,7 @@ from vibe.harness.memory.eval_store import EvalResult
 @dataclass
 class RegressionThreshold:
     """Threshold for a specific metric."""
+
     metric: str  # e.g., "pass_rate", "avg_score", "token_usage"
     max_regression_percent: float = 5.0  # Fail if regresses more than this %
     absolute_min: Optional[float] = None  # Hard floor (e.g., pass_rate >= 0.8)
@@ -38,6 +39,7 @@ DEFAULT_THRESHOLDS = [
 @dataclass
 class RegressionReport:
     """Report from a regression check."""
+
     passed: bool
     regressions: list[dict[str, Any]]  # List of regressed metrics
     improvements: list[dict[str, Any]]  # List of improved metrics
@@ -135,12 +137,14 @@ class RegressionGate:
         for case_id, baseline_passed in baseline_cases.items():
             current_passed = current_cases.get(case_id)
             if current_passed is False and baseline_passed is True:
-                regressions.append({
-                    "metric": f"case_{case_id}",
-                    "baseline": "passed",
-                    "current": "failed",
-                    "change_percent": -100,
-                })
+                regressions.append(
+                    {
+                        "metric": f"case_{case_id}",
+                        "baseline": "passed",
+                        "current": "failed",
+                        "change_percent": -100,
+                    }
+                )
                 passed = False
 
         return RegressionReport(
@@ -161,7 +165,11 @@ class RegressionGate:
         total = len(results)
         pass_rate = passed_count / total if total > 0 else 0
 
-        scores = [r.overall_score for r in results if hasattr(r, "overall_score") and r.overall_score is not None]
+        scores = [
+            r.overall_score
+            for r in results
+            if hasattr(r, "overall_score") and r.overall_score is not None
+        ]
         avg_score = sum(scores) / len(scores) if scores else None
 
         tokens = [r.total_tokens for r in results if hasattr(r, "total_tokens")]
@@ -171,10 +179,7 @@ class RegressionGate:
         avg_latency = sum(latencies) / len(latencies) if latencies else 0
         p95_latency = sorted(latencies)[int(len(latencies) * 0.95)] if latencies else 0
 
-        cases = {
-            r.eval_id: r.passed
-            for r in results
-        }
+        cases = {r.eval_id: r.passed for r in results}
 
         return {
             "pass_rate": pass_rate,

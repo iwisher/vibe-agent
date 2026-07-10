@@ -1,7 +1,6 @@
 """Basic import smoke tests."""
 
 
-
 def test_import_model_gateway():
     from vibe.core.model_gateway import LLMClient
 

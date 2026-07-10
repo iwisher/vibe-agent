@@ -33,6 +33,7 @@ class BaseTraceStore(ABC):
         """Redact secrets from session data before persistence."""
         try:
             from vibe.harness.security.redactor import get_default_redactor
+
             redactor = get_default_redactor()
             return redactor.redact_dict(data)
         except ImportError:
@@ -152,6 +153,7 @@ class SQLiteTraceStore(BaseTraceStore):
         if np is None:
             # Fallback to pickle if numpy unavailable
             import pickle
+
             return pickle.dumps(embedding)
         arr = np.array(embedding, dtype=np.float32)
         return arr.tobytes()
@@ -170,12 +172,14 @@ class SQLiteTraceStore(BaseTraceStore):
         # Fallback: old pickle format
         try:
             import pickle
+
             result = pickle.loads(data)
             if isinstance(result, list):
                 return result
         except Exception:
             pass
         return None
+
     def _get_embedding(self, text: str) -> Any | None:
         """Get embedding using sentence-transformers (MiniLM) as fallback.
 
@@ -205,6 +209,7 @@ class SQLiteTraceStore(BaseTraceStore):
     def _should_cleanup(self) -> bool:
         """Check if cleanup should run based on interval."""
         import time
+
         now = time.time()
         if now - self._last_cleanup_time >= self.cleanup_interval_seconds:
             self._last_cleanup_time = now
@@ -253,7 +258,8 @@ class SQLiteTraceStore(BaseTraceStore):
         with sqlite3.connect(self.db_path) as conn:
             now = datetime.now(timezone.utc).isoformat()
             conn.execute(
-                "INSERT OR REPLACE INTO sessions (id, start_time, end_time, success, model, error) VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT OR REPLACE INTO sessions (id, start_time, end_time, success, model, error) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
                 (session_id, now, now, int(success), model, error),
             )
 
@@ -262,7 +268,8 @@ class SQLiteTraceStore(BaseTraceStore):
                 content = msg.get("content") or ""
                 all_content.append(content)
                 conn.execute(
-                    "INSERT INTO messages (session_id, role, content, tool_calls, timestamp) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO messages (session_id, role, content, tool_calls, timestamp) "
+                    "VALUES (?, ?, ?, ?, ?)",
                     (
                         session_id,
                         msg.get("role"),
@@ -277,13 +284,15 @@ class SQLiteTraceStore(BaseTraceStore):
             emb = self._get_embedding(combined_text)
             if emb is not None:
                 conn.execute(
-                    "INSERT OR REPLACE INTO session_embeddings (session_id, embedding) VALUES (?, ?)",
+                    "INSERT OR REPLACE INTO session_embeddings (session_id, embedding) "
+                    "VALUES (?, ?)",
                     (session_id, self._serialize_embedding(emb)),
                 )
 
             for tr in safe_tool_results:
                 conn.execute(
-                    "INSERT INTO tool_calls (session_id, tool_name, arguments, result, success, error, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO tool_calls (session_id, tool_name, arguments, result, success, "
+                    "error, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (
                         session_id,
                         tr.get("tool_name"),
@@ -353,13 +362,15 @@ class SQLiteTraceStore(BaseTraceStore):
                     else:
                         score = 0.0
 
-                    results.append({
-                        "id": sid,
-                        "start_time": row["start_time"],
-                        "success": bool(row["success"]),
-                        "model": row["model"],
-                        "score": score
-                    })
+                    results.append(
+                        {
+                            "id": sid,
+                            "start_time": row["start_time"],
+                            "success": bool(row["success"]),
+                            "model": row["model"],
+                            "score": score,
+                        }
+                    )
                 except Exception:
                     continue
 
@@ -477,6 +488,7 @@ class JSONTraceStore(BaseTraceStore):
     def _save(self) -> None:
         """Atomic write: temp file + rename to avoid corruption on crash."""
         import os
+
         temp_path = self.file_path + ".tmp"
         with open(temp_path, "w", encoding="utf-8") as f:
             json.dump(self._data, f, indent=2)
@@ -485,6 +497,7 @@ class JSONTraceStore(BaseTraceStore):
     def _should_cleanup(self) -> bool:
         """Check if cleanup should run based on interval."""
         import time
+
         now = time.time()
         if now - self._last_cleanup_time >= self.cleanup_interval_seconds:
             self._last_cleanup_time = now
@@ -497,12 +510,9 @@ class JSONTraceStore(BaseTraceStore):
             return
 
         cutoff = datetime.now(timezone.utc) - timedelta(days=self.retention_days)
-        self._data = [
-            s for s in self._data
-            if datetime.fromisoformat(s["start_time"]) > cutoff
-        ]
+        self._data = [s for s in self._data if datetime.fromisoformat(s["start_time"]) > cutoff]
         if len(self._data) > self.max_entries:
-            self._data = self._data[-self.max_entries:]
+            self._data = self._data[-self.max_entries :]
 
     def log_session(
         self,
@@ -541,9 +551,7 @@ class JSONTraceStore(BaseTraceStore):
         scored = []
         for session in self._data:
             score = 0
-            text = " ".join([
-                m.get("content", "") for m in session.get("messages", [])
-            ]).lower()
+            text = " ".join([m.get("content", "") for m in session.get("messages", [])]).lower()
             for kw in keywords:
                 if kw in text:
                     score += 1
@@ -563,15 +571,12 @@ class JSONTraceStore(BaseTraceStore):
         if success is not None:
             sessions = [s for s in sessions if s["success"] == success]
         sessions = sessions[::-1]  # Most recent first
-        return sessions[offset:offset + limit]
+        return sessions[offset : offset + limit]
 
     def cleanup_old_sessions(self, retention_days: int) -> int:
         before = len(self._data)
         cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
-        self._data = [
-            s for s in self._data
-            if datetime.fromisoformat(s["start_time"]) > cutoff
-        ]
+        self._data = [s for s in self._data if datetime.fromisoformat(s["start_time"]) > cutoff]
         self._save()
         return before - len(self._data)
 
@@ -597,6 +602,7 @@ class MemoryTraceStore(BaseTraceStore):
     def _should_cleanup(self) -> bool:
         """Check if cleanup should run based on interval."""
         import time
+
         now = time.time()
         if now - self._last_cleanup_time >= self.cleanup_interval_seconds:
             self._last_cleanup_time = now
@@ -609,12 +615,9 @@ class MemoryTraceStore(BaseTraceStore):
             return
 
         cutoff = datetime.now(timezone.utc) - timedelta(days=self.retention_days)
-        self._data = [
-            s for s in self._data
-            if datetime.fromisoformat(s["start_time"]) > cutoff
-        ]
+        self._data = [s for s in self._data if datetime.fromisoformat(s["start_time"]) > cutoff]
         if len(self._data) > self.max_entries:
-            self._data = self._data[-self.max_entries:]
+            self._data = self._data[-self.max_entries :]
 
     def log_session(
         self,
@@ -650,9 +653,7 @@ class MemoryTraceStore(BaseTraceStore):
         scored = []
         for session in self._data:
             score = 0
-            text = " ".join([
-                m.get("content", "") for m in session.get("messages", [])
-            ]).lower()
+            text = " ".join([m.get("content", "") for m in session.get("messages", [])]).lower()
             for kw in keywords:
                 if kw in text:
                     score += 1
@@ -672,15 +673,12 @@ class MemoryTraceStore(BaseTraceStore):
         if success is not None:
             sessions = [s for s in sessions if s["success"] == success]
         sessions = sessions[::-1]
-        return sessions[offset:offset + limit]
+        return sessions[offset : offset + limit]
 
     def cleanup_old_sessions(self, retention_days: int) -> int:
         before = len(self._data)
         cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
-        self._data = [
-            s for s in self._data
-            if datetime.fromisoformat(s["start_time"]) > cutoff
-        ]
+        self._data = [s for s in self._data if datetime.fromisoformat(s["start_time"]) > cutoff]
         return before - len(self._data)
 
     def count_sessions(self) -> int:
@@ -695,9 +693,13 @@ def create_trace_store(
 ) -> BaseTraceStore:
     """Factory function to create the appropriate trace store."""
     if storage_type == "sqlite":
-        return SQLiteTraceStore(db_path=db_path, max_entries=max_entries, retention_days=retention_days)
+        return SQLiteTraceStore(
+            db_path=db_path, max_entries=max_entries, retention_days=retention_days
+        )
     elif storage_type == "json":
-        return JSONTraceStore(file_path=db_path, max_entries=max_entries, retention_days=retention_days)
+        return JSONTraceStore(
+            file_path=db_path, max_entries=max_entries, retention_days=retention_days
+        )
     elif storage_type == "memory":
         return MemoryTraceStore(max_entries=max_entries, retention_days=retention_days)
     else:

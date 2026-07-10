@@ -19,6 +19,7 @@ async def test_sync_delegate_runs_tasks():
     # Mock QueryLoop.run to yield a single result
     async def mock_run(self, initial_query):
         from vibe.core.query_loop import QueryResult
+
         yield QueryResult(response="result for " + initial_query)
 
     with patch.object(QueryLoop, "run", mock_run):
@@ -50,6 +51,7 @@ async def test_sync_delegate_timeout():
     async def slow_run(self, initial_query):
         await asyncio.sleep(10)
         from vibe.core.query_loop import QueryResult
+
         yield QueryResult(response="too late")
 
     with patch.object(QueryLoop, "run", slow_run):

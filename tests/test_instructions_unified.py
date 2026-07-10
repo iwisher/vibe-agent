@@ -1,8 +1,6 @@
 """Tests for InstructionLoader unified discovery (YAML + TOML)."""
-import pytest
-from pathlib import Path
 
-from vibe.harness.instructions import InstructionLoader, Skill
+from vibe.harness.instructions import InstructionLoader
 
 
 class TestUnifiedDiscovery:
@@ -11,7 +9,7 @@ class TestUnifiedDiscovery:
         assert InstructionLoader._detect_format(text) == "yaml"
 
     def test_detect_format_toml(self):
-        text = "+++\nid = \"test\"\n+++\n\ncontent"
+        text = '+++\nid = "test"\n+++\n\ncontent'
         assert InstructionLoader._detect_format(text) == "toml"
 
     def test_detect_format_unknown(self):
@@ -28,7 +26,7 @@ class TestUnifiedDiscovery:
         # Nested layout
         nested = tmp_path / "category" / "nested"
         nested.mkdir(parents=True)
-        (nested / "SKILL.md").write_text("+++\nid = \"nested\"\n+++\n")
+        (nested / "SKILL.md").write_text('+++\nid = "nested"\n+++\n')
 
         files = InstructionLoader._scan_skill_files(tmp_path)
         assert len(files) == 2

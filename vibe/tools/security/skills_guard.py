@@ -16,15 +16,17 @@ from typing import Optional
 
 class SkillRestriction(Enum):
     """Types of skill restrictions."""
-    NONE = "none"           # No restrictions
-    READ_ONLY = "read_only" # Can only read files, no writes
-    SANDBOXED = "sandboxed" # Full sandbox with no system access
-    DENY_ALL = "deny_all"   # Block all skill execution
+
+    NONE = "none"  # No restrictions
+    READ_ONLY = "read_only"  # Can only read files, no writes
+    SANDBOXED = "sandboxed"  # Full sandbox with no system access
+    DENY_ALL = "deny_all"  # Block all skill execution
 
 
 @dataclass
 class SkillGuardResult:
     """Result of skill guard check."""
+
     allowed: bool
     reason: str
     restriction_level: SkillRestriction
@@ -63,8 +65,17 @@ class SkillsGuard:
 
     # Allowed file extensions for skill operations
     ALLOWED_EXTENSIONS = {
-        ".py", ".md", ".txt", ".json", ".yaml", ".yml",
-        ".toml", ".cfg", ".ini", ".sh", ".bash",
+        ".py",
+        ".md",
+        ".txt",
+        ".json",
+        ".yaml",
+        ".yml",
+        ".toml",
+        ".cfg",
+        ".ini",
+        ".sh",
+        ".bash",
     }
 
     def __init__(
@@ -178,7 +189,9 @@ class SkillsGuard:
             if path.stat().st_size > self.max_file_size_bytes:
                 return SkillGuardResult(
                     allowed=False,
-                    reason=f"File size {path.stat().st_size} exceeds limit {self.max_file_size_bytes}",
+                    reason=(
+                        f"File size {path.stat().st_size} exceeds limit {self.max_file_size_bytes}"
+                    ),
                     restriction_level=self.restriction_level,
                 )
 
@@ -204,8 +217,14 @@ class SkillsGuard:
         if self.restriction_level == SkillRestriction.SANDBOXED:
             # In sandboxed mode, only allow restricted sub-agents
             dangerous_capabilities = {
-                "terminal", "shell", "execute", "system", "network",
-                "file_delete", "database_write", "email_send",
+                "terminal",
+                "shell",
+                "execute",
+                "system",
+                "network",
+                "file_delete",
+                "database_write",
+                "email_send",
             }
 
             for cap in capabilities:

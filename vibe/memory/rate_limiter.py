@@ -20,7 +20,7 @@ class TokenBucket:
 
     def __init__(
         self,
-        rpm: int = 60,       # requests per minute
+        rpm: int = 60,  # requests per minute
         tpm: int = 100_000,  # tokens per minute
     ) -> None:
         self.rpm = rpm

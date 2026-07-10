@@ -126,9 +126,12 @@ class TestSQLiteTraceStore:
 
         # Query messages directly from SQLite to verify redaction
         import sqlite3
+
         with sqlite3.connect(path) as conn:
             conn.row_factory = sqlite3.Row
-            rows = conn.execute("SELECT content FROM messages WHERE session_id = ?", ("session-1",)).fetchall()
+            rows = conn.execute(
+                "SELECT content FROM messages WHERE session_id = ?", ("session-1",)
+            ).fetchall()
 
         assert len(rows) == 2
         stored_content = rows[0]["content"]

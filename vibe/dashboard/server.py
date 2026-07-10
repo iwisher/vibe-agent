@@ -136,11 +136,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[dict, None]:
     project_root = _find_project_root()
     state = DashboardState(project_root)
     app.state.dashboard = state
-    
+
     # Transparent migration for legacy sessions database (Item 1)
     db_path = _get_traces_db_path(project_root)
     await asyncio.to_thread(_migrate_legacy_database_sync, project_root, db_path)
-    
+
     yield {"dashboard": state}
 
     # Shutdown: close all websockets
@@ -249,6 +249,7 @@ def _find_safe_backup_path(legacy_db: Path) -> Path:
 def _migrate_legacy_database_sync(project_root: Path, target_db_path: str) -> None:
     """Migrate active/incomplete checkpoints from legacy sessions.db to traces.db."""
     import logging
+
     logger = logging.getLogger(__name__)
     legacy_db = project_root / ".vibe" / "sessions.db"
     if not legacy_db.exists():
@@ -256,7 +257,7 @@ def _migrate_legacy_database_sync(project_root: Path, target_db_path: str) -> No
 
     try:
         Path(target_db_path).parent.mkdir(parents=True, exist_ok=True)
-        
+
         with sqlite3.connect(target_db_path) as conn_target:
             conn_target.execute(
                 """
@@ -273,15 +274,16 @@ def _migrate_legacy_database_sync(project_root: Path, target_db_path: str) -> No
                 );
                 """
             )
-            
+
             with sqlite3.connect(str(legacy_db)) as conn_src:
                 conn_src.row_factory = sqlite3.Row
                 cursor = conn_src.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table' AND name='session_checkpoints'"
+                    "SELECT name FROM sqlite_master WHERE type='table' "
+                    "AND name='session_checkpoints'"
                 )
                 if not cursor.fetchone():
                     return
-                
+
                 cursor = conn_src.execute("SELECT * FROM session_checkpoints")
                 rows = cursor.fetchall()
                 for row in rows:
@@ -306,7 +308,7 @@ def _migrate_legacy_database_sync(project_root: Path, target_db_path: str) -> No
                         ),
                     )
             conn_target.commit()
-        
+
         backup_path = _find_safe_backup_path(legacy_db)
         legacy_db.rename(backup_path)
         logger.info(f"Successfully migrated legacy sessions database to {target_db_path}")
@@ -318,13 +320,12 @@ def get_state(request: Request) -> DashboardState:
     return request.app.state.dashboard
 
 
-
 def _load_sessions_sync(db_path: str) -> list[dict[str, Any]]:
     """Synchronous helper to load sessions from SQLite (active checkpoints & completed sessions)."""
     sessions = []
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
-        
+
         # 1. Load active session checkpoints
         try:
             cursor = conn.execute(
@@ -355,7 +356,8 @@ def _load_sessions_sync(db_path: str) -> list[dict[str, Any]]:
         checkpoint_ids = {s["session_id"] for s in sessions}
         try:
             cursor = conn.execute(
-                "SELECT id, start_time, end_time, success, model, error FROM sessions ORDER BY start_time DESC"
+                "SELECT id, start_time, end_time, success, model, error "
+                "FROM sessions ORDER BY start_time DESC"
             )
             for row in cursor.fetchall():
                 session_id = row["id"]
@@ -410,7 +412,7 @@ def _load_timeline_sync(db_path: str, session_id: str) -> list[dict[str, Any]]:
     """Synchronous helper to load session timeline from SQLite."""
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
-        
+
         # 1. Try active checkpoints
         try:
             cursor = conn.execute(
@@ -494,7 +496,7 @@ def _load_messages_sync(db_path: str, session_id: str) -> list[dict[str, Any]]:
     """Synchronous helper to load full session messages from SQLite."""
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
-        
+
         # 1. Try to load active checkpoint messages first
         try:
             cursor = conn.execute(
@@ -559,7 +561,6 @@ async def session_messages(session_id: str, request: Request) -> list[dict[str, 
     return await asyncio.to_thread(_load_messages_sync, db_path, session_id)
 
 
-
 @app.get("/api/config")
 async def get_config(request: Request) -> dict[str, Any]:
     """Get dashboard configuration."""
@@ -605,7 +606,9 @@ async def get_stats(request: Request) -> dict[str, Any]:
     telemetry_db = state._db_path("telemetry.db")
     if os.path.exists(telemetry_db):
         telemetry = await asyncio.to_thread(_load_telemetry_sync, telemetry_db)
-        recent_errors = len([m for m in telemetry.get("metrics", []) if m.get("metric_name") == "error"])
+        recent_errors = len(
+            [m for m in telemetry.get("metrics", []) if m.get("metric_name") == "error"]
+        )
 
     return {
         "total_sessions": len(sessions),
@@ -673,7 +676,7 @@ async def get_wiki_page(slug: str, request: Request) -> dict[str, Any]:
         return {"error": "Wiki directory not found"}
 
     # Validate slug to prevent path traversal
-    if not re.match(r'^[a-zA-Z0-9_-]+$', slug):
+    if not re.match(r"^[a-zA-Z0-9_-]+$", slug):
         return {"error": "Invalid slug format"}
 
     md_file = (state.wiki_dir / f"{slug}.md").resolve()
@@ -729,9 +732,7 @@ async def get_wiki_page(slug: str, request: Request) -> dict[str, Any]:
         "tags": tags,
         "verification_status": status,
         "content": body.strip(),
-        "updated_at": datetime.fromtimestamp(
-            mtime, tz=timezone.utc
-        ).isoformat(),
+        "updated_at": datetime.fromtimestamp(mtime, tz=timezone.utc).isoformat(),
         "word_count": len(body.split()),
     }
 
@@ -746,8 +747,7 @@ async def regenerate_wiki(request: Request) -> dict[str, Any]:
     # CSRF protection: require custom header
     if request.headers.get("x-requested-with") != "XMLHttpRequest":
         return JSONResponse(
-            {"error": "CSRF protection: missing X-Requested-With header"},
-            status_code=403
+            {"error": "CSRF protection: missing X-Requested-With header"}, status_code=403
         )
 
     state = get_state(request)
@@ -775,7 +775,7 @@ async def regenerate_wiki(request: Request) -> dict[str, Any]:
                 continue
 
             # Sanitize session_id to prevent path traversal
-            session_id = re.sub(r'[^a-zA-Z0-9_-]', '', str(raw_id))
+            session_id = re.sub(r"[^a-zA-Z0-9_-]", "", str(raw_id))
             if not session_id:
                 continue
 
@@ -797,10 +797,10 @@ status: draft
 # Session Summary
 
 - **Session ID**: {session_id}
-- **Model**: {session.get('model', 'unknown')}
-- **State**: {session.get('state', 'unknown')}
-- **Messages**: {session.get('message_count', 0)}
-- **Duration**: {session.get('duration_seconds', 0):.1f}s
+- **Model**: {session.get("model", "unknown")}
+- **State**: {session.get("state", "unknown")}
+- **Messages**: {session.get("message_count", 0)}
+- **Duration**: {session.get("duration_seconds", 0):.1f}s
 
 This page was auto-generated from session data.
 """
@@ -922,10 +922,22 @@ async def list_research_papers(request: Request) -> list[dict[str, Any]]:
             "id": "evox",
             "title": "EvoX: Meta-Evolution for Automated Discovery",
             "authors": [
-                "Shu Liu", "Shubham Agarwal", "Monishwaran Maheswaran", "Mert Cemri",
-                "Zhifei Li", "Qiuyang Mang", "Ashwin Naren", "Ethan Boneh",
-                "Audrey Cheng", "Melissa Z. Pan", "Alexander Du", "Kurt Keutzer",
-                "Alexandros G. Dimakis", "Koushik Sen", "Matei Zaharia", "Ion Stoica",
+                "Shu Liu",
+                "Shubham Agarwal",
+                "Monishwaran Maheswaran",
+                "Mert Cemri",
+                "Zhifei Li",
+                "Qiuyang Mang",
+                "Ashwin Naren",
+                "Ethan Boneh",
+                "Audrey Cheng",
+                "Melissa Z. Pan",
+                "Alexander Du",
+                "Kurt Keutzer",
+                "Alexandros G. Dimakis",
+                "Koushik Sen",
+                "Matei Zaharia",
+                "Ion Stoica",
             ],
             "affiliations": ["UC Berkeley", "Stanford University", "Bespoke Labs"],
             "venue": "arXiv:2602.23413v1 [cs.LG]",
@@ -952,10 +964,22 @@ async def get_research_paper(paper_id: str, request: Request) -> dict[str, Any]:
         "id": "evox",
         "title": "EvoX: Meta-Evolution for Automated Discovery",
         "authors": [
-            "Shu Liu", "Shubham Agarwal", "Monishwaran Maheswaran", "Mert Cemri",
-            "Zhifei Li", "Qiuyang Mang", "Ashwin Naren", "Ethan Boneh",
-            "Audrey Cheng", "Melissa Z. Pan", "Alexander Du", "Kurt Keutzer",
-            "Alexandros G. Dimakis", "Koushik Sen", "Matei Zaharia", "Ion Stoica",
+            "Shu Liu",
+            "Shubham Agarwal",
+            "Monishwaran Maheswaran",
+            "Mert Cemri",
+            "Zhifei Li",
+            "Qiuyang Mang",
+            "Ashwin Naren",
+            "Ethan Boneh",
+            "Audrey Cheng",
+            "Melissa Z. Pan",
+            "Alexander Du",
+            "Kurt Keutzer",
+            "Alexandros G. Dimakis",
+            "Koushik Sen",
+            "Matei Zaharia",
+            "Ion Stoica",
         ],
         "affiliations": ["UC Berkeley", "Stanford University", "Bespoke Labs"],
         "venue": "arXiv:2602.23413v1 [cs.LG]",
@@ -1008,10 +1032,10 @@ async def get_research_paper(paper_id: str, request: Request) -> dict[str, Any]:
                 {
                     "title": "Meta-evolving the search strategy",
                     "body": (
-                        "When stagnation is detected, EvoX selects a high-performing parent strategy "
-                        "from a strategy database conditioned on the current population descriptor "
-                        "φ(D_t), mutates it with an LLM, validates the candidate, and deploys it "
-                        "without resetting the solution population."
+                        "When stagnation is detected, EvoX selects a high-performing parent "
+                        "strategy from a strategy database conditioned on the current "
+                        "population descriptor φ(D_t), mutates it with an LLM, validates the "
+                        "candidate, and deploys it without resetting the solution population."
                     ),
                 },
             ],
@@ -1034,8 +1058,9 @@ async def get_research_paper(paper_id: str, request: Request) -> dict[str, Any]:
             {
                 "task": "Mathematical optimization",
                 "finding": (
-                    "Best or tied-best on 7 of 8 tasks under GPT-5 and all 8 under Gemini-3.0-Pro; "
-                    "matches or exceeds AlphaEvolve on 5 of 7 comparable tasks within 100 iterations."
+                    "Best or tied-best on 7 of 8 tasks under GPT-5 and all 8 under "
+                    "Gemini-3.0-Pro; matches or exceeds AlphaEvolve on 5 of 7 comparable "
+                    "tasks within 100 iterations."
                 ),
             },
             {
@@ -1055,9 +1080,18 @@ async def get_research_paper(paper_id: str, request: Request) -> dict[str, Any]:
             },
         ],
         "contributions": [
-            "Formalizes LLM-driven optimization as a two-level process separating solution evolution from search strategy evolution.",
-            "Introduces EvoX, which dynamically evolves search strategies based on observed optimization progress.",
-            "Demonstrates consistent improvements over prior methods across nearly 200 problems and characterizes cost, scaling, and adaptation dynamics.",
+            (
+                "Formalizes LLM-driven optimization as a two-level process separating "
+                "solution evolution from search strategy evolution."
+            ),
+            (
+                "Introduces EvoX, which dynamically evolves search strategies based on "
+                "observed optimization progress."
+            ),
+            (
+                "Demonstrates consistent improvements over prior methods across nearly 200 "
+                "problems and characterizes cost, scaling, and adaptation dynamics."
+            ),
         ],
         "tags": ["evolutionary-search", "llm-optimization", "meta-learning", "automated-discovery"],
     }
@@ -1095,6 +1129,7 @@ async def websocket_endpoint(websocket: WebSocket):
 static_dir = Path(__file__).parent / "static"
 if static_dir.exists():
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
     # Serve index.html at root
     @app.get("/")
     async def root():

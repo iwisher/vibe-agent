@@ -6,8 +6,7 @@ from pathlib import Path
 from vibe.preferences.approval_rules import ApprovalPolicyDB
 from vibe.preferences.compaction_policy import CompactionConfig, CompactionPolicy
 from vibe.preferences.extraction_policy import ExtractionConfig, ExtractionPolicy
-from vibe.preferences.macro_session import MacroSession, MacroSessionRunner, MacroStep
-from vibe.preferences.models import PreferencePolicy, PreferenceRule, PreferenceSource
+from vibe.preferences.models import PreferencePolicy
 from vibe.preferences.provider_prefs import ProviderPreferenceMatrix
 from vibe.preferences.recovery_rules import RecoveryRuleDB
 from vibe.preferences.registry import PreferenceRegistry
@@ -119,6 +118,7 @@ class TestPreferenceRegistryIntegration:
 
             # Add an INFERRED rule with old last_used_at (only inferred rules are pruned)
             from vibe.preferences.models import PreferenceRule, PreferenceSource
+
             policy = registry.load_policy("tools") or PreferencePolicy(domain="tools")
             policy.add_rule(
                 PreferenceRule(

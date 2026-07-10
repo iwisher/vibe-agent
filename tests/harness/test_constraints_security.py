@@ -1,7 +1,5 @@
 """Tests for security integration hooks in constraints."""
 
-
-
 from vibe.harness.constraints import (
     HookContext,
     HookPipeline,

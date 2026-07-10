@@ -69,9 +69,7 @@ class SkillVar:
                     return json.loads(value)
                 return dict(value)
         except (ValueError, TypeError, json.JSONDecodeError) as e:
-            raise ValueError(
-                f"Cannot coerce '{self.name}' to {self.var_type.value}: {e}"
-            ) from e
+            raise ValueError(f"Cannot coerce '{self.name}' to {self.var_type.value}: {e}") from e
 
         return value
 
@@ -85,19 +83,13 @@ class SkillVar:
             return errors
 
         if self.enum is not None and value not in self.enum:
-            errors.append(
-                f"Variable '{self.name}' must be one of {self.enum}, got {value!r}"
-            )
+            errors.append(f"Variable '{self.name}' must be one of {self.enum}, got {value!r}")
 
         if self.var_type in (VarType.INT, VarType.FLOAT) and isinstance(value, (int, float)):
             if self.min_value is not None and value < self.min_value:
-                errors.append(
-                    f"Variable '{self.name}' must be >= {self.min_value}, got {value}"
-                )
+                errors.append(f"Variable '{self.name}' must be >= {self.min_value}, got {value}")
             if self.max_value is not None and value > self.max_value:
-                errors.append(
-                    f"Variable '{self.name}' must be <= {self.max_value}, got {value}"
-                )
+                errors.append(f"Variable '{self.name}' must be <= {self.max_value}, got {value}")
 
         if self.var_type == VarType.STRING and isinstance(value, str) and self.pattern:
             import re

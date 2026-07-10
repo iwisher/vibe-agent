@@ -62,10 +62,7 @@ class ToolExecutor:
         """Filter schemas by planner selection, with safety fallback to all."""
         if not selected_names:
             return all_schemas
-        filtered = [
-            t for t in all_schemas
-            if t.get("function", {}).get("name") in selected_names
-        ]
+        filtered = [t for t in all_schemas if t.get("function", {}).get("name") in selected_names]
         return filtered if filtered else all_schemas
 
     async def execute(self, tool_calls: list, session_id: str | None = None) -> list[ToolResult]:
@@ -235,18 +232,30 @@ class SecurityCoordinator:
         # Layer 1: Pattern engine
         if getattr(self.config, "dangerous_patterns_enabled", True):
             from vibe.tools.security.patterns import PatternEngine
+
             self._pattern_engine = PatternEngine()
 
         # Layer 2: File safety guard
-        safe_root = getattr(self.config.file_safety, "safe_root", None) if hasattr(self.config, "file_safety") else None
+        safe_root = (
+            getattr(self.config.file_safety, "safe_root", None)
+            if hasattr(self.config, "file_safety")
+            else None
+        )
         if safe_root:
             from vibe.tools.security.file_safety import FileSafetyGuard
+
             self._file_guard = FileSafetyGuard(safe_root=Path(safe_root))
 
         # Layer 3: Human approval gates
         approval_mode = getattr(self.config, "approval_mode", "smart")
-        mode_map = {"manual": "interactive", "smart": "interactive", "auto": "auto", "strict": "strict"}
+        mode_map = {
+            "manual": "interactive",
+            "smart": "interactive",
+            "auto": "auto",
+            "strict": "strict",
+        }
         from vibe.tools.security.human_approval import ApprovalMode, HumanApprover
+
         mapped_mode = mode_map.get(approval_mode, "interactive")
         self._human_approver = HumanApprover(
             mode=ApprovalMode(mapped_mode),
@@ -256,16 +265,26 @@ class SecurityCoordinator:
         # Layer 4: Smart approver (heuristics work without LLM client)
         if getattr(self.config, "smart_approver_enabled", True):
             from vibe.tools.security.smart_approver import SmartApprover
+
             self._smart_approver = SmartApprover(
                 llm_client=llm_client,
                 auto_mode=getattr(self.config, "is_auto_approve", lambda: False)(),
             )
 
         # Phase C: Approval policy DB (learned rules)
-        pref_cfg = getattr(self.config, "preferences", None) if hasattr(self.config, "preferences") else None
-        if pref_cfg is not None and getattr(pref_cfg, "enabled", False) and getattr(pref_cfg, "approval_enabled", True):
+        pref_cfg = (
+            getattr(self.config, "preferences", None)
+            if hasattr(self.config, "preferences")
+            else None
+        )
+        if (
+            pref_cfg is not None
+            and getattr(pref_cfg, "enabled", False)
+            and getattr(pref_cfg, "approval_enabled", True)
+        ):
             try:
                 from vibe.preferences.approval_rules import ApprovalPolicyDB
+
                 self._approval_policy_db = ApprovalPolicyDB()
             except Exception:
                 self._approval_policy_db = None
@@ -318,7 +337,9 @@ class SecurityCoordinator:
         try:
             decision = self._approval_policy_db.check(tool_name, tool_args)
             if decision.action == "allow":
-                return SecurityCheckResult(allowed=True, reason=decision.reason, layer="learned_approval")
+                return SecurityCheckResult(
+                    allowed=True, reason=decision.reason, layer="learned_approval"
+                )
             elif decision.action == "deny":
                 return SecurityCheckResult(
                     allowed=False, reason=decision.reason, layer="learned_approval"
@@ -410,7 +431,9 @@ class SecurityCoordinator:
             layer="human_approval",
         )
 
-    def _check_smart_approver(self, tool_name: str, tool_args: dict[str, Any]) -> SecurityCheckResult:
+    def _check_smart_approver(
+        self, tool_name: str, tool_args: dict[str, Any]
+    ) -> SecurityCheckResult:
         """Layer 4: LLM-based risk assessment."""
         if self._smart_approver is None:
             return SecurityCheckResult(allowed=True)
@@ -441,6 +464,7 @@ class SecurityCoordinator:
 
         try:
             from vibe.tools.security.checkpoints import CheckpointType
+
             cp = self._checkpoint_manager.create(
                 checkpoint_type=CheckpointType.COMMAND_EXECUTION,
                 description=f"Before {tool_name}: {tool_args.get('command', '')}",

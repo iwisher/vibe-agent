@@ -50,7 +50,9 @@ async def test_pageindex_routes_after_rebuild(tmp_path):
 
     # Create some wiki pages
     await wiki.create_page(title="Database Logs", content="DB performance data.", tags=["database"])
-    await wiki.create_page(title="Frontend Notes", content="UI component patterns.", tags=["frontend"])
+    await wiki.create_page(
+        title="Frontend Notes", content="UI component patterns.", tags=["frontend"]
+    )
 
     # Rebuild index from wiki
     idx.rebuild(wiki, incremental=False)
@@ -170,9 +172,7 @@ def test_factory_wires_trace_store_before_tripartite(tmp_path):
 
     config = VibeConfig()
     # Enable tripartite memory
-    config = config.model_copy(update={
-        "memory": TripartiteMemoryConfig(enabled=True)
-    })
+    config = config.model_copy(update={"memory": TripartiteMemoryConfig(enabled=True)})
 
     factory = QueryLoopFactory(
         base_url="http://localhost:11434/v1",
@@ -209,7 +209,7 @@ def test_factory_tripartite_enabled_creates_wiki(tmp_path):
     assert telemetry is not None
 
     # Cleanup
-    if hasattr(wiki, 'db') and wiki.db is not None:
+    if hasattr(wiki, "db") and wiki.db is not None:
         wiki.db.close()
 
 
@@ -249,5 +249,6 @@ def test_config_memory_env_override(monkeypatch):
     # pydantic-settings reads nested models as JSON via the field name env var
     monkeypatch.setenv("VIBE_MEMORY", '{"enabled": true}')
     from vibe.core.config import VibeConfig
+
     config = VibeConfig()
     assert config.memory.enabled is True

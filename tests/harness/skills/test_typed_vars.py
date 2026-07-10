@@ -65,42 +65,50 @@ class TestSkillVar:
 
 class TestSkillSchema:
     def test_from_dict(self):
-        schema = SkillSchema.from_dict({
-            "properties": {
-                "name": {"type": "string", "default": "world"},
-                "count": {"type": "integer", "minimum": 0},
-            },
-            "required": ["count"],
-        })
+        schema = SkillSchema.from_dict(
+            {
+                "properties": {
+                    "name": {"type": "string", "default": "world"},
+                    "count": {"type": "integer", "minimum": 0},
+                },
+                "required": ["count"],
+            }
+        )
         assert len(schema.variables) == 2
         assert schema.variables[0].name == "name"
         assert schema.variables[0].default == "world"
         assert schema.variables[1].required is True
 
     def test_to_json_schema(self):
-        schema = SkillSchema(variables=[
-            SkillVar("name", VarType.STRING, default="world"),
-            SkillVar("count", VarType.INT, min_value=0),
-        ])
+        schema = SkillSchema(
+            variables=[
+                SkillVar("name", VarType.STRING, default="world"),
+                SkillVar("count", VarType.INT, min_value=0),
+            ]
+        )
         json_schema = schema.to_json_schema()
         assert json_schema["type"] == "object"
         assert "name" in json_schema["properties"]
         assert json_schema["properties"]["name"]["default"] == "world"
 
     def test_apply_coerces_and_validates(self):
-        schema = SkillSchema(variables=[
-            SkillVar("name", VarType.STRING, default="world"),
-            SkillVar("count", VarType.INT, min_value=0, max_value=10),
-        ])
+        schema = SkillSchema(
+            variables=[
+                SkillVar("name", VarType.STRING, default="world"),
+                SkillVar("count", VarType.INT, min_value=0, max_value=10),
+            ]
+        )
         coerced, errors = schema.apply({"count": "5"})
         assert errors == []
         assert coerced["count"] == 5
         assert coerced["name"] == "world"
 
     def test_apply_reports_errors(self):
-        schema = SkillSchema(variables=[
-            SkillVar("count", VarType.INT, min_value=0, required=True),
-        ])
+        schema = SkillSchema(
+            variables=[
+                SkillVar("count", VarType.INT, min_value=0, required=True),
+            ]
+        )
         coerced, errors = schema.apply({"count": "invalid"})
         assert len(errors) == 1
 
@@ -108,10 +116,12 @@ class TestSkillSchema:
 class TestTypedSkillExecutor:
     def test_substitute_typed(self):
         executor = TypedSkillExecutor()
-        schema = SkillSchema(variables=[
-            SkillVar("name", VarType.STRING, default="world"),
-            SkillVar("count", VarType.INT, default=1),
-        ])
+        schema = SkillSchema(
+            variables=[
+                SkillVar("name", VarType.STRING, default="world"),
+                SkillVar("count", VarType.INT, default=1),
+            ]
+        )
         result, errors = executor.substitute_typed(
             "Hello {name}, count={count}",
             schema,
@@ -122,9 +132,11 @@ class TestTypedSkillExecutor:
 
     def test_substitute_typed_with_validation_error(self):
         executor = TypedSkillExecutor()
-        schema = SkillSchema(variables=[
-            SkillVar("count", VarType.INT, min_value=0),
-        ])
+        schema = SkillSchema(
+            variables=[
+                SkillVar("count", VarType.INT, min_value=0),
+            ]
+        )
         result, errors = executor.substitute_typed(
             "count={count}",
             schema,
@@ -135,9 +147,11 @@ class TestTypedSkillExecutor:
 
     def test_substitute_typed_list_value(self):
         executor = TypedSkillExecutor()
-        schema = SkillSchema(variables=[
-            SkillVar("items", VarType.LIST),
-        ])
+        schema = SkillSchema(
+            variables=[
+                SkillVar("items", VarType.LIST),
+            ]
+        )
         result, errors = executor.substitute_typed(
             "items={items}",
             schema,

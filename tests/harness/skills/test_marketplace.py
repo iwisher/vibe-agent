@@ -6,8 +6,6 @@ import tempfile
 import pytest
 
 from vibe.harness.skills.marketplace import (
-    MarketplaceSearchResult,
-    SkillListing,
     SkillMarketplace,
 )
 

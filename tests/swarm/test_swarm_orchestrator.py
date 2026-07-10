@@ -1,16 +1,14 @@
 """Tests for SwarmOrchestrator DAG scheduling and swarm execution."""
 
 import pytest
-import asyncio
 
+from vibe.swarm.agent import SubAgentRole
 from vibe.swarm.orchestrator import (
     SwarmOrchestrator,
     SwarmResult,
     TaskDAG,
     TaskNode,
 )
-from vibe.swarm.agent import SubAgentRole
-from vibe.swarm.shared_wiki import SharedWiki
 
 
 class TestTaskDAG:
@@ -33,9 +31,9 @@ class TestTaskDAG:
     def test_get_ready_nodes_with_prerequisites(self):
         dag = TaskDAG()
         dag.add_node(TaskNode(node_id="n1", description="A", role=SubAgentRole.RESEARCH))
-        dag.add_node(TaskNode(
-            node_id="n2", description="B", role=SubAgentRole.CODING, prerequisites=["n1"]
-        ))
+        dag.add_node(
+            TaskNode(node_id="n2", description="B", role=SubAgentRole.CODING, prerequisites=["n1"])
+        )
 
         ready = dag.get_ready_nodes()
         assert len(ready) == 1
@@ -44,9 +42,9 @@ class TestTaskDAG:
     def test_get_ready_nodes_after_completion(self):
         dag = TaskDAG()
         dag.add_node(TaskNode(node_id="n1", description="A", role=SubAgentRole.RESEARCH))
-        dag.add_node(TaskNode(
-            node_id="n2", description="B", role=SubAgentRole.CODING, prerequisites=["n1"]
-        ))
+        dag.add_node(
+            TaskNode(node_id="n2", description="B", role=SubAgentRole.CODING, prerequisites=["n1"])
+        )
 
         dag.nodes["n1"].completed = True
         ready = dag.get_ready_nodes()
@@ -55,8 +53,12 @@ class TestTaskDAG:
 
     def test_is_complete_all_done(self):
         dag = TaskDAG()
-        dag.add_node(TaskNode(node_id="n1", description="A", role=SubAgentRole.RESEARCH, completed=True))
-        dag.add_node(TaskNode(node_id="n2", description="B", role=SubAgentRole.CODING, completed=True))
+        dag.add_node(
+            TaskNode(node_id="n1", description="A", role=SubAgentRole.RESEARCH, completed=True)
+        )
+        dag.add_node(
+            TaskNode(node_id="n2", description="B", role=SubAgentRole.CODING, completed=True)
+        )
         assert dag.is_complete()
 
     def test_is_complete_not_done(self):
@@ -66,7 +68,9 @@ class TestTaskDAG:
 
     def test_is_complete_with_error(self):
         dag = TaskDAG()
-        dag.add_node(TaskNode(node_id="n1", description="A", role=SubAgentRole.RESEARCH, error="Failed"))
+        dag.add_node(
+            TaskNode(node_id="n1", description="A", role=SubAgentRole.RESEARCH, error="Failed")
+        )
         assert dag.is_complete()
 
 

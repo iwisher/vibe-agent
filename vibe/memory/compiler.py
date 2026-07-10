@@ -160,7 +160,8 @@ class WikiCompiler:
                 with contextlib.closing(sqlite3.connect(db_path)) as conn:
                     conn.row_factory = sqlite3.Row
                     rows = conn.execute(
-                        "SELECT role, content, tool_calls FROM messages WHERE session_id = ? ORDER BY id",
+                        "SELECT role, content, tool_calls FROM messages "
+                        "WHERE session_id = ? ORDER BY id",
                         (session_id,),
                     ).fetchall()
                     messages = []
@@ -194,11 +195,13 @@ class WikiCompiler:
         citations = item.get("citations", [])
 
         # Add compiler metadata citation
-        citations.append({
-            "type": "compiler_extraction",
-            "session": session_id,
-            "compiled_at": datetime.now(timezone.utc).isoformat(),
-        })
+        citations.append(
+            {
+                "type": "compiler_extraction",
+                "session": session_id,
+                "compiled_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
 
         # Deduplicate: check if a pending page with same slug already exists
         slug = _make_slug(title)
@@ -253,7 +256,9 @@ class WikiCompiler:
 
         # Remove from pending
         await self.pending_wiki.delete_page(page_id)
-        logger.info("Approved pending page '%s' -> main wiki (%s)", pending_page.title, main_page.id)
+        logger.info(
+            "Approved pending page '%s' -> main wiki (%s)", pending_page.title, main_page.id
+        )
         return main_page
 
     async def reject_page(self, page_id: str) -> None:

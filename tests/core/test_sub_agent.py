@@ -2,6 +2,7 @@
 
 import asyncio
 from unittest.mock import MagicMock
+
 import pytest
 
 from vibe.core.query_loop import QueryResult
@@ -59,7 +60,8 @@ class TestSubAgentRunner:
         await runner.start("Say hello")
 
         results = await runner.wait(timeout=1.0)
-        # Results should contain the status message and the error QueryResult appended by except block
+        # Results should contain the status message and the error QueryResult appended by
+        # the except block
         assert len(results) == 2
         assert results[1].error is not None
         assert isinstance(results[1].error, ValueError)

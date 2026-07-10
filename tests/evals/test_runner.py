@@ -145,6 +145,7 @@ class TestEvalRunnerTypeAlias:
 
     def test_type_alias(self):
         """QueryLoopFactory should be callable."""
+
         def factory(case: EvalCase) -> QueryLoop:
             return MockQueryLoop()
 
@@ -232,7 +233,7 @@ class TestRunAll:
         await runner.run_all(cases)
 
         assert len(copied_loops) == 2
-        assert all(l._closed for l in copied_loops)
+        assert all(loop._closed for loop in copied_loops)
         assert not loop._closed
 
     @pytest.mark.asyncio
@@ -257,4 +258,4 @@ class TestRunAll:
         await runner.run_all(cases)
 
         assert len(factory_loops) == 2
-        assert all(l._closed for l in factory_loops)
+        assert all(loop._closed for loop in factory_loops)

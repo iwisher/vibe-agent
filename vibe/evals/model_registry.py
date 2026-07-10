@@ -63,6 +63,7 @@ class ModelRegistry:
 
     def __init__(self, profiles: list[ModelProfile] | None = None):
         import copy
+
         self._profiles: dict[str, ModelProfile] = {}
         source = profiles if profiles is not None else self.BUILTIN_PROFILES
         for p in source:

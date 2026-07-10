@@ -85,9 +85,7 @@ class SkillOrchestrator:
             else:
                 # Run sync executor in thread pool
                 loop = asyncio.get_event_loop()
-                return await loop.run_in_executor(
-                    None, executor.execute, skill, variables or {}
-                )
+                return await loop.run_in_executor(None, executor.execute, skill, variables or {})
 
     async def run_parallel(
         self,
@@ -101,10 +99,7 @@ class SkillOrchestrator:
         Returns:
             List of results in same order as inputs
         """
-        tasks = [
-            self.run_skill(name, vars)
-            for name, vars in skill_calls
-        ]
+        tasks = [self.run_skill(name, vars) for name, vars in skill_calls]
         return await asyncio.gather(*tasks, return_exceptions=True)
 
     def _resolve_dag(self, tasks: list[SubTask]) -> list[list[SubTask]]:
@@ -118,15 +113,10 @@ class SkillOrchestrator:
         waves: list[list[SubTask]] = []
 
         while pending:
-            wave = [
-                t for t in pending.values()
-                if all(dep in completed for dep in t.dependencies)
-            ]
+            wave = [t for t in pending.values() if all(dep in completed for dep in t.dependencies)]
             if not wave:
                 # Circular dependency or missing dependency
-                raise ValueError(
-                    f"Cannot resolve dependencies for tasks: {list(pending.keys())}"
-                )
+                raise ValueError(f"Cannot resolve dependencies for tasks: {list(pending.keys())}")
 
             waves.append(wave)
             for t in wave:
@@ -159,9 +149,7 @@ class SkillOrchestrator:
             async def run_with_id(task: SubTask) -> tuple[str, Any, str | None]:
                 try:
                     task.status = TaskStatus.RUNNING
-                    output = await self.run_skill(
-                        task.skill_name, task.variables
-                    )
+                    output = await self.run_skill(task.skill_name, task.variables)
                     task.status = TaskStatus.COMPLETED
                     task.result = output
                     return task.task_id, output, None
@@ -170,9 +158,7 @@ class SkillOrchestrator:
                     task.error = str(e)
                     return task.task_id, None, str(e)
 
-            wave_results = await asyncio.gather(*[
-                run_with_id(t) for t in wave
-            ])
+            wave_results = await asyncio.gather(*[run_with_id(t) for t in wave])
 
             for task_id, output, error in wave_results:
                 if error:

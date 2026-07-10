@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from vibe.core.query_loop import QueryLoop, QueryResult
+    from vibe.core.query_loop import QueryLoop
     from vibe.core.query_loop_factory import QueryLoopFactory
 
 

@@ -1,6 +1,7 @@
 """Prompt templates for SkillMaker LLM skill generation."""
 
-SKILL_GENERATION_PROMPT = """You are an expert at creating reusable automation skills for a CLI agent.
+SKILL_GENERATION_PROMPT = """You are an expert at creating reusable automation skills for a \
+CLI agent.
 
 Given a recurring task pattern observed across multiple sessions, create a SKILL.md file
 with TOML frontmatter (+++) and a markdown body.

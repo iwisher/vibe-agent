@@ -85,10 +85,14 @@ class BenchmarkScorecard:
         print("MULTI-PROVIDER BENCHMARK SCORECARD")
         print("=" * 60)
         for score in sorted(self.models.values(), key=lambda s: s.pass_rate, reverse=True):
-            status = "PASS" if score.pass_rate >= 0.8 else "WARN" if score.pass_rate >= 0.5 else "FAIL"
-            print(f"  [{status}] {score.model_name:20s} ({score.provider:10s})  "
-                  f"{score.passed}/{score.total_cases}  {score.pass_rate*100:5.1f}%  "
-                  f"{score.total_tokens:,} tokens")
+            status = (
+                "PASS" if score.pass_rate >= 0.8 else "WARN" if score.pass_rate >= 0.5 else "FAIL"
+            )
+            print(
+                f"  [{status}] {score.model_name:20s} ({score.provider:10s})  "
+                f"{score.passed}/{score.total_cases}  {score.pass_rate * 100:5.1f}%  "
+                f"{score.total_tokens:,} tokens"
+            )
         print("=" * 60)
 
 

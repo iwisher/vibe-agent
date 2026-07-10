@@ -1,7 +1,7 @@
 import tempfile
 from pathlib import Path
 
-from vibe.preferences.recovery_rules import RecoveryAction, RecoveryRuleDB
+from vibe.preferences.recovery_rules import RecoveryRuleDB
 from vibe.preferences.registry import PreferenceRegistry
 
 
@@ -42,8 +42,12 @@ class TestRecoveryRuleDB:
 
             session_state = {}
             # First two attempts succeed
-            assert recovery.find_recovery("write_file", "permission denied", session_state) is not None
-            assert recovery.find_recovery("write_file", "permission denied", session_state) is not None
+            assert (
+                recovery.find_recovery("write_file", "permission denied", session_state) is not None
+            )
+            assert (
+                recovery.find_recovery("write_file", "permission denied", session_state) is not None
+            )
             # Third attempt fails (max_attempts=2)
             assert recovery.find_recovery("write_file", "permission denied", session_state) is None
 

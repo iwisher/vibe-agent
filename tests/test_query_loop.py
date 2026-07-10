@@ -129,7 +129,10 @@ async def test_hook_pipeline_policy_block(mock_llm, tool_system):
     loop = QueryLoop(llm_client=mock_llm, tool_system=tool_system, hook_pipeline=pipeline)
     results = [r async for r in loop.run("do it") if not r.is_status]
     assert results[0].tool_results[0].success is False
-    assert "blocked" in results[0].tool_results[0].error.lower() or "policy" in results[0].tool_results[0].error.lower()
+    assert (
+        "blocked" in results[0].tool_results[0].error.lower()
+        or "policy" in results[0].tool_results[0].error.lower()
+    )
 
 
 @pytest.mark.asyncio
@@ -384,7 +387,7 @@ async def test_run_streaming_simple(mock_llm, tool_system):
     mock_llm.complete_stream.side_effect = mock_stream
     loop = QueryLoop(llm_client=mock_llm, tool_system=tool_system)
     results = [r async for r in loop.run("hi", stream=True) if not r.is_status]
-    
+
     assert len(results) >= 2
     assert results[0].response == "hello"
     assert results[1].response == " world"
@@ -396,6 +399,7 @@ async def test_run_streaming_simple(mock_llm, tool_system):
 async def test_keyboard_interrupt_offers_rollback_hint(mock_llm, tool_system, caplog):
     """When KeyboardInterrupt interrupts the loop, a rollback hint is logged if a shadow exists."""
     from unittest.mock import patch
+
     from vibe.tools.git_shadow import ShadowBranch
 
     async def mock_stream(*args, **kwargs):
@@ -502,4 +506,3 @@ async def test_completed_run_skips_rollback_hint(mock_llm, tool_system, caplog):
     # list_shadows should NOT be called for successful runs
     shadow_manager.list_shadows.assert_not_called()
     assert not any("Rollback available" in rec.message for rec in caplog.records)
-

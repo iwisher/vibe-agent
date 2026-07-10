@@ -15,13 +15,15 @@ class TestQueryLoopTraceStore:
     def mock_llm(self):
         llm = MagicMock()
         llm.model = "test-model"
-        llm.complete = AsyncMock(return_value=MagicMock(
-            content="Hello",
-            tool_calls=[],
-            is_error=False,
-            error=None,
-            usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-        ))
+        llm.complete = AsyncMock(
+            return_value=MagicMock(
+                content="Hello",
+                tool_calls=[],
+                is_error=False,
+                error=None,
+                usage={"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+            )
+        )
         llm.close = AsyncMock()
         return llm
 
@@ -62,13 +64,15 @@ class TestQueryLoopTraceStore:
     @pytest.mark.asyncio
     async def test_logs_session_on_error(self, mock_llm, mock_tool_system, trace_store):
         """QueryLoop should log session even on error."""
-        mock_llm.complete = AsyncMock(return_value=MagicMock(
-            content="",
-            tool_calls=[],
-            is_error=True,
-            error="API failure",
-            usage={},
-        ))
+        mock_llm.complete = AsyncMock(
+            return_value=MagicMock(
+                content="",
+                tool_calls=[],
+                is_error=True,
+                error="API failure",
+                usage={},
+            )
+        )
 
         query_loop = QueryLoop(
             llm_client=mock_llm,
@@ -105,13 +109,15 @@ class TestQueryLoopTraceStore:
     @pytest.mark.asyncio
     async def test_logs_tool_results(self, mock_llm, mock_tool_system, trace_store):
         """QueryLoop should log tool results in session."""
-        mock_llm.complete = AsyncMock(return_value=MagicMock(
-            content="",
-            tool_calls=[{"id": "call_1", "function": {"name": "test_tool", "arguments": "{}"}}],
-            is_error=False,
-            error=None,
-            usage={"prompt_tokens": 10, "completion_tokens": 5},
-        ))
+        mock_llm.complete = AsyncMock(
+            return_value=MagicMock(
+                content="",
+                tool_calls=[{"id": "call_1", "function": {"name": "test_tool", "arguments": "{}"}}],
+                is_error=False,
+                error=None,
+                usage={"prompt_tokens": 10, "completion_tokens": 5},
+            )
+        )
 
         query_loop = QueryLoop(
             llm_client=mock_llm,
@@ -156,6 +162,7 @@ class TestJSONTraceStoreAtomic:
 
         # Content should be valid JSON
         import json
+
         with open(file_path) as f:
             data = json.load(f)
         assert len(data) == 1

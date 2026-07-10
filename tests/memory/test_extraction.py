@@ -34,16 +34,20 @@ class FakeLLMResponse:
 def fake_llm():
     """Return a mock LLM client that returns valid JSON."""
     client = MagicMock()
-    client.complete = AsyncMock(return_value=FakeLLMResponse(
-        content=json.dumps([
-            {
-                "title": "Docker Compose Network Mode",
-                "content": "Docker Compose supports `network_mode: host`.",
-                "tags": ["docker", "networking"],
-                "citations": [{"session": "abc123", "message_index": 5}],
-            }
-        ])
-    ))
+    client.complete = AsyncMock(
+        return_value=FakeLLMResponse(
+            content=json.dumps(
+                [
+                    {
+                        "title": "Docker Compose Network Mode",
+                        "content": "Docker Compose supports `network_mode: host`.",
+                        "tags": ["docker", "networking"],
+                        "citations": [{"session": "abc123", "message_index": 5}],
+                    }
+                ]
+            )
+        )
+    )
     return client
 
 
@@ -138,9 +142,11 @@ async def test_extract_from_session_malformed_json(fake_llm, fake_wiki):
 
 @pytest.mark.asyncio
 async def test_extract_from_session_markdown_code_fences(fake_llm, fake_wiki):
-    fake_llm.complete = AsyncMock(return_value=FakeLLMResponse(
-        content='```json\n[{"title": "Test", "content": "Content", "tags": ["t"]}]\n```'
-    ))
+    fake_llm.complete = AsyncMock(
+        return_value=FakeLLMResponse(
+            content='```json\n[{"title": "Test", "content": "Content", "tags": ["t"]}]\n```'
+        )
+    )
     extractor = KnowledgeExtractor(llm_client=fake_llm, wiki=fake_wiki)
     messages = [FakeMessage(role="user", content="Hello")]
     items = await extractor.extract_from_session(messages, "sess-005")
@@ -168,9 +174,9 @@ async def test_extract_from_session_llm_raises(fake_llm, fake_wiki):
 
 @pytest.mark.asyncio
 async def test_extract_from_session_not_a_list(fake_llm, fake_wiki):
-    fake_llm.complete = AsyncMock(return_value=FakeLLMResponse(
-        content='{"title": "Not a list", "content": "Oops"}'
-    ))
+    fake_llm.complete = AsyncMock(
+        return_value=FakeLLMResponse(content='{"title": "Not a list", "content": "Oops"}')
+    )
     extractor = KnowledgeExtractor(llm_client=fake_llm, wiki=fake_wiki)
     messages = [FakeMessage(role="user", content="Hello")]
     items = await extractor.extract_from_session(messages, "sess-008")
@@ -179,9 +185,11 @@ async def test_extract_from_session_not_a_list(fake_llm, fake_wiki):
 
 @pytest.mark.asyncio
 async def test_extract_from_session_adds_default_citation(fake_llm, fake_wiki):
-    fake_llm.complete = AsyncMock(return_value=FakeLLMResponse(
-        content=json.dumps([{"title": "No Citation", "content": "Text", "tags": []}])
-    ))
+    fake_llm.complete = AsyncMock(
+        return_value=FakeLLMResponse(
+            content=json.dumps([{"title": "No Citation", "content": "Text", "tags": []}])
+        )
+    )
     extractor = KnowledgeExtractor(llm_client=fake_llm, wiki=fake_wiki)
     messages = [FakeMessage(role="user", content="Hello")]
     items = await extractor.extract_from_session(messages, "sess-009")

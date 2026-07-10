@@ -1,9 +1,5 @@
 """Integration tests for QueryLoopFactory skill wiring."""
 
-import pytest
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
 from vibe.core.query_loop_factory import QueryLoopFactory
 
 
@@ -36,18 +32,18 @@ class TestQueryLoopFactorySkillWiring:
         nested = skills_dir / "exec-skill"
         nested.mkdir()
         (nested / "SKILL.md").write_text(
-            '+++\n'
+            "+++\n"
             'vibe_skill_version = "2.0.0"\n'
             'id = "exec-skill"\n'
             'name = "Exec Skill"\n'
             'description = "A test skill"\n'
-            '\n'
-            '[[steps]]\n'
+            "\n"
+            "[[steps]]\n"
             'id = "s1"\n'
             'description = "Test step"\n'
             'tool = "bash"\n'
             'command = "echo hello"\n'
-            '+++\n'
+            "+++\n"
         )
 
         monkeypatch.setenv("HOME", str(tmp_path))
@@ -68,10 +64,7 @@ class TestQueryLoopFactorySkillWiring:
         skills_dir = tmp_path / ".vibe" / "skills"
         skills_dir.mkdir(parents=True)
         (skills_dir / "prompt.md").write_text(
-            "---\n"
-            "name: creative-ideation\n"
-            "---\n"
-            "# Creative Ideation\n"
+            "---\nname: creative-ideation\n---\n# Creative Ideation\n"
         )
 
         monkeypatch.setenv("HOME", str(tmp_path))

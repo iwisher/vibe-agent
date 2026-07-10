@@ -88,6 +88,7 @@ class DAGPlanResult:
 # DAG builder and validator
 # ---------------------------------------------------------------------------
 
+
 class DAGPlanner:
     """Build and validate task DAGs from planner output."""
 
@@ -176,6 +177,7 @@ class DAGPlanner:
             args = call["function"].get("arguments", "{}")
             if isinstance(args, str):
                 import json
+
                 try:
                     return json.loads(args)
                 except json.JSONDecodeError:
@@ -190,12 +192,13 @@ class DAGPlanner:
         (e.g., 'tool_1' matching inside 'tool_10').
         """
         import re
+
         for node_id, node in nodes.items():
             arg_str = str(node.arguments)
             for other_id, other in nodes.items():
                 if other_id != node_id:
                     # Word-boundary match: other_id must appear as a standalone token
-                    pattern = r'\b' + re.escape(other_id) + r'\b'
+                    pattern = r"\b" + re.escape(other_id) + r"\b"
                     if re.search(pattern, arg_str):
                         if other_id not in node.dependencies:
                             node.dependencies.append(other_id)
@@ -280,6 +283,7 @@ class DAGPlanner:
 # DAG execution engine (for ToolExecutor)
 # ---------------------------------------------------------------------------
 
+
 class DAGExecutor:
     """Execute a DAGPlanResult using level-parallel asyncio.gather.
 
@@ -339,7 +343,9 @@ class DAGExecutor:
         # Check if any dependency failed
         for dep_id in node.dependencies:
             dep = results.get(dep_id)
-            if isinstance(dep, Exception) or (hasattr(dep, "success") and not getattr(dep, "success", True)):
+            if isinstance(dep, Exception) or (
+                hasattr(dep, "success") and not getattr(dep, "success", True)
+            ):
                 node.status = DAGNodeStatus.SKIPPED
                 return {}
 

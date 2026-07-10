@@ -116,7 +116,10 @@ class PermissionAuditor:
         # Expected mode mismatch (not a violation but worth noting)
         elif actual_mode != expected_mode:
             severity = AuditSeverity.WARNING
-            message = f"{description} permissions 0o{actual_mode:o} differ from expected 0o{expected_mode:o}"
+            message = (
+                f"{description} permissions 0o{actual_mode:o} differ from "
+                f"expected 0o{expected_mode:o}"
+            )
 
         result = PermissionCheckResult(
             path=str(path),
@@ -239,7 +242,9 @@ class PermissionAuditor:
                     event_type=AuditEventType.COMMAND_FLAGGED,
                     severity=violation.severity,
                     command=violation.path,
-                    pattern=f"expected 0o{violation.expected_mode:o}, got 0o{violation.actual_mode:o}",
+                    pattern=(
+                        f"expected 0o{violation.expected_mode:o}, got 0o{violation.actual_mode:o}"
+                    ),
                     metadata={"message": violation.message},
                 )
             )

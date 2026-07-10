@@ -1,6 +1,5 @@
 """Tests for secret redaction."""
 
-
 from vibe.tools.security.redaction import (
     REDACTED,
     redact_all,

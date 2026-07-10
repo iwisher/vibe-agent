@@ -1,4 +1,5 @@
 """Test skill manage tool."""
+
 import tempfile
 from pathlib import Path
 
@@ -42,6 +43,8 @@ async def test_create_skill_validates_content():
     with tempfile.TemporaryDirectory() as tmp:
         tool = SkillManageTool(skills_dir=tmp)
         # Missing frontmatter — should fail validation
-        result = await tool.execute(action="create", name="bad", content="# No frontmatter\nJust markdown")
+        result = await tool.execute(
+            action="create", name="bad", content="# No frontmatter\nJust markdown"
+        )
         assert not result.success
         assert "Invalid" in result.error

@@ -46,7 +46,8 @@ class SyncDelegate:
             self.tool_factory = tool_system_factory
         else:
             raise ValueError(
-                "Either provide query_loop_factory or both llm_client_factory and tool_system_factory"
+                "Either provide query_loop_factory or both llm_client_factory and "
+                "tool_system_factory"
             )
         self.max_workers = max_workers
 

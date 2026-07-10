@@ -19,6 +19,7 @@ from vibe.core.context_planner import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def classifier():
     return IntentClassifier()
@@ -59,6 +60,7 @@ def sample_tools():
 # ---------------------------------------------------------------------------
 # IntentClassifier
 # ---------------------------------------------------------------------------
+
 
 class TestIntentClassifier:
     def test_question_intent(self, classifier):
@@ -101,6 +103,7 @@ class TestIntentClassifier:
 # ---------------------------------------------------------------------------
 # ContextPlanner
 # ---------------------------------------------------------------------------
+
 
 class TestContextPlanner:
     def test_plan_basic(self, planner, sample_tools):
@@ -184,6 +187,7 @@ class TestContextPlanner:
         class MockScorer:
             def score(self, messages, tools=None):
                 from unittest.mock import MagicMock
+
                 result = MagicMock()
                 result.overall = 0.85
                 return result
@@ -202,14 +206,22 @@ class TestContextPlanner:
 # ContextPlan
 # ---------------------------------------------------------------------------
 
+
 class TestContextPlan:
     def test_total_context_tokens(self):
         plan = ContextPlan(
             intent=IntentType.QUESTION,
             intent_confidence=0.8,
             context_items=[
-                ContextItem(source="a", content="test", priority=ContextPriority.CRITICAL, estimated_tokens=10),
-                ContextItem(source="b", content="more", priority=ContextPriority.HIGH, estimated_tokens=20),
+                ContextItem(
+                    source="a",
+                    content="test",
+                    priority=ContextPriority.CRITICAL,
+                    estimated_tokens=10,
+                ),
+                ContextItem(
+                    source="b", content="more", priority=ContextPriority.HIGH, estimated_tokens=20
+                ),
             ],
         )
         assert plan.total_context_tokens == 30
@@ -219,9 +231,15 @@ class TestContextPlan:
             intent=IntentType.QUESTION,
             intent_confidence=0.8,
             context_items=[
-                ContextItem(source="a", content="x", priority=ContextPriority.CRITICAL, estimated_tokens=1),
-                ContextItem(source="b", content="y", priority=ContextPriority.HIGH, estimated_tokens=1),
-                ContextItem(source="c", content="z", priority=ContextPriority.CRITICAL, estimated_tokens=1),
+                ContextItem(
+                    source="a", content="x", priority=ContextPriority.CRITICAL, estimated_tokens=1
+                ),
+                ContextItem(
+                    source="b", content="y", priority=ContextPriority.HIGH, estimated_tokens=1
+                ),
+                ContextItem(
+                    source="c", content="z", priority=ContextPriority.CRITICAL, estimated_tokens=1
+                ),
             ],
         )
         critical = plan.get_items_by_priority(ContextPriority.CRITICAL)
@@ -237,8 +255,18 @@ class TestContextPlan:
             intent=IntentType.QUESTION,
             intent_confidence=0.8,
             context_items=[
-                ContextItem(source="wiki", content="Knowledge about X", priority=ContextPriority.HIGH, estimated_tokens=5),
-                ContextItem(source="history", content="Old chat", priority=ContextPriority.MEDIUM, estimated_tokens=3),
+                ContextItem(
+                    source="wiki",
+                    content="Knowledge about X",
+                    priority=ContextPriority.HIGH,
+                    estimated_tokens=5,
+                ),
+                ContextItem(
+                    source="history",
+                    content="Old chat",
+                    priority=ContextPriority.MEDIUM,
+                    estimated_tokens=3,
+                ),
             ],
         )
         prompt = plan.build_system_prompt()

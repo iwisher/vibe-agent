@@ -1,4 +1,5 @@
 """Parse SKILL.md files with TOML frontmatter."""
+
 import re
 import tomllib
 from pathlib import Path

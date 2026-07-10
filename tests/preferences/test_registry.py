@@ -1,8 +1,6 @@
 import tempfile
 from pathlib import Path
 
-import pytest
-
 from vibe.preferences.models import PreferencePolicy, PreferenceRule
 from vibe.preferences.registry import PreferenceRegistry
 
@@ -51,7 +49,9 @@ class TestPreferenceRegistry:
             reg = PreferenceRegistry(str(db))
 
             policy = PreferencePolicy(domain="tools")
-            rule = PreferenceRule(pattern="git", action="merge_args", action_args={"args": {"flag": "-v"}})
+            rule = PreferenceRule(
+                pattern="git", action="merge_args", action_args={"args": {"flag": "-v"}}
+            )
             policy.add_rule(rule)
             reg.save_policy(policy)
 
@@ -134,7 +134,8 @@ class TestPreferenceRegistry:
 
             with sqlite3.connect(str(db)) as conn:
                 conn.execute(
-                    "INSERT INTO preference_policies (domain, policy_json, enabled) VALUES (?, ?, 1)",
+                    "INSERT INTO preference_policies (domain, policy_json, enabled) "
+                    "VALUES (?, ?, 1)",
                     ("test", json.dumps(policy_data)),
                 )
 

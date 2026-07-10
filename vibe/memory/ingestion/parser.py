@@ -3,11 +3,13 @@ from pathlib import Path
 
 try:
     from docling.document_converter import DocumentConverter
+
     DOCLING_AVAILABLE = True
 except ImportError:
     DOCLING_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
+
 
 class DocumentParser:
     """Parses various document formats into markdown using IBM Docling."""

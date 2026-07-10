@@ -38,6 +38,7 @@ def tool_system_with_dummy():
 
 # ─── edge_001: Empty tool list ───
 
+
 @pytest.mark.asyncio
 async def test_edge_001_empty_tool_list_does_not_crash(mock_llm, empty_tool_system):
     """edge_001: QueryLoop with no tools registered should not crash."""
@@ -60,6 +61,7 @@ async def test_edge_001_empty_tool_list_does_not_crash(mock_llm, empty_tool_syst
 
 
 # ─── edge_002: Malformed tool arguments ───
+
 
 @pytest.mark.asyncio
 async def test_edge_002_malformed_tool_args_graceful_error(mock_llm, tool_system_with_dummy):
@@ -97,15 +99,21 @@ async def test_edge_002_malformed_tool_args_graceful_error(mock_llm, tool_system
     assert result_with_tools is not None
     # Malformed args cause error result, not tool_results
     if len(result_with_tools.tool_results) == 0 and result_with_tools.error:
-        assert "json" in str(result_with_tools.error).lower() or "expecting" in str(result_with_tools.error).lower()
+        assert (
+            "json" in str(result_with_tools.error).lower()
+            or "expecting" in str(result_with_tools.error).lower()
+        )
     else:
         tool_results = result_with_tools.tool_results
         assert len(tool_results) == 1
         assert tool_results[0].success is False
-        assert "json" in tool_results[0].error.lower() or "expecting" in tool_results[0].error.lower()
+        assert (
+            "json" in tool_results[0].error.lower() or "expecting" in tool_results[0].error.lower()
+        )
 
 
 # ─── edge_003: Max iteration exhaustion ───
+
 
 @pytest.mark.asyncio
 async def test_edge_003_max_iteration_exhaustion_returns_partial(mock_llm, tool_system_with_dummy):

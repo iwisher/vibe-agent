@@ -56,7 +56,8 @@ class TelemetryCollector:
 
             # Session stats
             cursor = self._db.conn.execute(
-                "SELECT COUNT(*), AVG(duration_seconds) FROM _telemetry WHERE type = 'session' AND timestamp > ?",
+                "SELECT COUNT(*), AVG(duration_seconds) FROM _telemetry "
+                "WHERE type = 'session' AND timestamp > ?",
                 (cutoff,),
             )
             row = cursor.fetchone()
@@ -111,7 +112,8 @@ class TelemetryCollector:
             import time
 
             self._db.conn.execute(
-                "INSERT INTO _telemetry (type, timestamp, session_id, duration_seconds, metadata) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO _telemetry (type, timestamp, session_id, duration_seconds, "
+                "metadata) VALUES (?, ?, ?, ?, ?)",
                 (
                     "session",
                     time.time(),

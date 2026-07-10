@@ -37,17 +37,14 @@ async def _run_case_with_messages(query_loop, case: EvalCase) -> EvalResult:
 
 # ─── tool_sequence assertions ───
 
+
 @pytest.mark.asyncio
 async def test_assert_tool_sequence_pass(mock_llm, empty_tool_system):
     """tool_sequence matches exact order → pass."""
     loop = QueryLoop(llm_client=mock_llm, tool_system=empty_tool_system)
     loop.messages = [
-        Message(role="assistant", content="", tool_calls=[
-            {"function": {"name": "read_file"}}
-        ]),
-        Message(role="assistant", content="", tool_calls=[
-            {"function": {"name": "bash_tool"}}
-        ]),
+        Message(role="assistant", content="", tool_calls=[{"function": {"name": "read_file"}}]),
+        Message(role="assistant", content="", tool_calls=[{"function": {"name": "bash_tool"}}]),
     ]
 
     case = EvalCase(
@@ -66,12 +63,8 @@ async def test_assert_tool_sequence_fail(mock_llm, empty_tool_system):
     """tool_sequence out of order → fail."""
     loop = QueryLoop(llm_client=mock_llm, tool_system=empty_tool_system)
     loop.messages = [
-        Message(role="assistant", content="", tool_calls=[
-            {"function": {"name": "bash_tool"}}
-        ]),
-        Message(role="assistant", content="", tool_calls=[
-            {"function": {"name": "read_file"}}
-        ]),
+        Message(role="assistant", content="", tool_calls=[{"function": {"name": "bash_tool"}}]),
+        Message(role="assistant", content="", tool_calls=[{"function": {"name": "read_file"}}]),
     ]
 
     case = EvalCase(
@@ -87,6 +80,7 @@ async def test_assert_tool_sequence_fail(mock_llm, empty_tool_system):
 
 
 # ─── no_tool_called assertions ───
+
 
 @pytest.mark.asyncio
 async def test_assert_no_tool_called_pass(mock_llm, empty_tool_system):
@@ -121,6 +115,7 @@ async def test_assert_no_tool_called_fail(mock_llm, empty_tool_system):
     # Seed results with tool_results by using a real-ish run that yields tool results
     async def fake_run_with_tool_results(initial_query):
         from vibe.tools.tool_system import ToolResult
+
         yield QueryResult(
             response="",
             tool_results=[ToolResult(success=True, content="ok")],
@@ -140,6 +135,7 @@ async def test_assert_no_tool_called_fail(mock_llm, empty_tool_system):
 
 
 # ─── metrics_threshold assertions ───
+
 
 @pytest.mark.asyncio
 async def test_assert_metrics_threshold_pass(mock_llm, empty_tool_system):
@@ -181,11 +177,15 @@ async def test_assert_metrics_threshold_fail_tokens(mock_llm, empty_tool_system)
     async def fake_run_with_tokens(initial_query):
         yield QueryResult(
             response="ok",
-            metrics=type("M", (), {
-                "total_tokens": 800,
-                "prompt_tokens": 500,
-                "completion_tokens": 300,
-            })(),
+            metrics=type(
+                "M",
+                (),
+                {
+                    "total_tokens": 800,
+                    "prompt_tokens": 500,
+                    "completion_tokens": 300,
+                },
+            )(),
             state=QueryState.COMPLETED,
         )
 

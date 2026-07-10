@@ -1,12 +1,12 @@
 """Tests for TraceStore."""
 
-
 import pytest
 
 from vibe.harness.memory.trace_store import TraceStore
 
 try:
     import sentence_transformers  # noqa: F401
+
     HAS_SENTENCE_TRANSFORMERS = True
 except ImportError:
     HAS_SENTENCE_TRANSFORMERS = False

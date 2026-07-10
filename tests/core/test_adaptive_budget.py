@@ -1,7 +1,5 @@
 """Tests for adaptive iteration budgets."""
 
-import pytest
-
 from vibe.core.adaptive_budget import (
     AdaptiveBudgetAllocator,
     BudgetConfig,
@@ -150,17 +148,13 @@ class TestAdaptiveBudgetAllocator:
         assert budget.allocated == 20  # clamped to max
 
     def test_safety_floor(self):
-        allocator = AdaptiveBudgetAllocator(
-            BudgetConfig(min_iterations=5, default_budget=3)
-        )
+        allocator = AdaptiveBudgetAllocator(BudgetConfig(min_iterations=5, default_budget=3))
         budget = allocator.allocate("Hi")
         assert budget.allocated == 5  # clamped to min
 
     def test_complexity_combination(self):
         """Multi-step + reasoning should multiply but stay within bounds."""
         allocator = AdaptiveBudgetAllocator()
-        budget = allocator.allocate(
-            "Step by step, explain the architecture and design a system"
-        )
+        budget = allocator.allocate("Step by step, explain the architecture and design a system")
         # Both multi_step and reasoning apply: 15 * 2.0 * 1.8 = 54, clamped to 50
         assert budget.allocated == 50

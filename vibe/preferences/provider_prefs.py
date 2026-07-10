@@ -71,10 +71,7 @@ class ProviderPreferenceMatrix:
             self._policy.rules = [
                 r
                 for r in self._policy.rules
-                if not (
-                    r.pattern == task_pattern
-                    and r.action_args.get("provider") == provider
-                )
+                if not (r.pattern == task_pattern and r.action_args.get("provider") == provider)
             ]
             self._policy.add_rule(rule)
             self._save()

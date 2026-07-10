@@ -16,6 +16,7 @@ class MockToolExecutor:
         for call in tool_calls:
             self.call_log.append(call)
             tool_name = call["function"]["name"]
+
             # Return a mock result
             class MockResult:
                 def __init__(self, name):
@@ -44,7 +45,12 @@ class TestDAGPlanner:
         planner = DAGPlanner()
         tool_calls = [
             {"function": {"name": "read_file", "arguments": '{"path": "/tmp/a"}'}},
-            {"function": {"name": "write_file", "arguments": '{"path": "/tmp/b", "content": "tool_0"}'}},
+            {
+                "function": {
+                    "name": "write_file",
+                    "arguments": '{"path": "/tmp/b", "content": "tool_0"}',
+                }
+            },
         ]
         dag = planner.build_from_tool_calls(tool_calls)
         assert dag.is_valid is True
@@ -69,7 +75,12 @@ class TestDAGPlanner:
         planner = DAGPlanner()
         tool_calls = [
             {"function": {"name": "read_file", "arguments": '{"path": "/tmp/a"}'}},
-            {"function": {"name": "write_file", "arguments": '{"path": "/tmp/b", "content": "tool_0"}'}},
+            {
+                "function": {
+                    "name": "write_file",
+                    "arguments": '{"path": "/tmp/b", "content": "tool_0"}',
+                }
+            },
             {"function": {"name": "bash", "arguments": '{"command": "cat tool_1"}'}},
         ]
         dag = planner.build_from_tool_calls(tool_calls)

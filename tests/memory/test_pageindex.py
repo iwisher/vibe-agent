@@ -22,7 +22,9 @@ def tmp_index(tmp_path):
     )
 
 
-def make_page_node(node_id: str, title: str, tags: list[str], file_path: str = "/wiki/p.md") -> dict:
+def make_page_node(
+    node_id: str, title: str, tags: list[str], file_path: str = "/wiki/p.md"
+) -> dict:
     return {
         "node_id": node_id,
         "title": title,
@@ -130,8 +132,16 @@ async def test_route_returns_empty_when_no_nodes(tmp_index):
 async def test_route_keyword_match(tmp_path):
     idx = PageIndex(index_path=tmp_path / "idx.json", llm_client=None)
     idx.load()
-    idx.add_node("root_01", "Database Scaling", "DB performance info", tags=["database"], file_path="/wiki/db.md")
-    idx.add_node("root_01", "UI Design", "User interface patterns", tags=["ui"], file_path="/wiki/ui.md")
+    idx.add_node(
+        "root_01",
+        "Database Scaling",
+        "DB performance info",
+        tags=["database"],
+        file_path="/wiki/db.md",
+    )
+    idx.add_node(
+        "root_01", "UI Design", "User interface patterns", tags=["ui"], file_path="/wiki/ui.md"
+    )
 
     results = await idx.route("database performance")
     titles = [n.title for n in results]
@@ -143,7 +153,13 @@ async def test_route_keyword_match(tmp_path):
 async def test_route_returns_confidence_scores(tmp_path):
     idx = PageIndex(index_path=tmp_path / "idx.json", llm_client=None)
     idx.load()
-    idx.add_node("root_01", "Scaling Docs", "Database scaling documentation", tags=["database", "scaling"], file_path="/wiki/s.md")
+    idx.add_node(
+        "root_01",
+        "Scaling Docs",
+        "Database scaling documentation",
+        tags=["database", "scaling"],
+        file_path="/wiki/s.md",
+    )
 
     results = await idx.route("database scaling issues")
     assert len(results) > 0
@@ -177,7 +193,9 @@ def test_partition_triggers_at_node_threshold(tmp_path):
 
     # Add 6 leaf nodes (above threshold of 5)
     for i in range(6):
-        idx.add_node("root_01", f"Node {i}", f"Page {i}", tags=[f"tag{i % 3}"], file_path=f"/wiki/p{i}.md")
+        idx.add_node(
+            "root_01", f"Node {i}", f"Page {i}", tags=[f"tag{i % 3}"], file_path=f"/wiki/p{i}.md"
+        )
 
     # Should have triggered partitioning — root sub_nodes should now contain categories
     root = idx._root
@@ -188,6 +206,7 @@ def test_partition_triggers_at_node_threshold(tmp_path):
 
 def test_partition_tag_bucketing_deterministic(tmp_path):
     """Same input should always produce same partition result."""
+
     def build_idx(path):
         idx = PageIndex(
             index_path=path / "idx.json",
@@ -218,11 +237,10 @@ def test_partition_tag_bucketing_deterministic(tmp_path):
     assert titles1 == titles2, "Partitioning category titles must be deterministic"
 
 
-
-
 # ---------------------------------------------------------------------------
 # Paraphrase routing (vector index)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_route_paraphrase_query(tmp_path):

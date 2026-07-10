@@ -19,7 +19,7 @@ def _redirect_path(path: str) -> str:
     if not work_dir:
         return path
     if path.startswith("/tmp/"):
-        rel = path[len("/tmp/"):]  # e.g., vibe_work/data/file.txt
+        rel = path[len("/tmp/") :]  # e.g., vibe_work/data/file.txt
         redirected = os.path.join(work_dir, rel)
         resolved = os.path.realpath(redirected)
         resolved_work = os.path.realpath(work_dir)
@@ -47,9 +47,7 @@ def _resolve_and_jail(path: str, root_dir: str | None) -> Path:
         try:
             real_path.relative_to(resolved_root)
         except ValueError:
-            raise PermissionError(
-                f"Path {path} escapes root directory {resolved_root}"
-            )
+            raise PermissionError(f"Path {path} escapes root directory {resolved_root}")
         return real_path
 
     return file_path.resolve()
@@ -86,7 +84,10 @@ class ReadFileTool(Tool):
                 return ToolResult(
                     success=False,
                     content=None,
-                    error=f"File {path} is {file_size} bytes, exceeds max read size of {_MAX_READ_SIZE} bytes.",
+                    error=(
+                        f"File {path} is {file_size} bytes, exceeds max read size of "
+                        f"{_MAX_READ_SIZE} bytes."
+                    ),
                 )
             with open(file_path, "r", encoding="utf-8") as f:
                 lines = f.readlines()
@@ -96,7 +97,7 @@ class ReadFileTool(Tool):
             content = "".join(selected)
             total = len(lines)
             if total > limit:
-                content += f"\n\n[File has {total} lines; showing {start+1}-{min(end, total)}]"
+                content += f"\n\n[File has {total} lines; showing {start + 1}-{min(end, total)}]"
             return ToolResult(success=True, content=content)
         except PermissionError as e:
             return ToolResult(success=False, content=None, error=str(e))
@@ -131,7 +132,10 @@ class WriteFileTool(Tool):
                 return ToolResult(
                     success=False,
                     content=None,
-                    error=f"Content is {len(content_bytes)} bytes, exceeds max write size of {_MAX_WRITE_SIZE} bytes.",
+                    error=(
+                        f"Content is {len(content_bytes)} bytes, exceeds max write size of "
+                        f"{_MAX_WRITE_SIZE} bytes."
+                    ),
                 )
             file_path = _resolve_and_jail(path, self.root_dir)
             file_path.parent.mkdir(parents=True, exist_ok=True)

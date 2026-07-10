@@ -50,9 +50,7 @@ class UpgradedVectorIndex:
             self._backend_name = "sentence_transformers"
             logger.info(f"Upgraded to SentenceTransformerIndex ({self.model_name})")
         except ImportError:
-            logger.warning(
-                "sentence-transformers not available; using KeywordIndex fallback"
-            )
+            logger.warning("sentence-transformers not available; using KeywordIndex fallback")
             self._index = KeywordIndex()
             self._backend_name = "keyword"
 
@@ -67,9 +65,7 @@ class UpgradedVectorIndex:
     def encode(self, texts: list[str]) -> np.ndarray:
         return self._get_index().encode(texts)
 
-    def search(
-        self, query: str, nodes: list[IndexNode], top_k: int = 5
-    ) -> list[IndexNode]:
+    def search(self, query: str, nodes: list[IndexNode], top_k: int = 5) -> list[IndexNode]:
         return self._get_index().search(query, nodes, top_k)
 
     def save_cache(self) -> None:

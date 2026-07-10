@@ -46,11 +46,15 @@ def fake_telemetry(fake_telemetry_db):
 
 def _make_session_row(session_id: str, total_chars: int, duration: float) -> tuple:
     """Helper to build a session telemetry row."""
-    return (json.dumps({
-        "session_id": session_id,
-        "total_chars": total_chars,
-        "duration_seconds": duration,
-    }),)
+    return (
+        json.dumps(
+            {
+                "session_id": session_id,
+                "total_chars": total_chars,
+                "duration_seconds": duration,
+            }
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -59,13 +63,12 @@ def _make_session_row(session_id: str, total_chars: int, duration: float) -> tup
 
 
 @pytest.mark.asyncio
-async def test_trigger_when_compaction_pct_exceeds_threshold(fake_telemetry, fake_config, fake_telemetry_db):
+async def test_trigger_when_compaction_pct_exceeds_threshold(
+    fake_telemetry, fake_config, fake_telemetry_db
+):
     """RLM should trigger when compaction % >= threshold."""
     # 20 sessions, 8 with compaction → 40% compaction rate
-    session_rows = [
-        _make_session_row(f"sess-{i:03d}", 50_000, 10.0)
-        for i in range(20)
-    ]
+    session_rows = [_make_session_row(f"sess-{i:03d}", 50_000, 10.0) for i in range(20)]
 
     def mock_execute(query, params=None):
         cursor = MagicMock()
@@ -88,13 +91,12 @@ async def test_trigger_when_compaction_pct_exceeds_threshold(fake_telemetry, fak
 
 
 @pytest.mark.asyncio
-async def test_no_trigger_when_insufficient_sessions(fake_telemetry, fake_config, fake_telemetry_db):
+async def test_no_trigger_when_insufficient_sessions(
+    fake_telemetry, fake_config, fake_telemetry_db
+):
     """RLM should NOT trigger when total sessions < min_sessions_before_trigger."""
     # Only 5 sessions (< 10 min)
-    session_rows = [
-        _make_session_row(f"sess-{i:03d}", 200_000, 10.0)
-        for i in range(5)
-    ]
+    session_rows = [_make_session_row(f"sess-{i:03d}", 200_000, 10.0) for i in range(5)]
 
     def mock_execute(query, params=None):
         cursor = MagicMock()
@@ -113,13 +115,12 @@ async def test_no_trigger_when_insufficient_sessions(fake_telemetry, fake_config
 
 
 @pytest.mark.asyncio
-async def test_no_trigger_when_metrics_below_threshold(fake_telemetry, fake_config, fake_telemetry_db):
+async def test_no_trigger_when_metrics_below_threshold(
+    fake_telemetry, fake_config, fake_telemetry_db
+):
     """RLM should NOT trigger when all metrics are within thresholds."""
     # 15 sessions, all below char threshold, 0% compaction
-    session_rows = [
-        _make_session_row(f"sess-{i:03d}", 10_000, 5.0)
-        for i in range(15)
-    ]
+    session_rows = [_make_session_row(f"sess-{i:03d}", 10_000, 5.0) for i in range(15)]
 
     def mock_execute(query, params=None):
         cursor = MagicMock()
@@ -144,8 +145,7 @@ async def test_trigger_when_chars_exceed_threshold(fake_telemetry, fake_config, 
     """RLM should trigger when sessions exceed char threshold."""
     # 15 sessions, 3 exceed 100K chars
     session_rows = [
-        _make_session_row(f"sess-{i:03d}", 150_000 if i < 3 else 50_000, 5.0)
-        for i in range(15)
+        _make_session_row(f"sess-{i:03d}", 150_000 if i < 3 else 50_000, 5.0) for i in range(15)
     ]
 
     def mock_execute(query, params=None):
@@ -196,6 +196,7 @@ async def test_no_trigger_when_telemetry_is_none(fake_config):
 async def test_analyzer_never_raises(fake_telemetry, fake_config, fake_telemetry_db):
     """Analyzer should never raise — returns safe defaults on error."""
     from unittest.mock import AsyncMock
+
     analyzer = RLMThresholdAnalyzer(fake_telemetry, fake_config)
     analyzer._query_session_stats = AsyncMock(side_effect=RuntimeError("Test crash"))
     # Should NOT raise
@@ -207,10 +208,7 @@ async def test_analyzer_never_raises(fake_telemetry, fake_config, fake_telemetry
 @pytest.mark.asyncio
 async def test_metrics_populated_correctly(fake_telemetry, fake_config, fake_telemetry_db):
     """Decision metrics should reflect actual query results."""
-    session_rows = [
-        _make_session_row(f"sess-{i:03d}", 50_000, 10.0)
-        for i in range(20)
-    ]
+    session_rows = [_make_session_row(f"sess-{i:03d}", 50_000, 10.0) for i in range(20)]
 
     def mock_execute(query, params=None):
         cursor = MagicMock()

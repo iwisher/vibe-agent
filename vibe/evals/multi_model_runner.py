@@ -238,8 +238,10 @@ class MultiModelRunner:
         for tag, model_scores in by_tag.items():
             best_model = max(
                 model_scores.keys(),
-                key=lambda m: model_scores[m]["passed"]
-                / (model_scores[m]["passed"] + model_scores[m]["failed"]),
+                key=lambda m: (
+                    model_scores[m]["passed"]
+                    / (model_scores[m]["passed"] + model_scores[m]["failed"])
+                ),
             )
             best_by_tag[tag] = best_model
 
@@ -358,7 +360,9 @@ class MultiModelRunner:
                 for model, scores in models.items():
                     total = scores["passed"] + scores["failed"]
                     pct = scores["passed"] / total if total else 0
-                    lines.append(f"| {model} | {scores['passed']} | {scores['failed']} | {pct:.1%} |")
+                    lines.append(
+                        f"| {model} | {scores['passed']} | {scores['failed']} | {pct:.1%} |"
+                    )
                 lines.append("")
 
         return "\n".join(lines)

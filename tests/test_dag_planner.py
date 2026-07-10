@@ -16,6 +16,7 @@ from vibe.harness.dag_planner import (
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture
 def planner():
     return DAGPlanner()
@@ -28,10 +29,8 @@ def mock_tool_executor():
 
     async def echo_execute(calls):
         from vibe.tools.tool_system import ToolResult
-        return [
-            ToolResult(success=True, content=f"result:{c['function']['name']}")
-            for c in calls
-        ]
+
+        return [ToolResult(success=True, content=f"result:{c['function']['name']}") for c in calls]
 
     executor.execute = echo_execute
     return executor
@@ -40,6 +39,7 @@ def mock_tool_executor():
 # ---------------------------------------------------------------------------
 # DAGNode
 # ---------------------------------------------------------------------------
+
 
 class TestDAGNode:
     def test_node_defaults(self):
@@ -66,11 +66,12 @@ class TestDAGNode:
 # DAGPlanner — build and validation
 # ---------------------------------------------------------------------------
 
+
 class TestDAGPlannerBuild:
     def test_build_from_tool_calls_independent(self, planner):
         calls = [
-            {"function": {"name": "bash", "arguments": "{\"cmd\": \"ls\"}"}},
-            {"function": {"name": "read_file", "arguments": "{\"path\": \"/tmp\"}"}},
+            {"function": {"name": "bash", "arguments": '{"cmd": "ls"}'}},
+            {"function": {"name": "read_file", "arguments": '{"path": "/tmp"}'}},
         ]
         dag = planner.build_from_tool_calls(calls)
         assert dag.is_valid is True
@@ -80,8 +81,13 @@ class TestDAGPlannerBuild:
 
     def test_build_from_tool_calls_with_deps(self, planner):
         calls = [
-            {"function": {"name": "read_file", "arguments": "{\"path\": \"/tmp\"}"}},
-            {"function": {"name": "write_file", "arguments": "{\"path\": \"/tmp/out\", \"content\": \"tool_0\"}"}},
+            {"function": {"name": "read_file", "arguments": '{"path": "/tmp"}'}},
+            {
+                "function": {
+                    "name": "write_file",
+                    "arguments": '{"path": "/tmp/out", "content": "tool_0"}',
+                }
+            },
         ]
         dag = planner.build_from_tool_calls(calls)
         assert dag.is_valid is True
@@ -160,6 +166,7 @@ class TestDAGPlannerBuild:
 # DAGExecutor
 # ---------------------------------------------------------------------------
 
+
 class TestDAGExecutor:
     @pytest.mark.asyncio
     async def test_execute_linear_dag(self, planner, mock_tool_executor):
@@ -210,6 +217,7 @@ class TestDAGExecutor:
     async def test_execute_with_tool_failure(self, planner, mock_tool_executor):
         async def fail_on_bash(calls):
             from vibe.tools.tool_system import ToolResult
+
             return [
                 ToolResult(
                     success=(c["function"]["name"] != "bash"),

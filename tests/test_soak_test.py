@@ -160,11 +160,20 @@ class TestSoakReport:
             unique_errors={},
             degradation_detected=False,
         )
-        report1.snapshots.append(SoakSnapshot(
-            timestamp="t", loop_iteration=1, case_id="c", passed=True,
-            latency_seconds=1.0, prompt_tokens=1, completion_tokens=1,
-            total_tokens=2, tool_call_count=0, turn_count=1,
-        ))
+        report1.snapshots.append(
+            SoakSnapshot(
+                timestamp="t",
+                loop_iteration=1,
+                case_id="c",
+                passed=True,
+                latency_seconds=1.0,
+                prompt_tokens=1,
+                completion_tokens=1,
+                total_tokens=2,
+                tool_call_count=0,
+                turn_count=1,
+            )
+        )
         assert len(report1.snapshots) == 1
         assert len(report2.snapshots) == 0
 
@@ -333,18 +342,20 @@ class TestSaveCheckpoint:
 
     def test_multiple_calls_append_correctly(self, runner, tmp_path):
         for i in range(3):
-            runner._snapshots.append(SoakSnapshot(
-                timestamp=f"2024-01-01T00:00:0{i}",
-                loop_iteration=i + 1,
-                case_id=f"case_{i}",
-                passed=True,
-                latency_seconds=float(i),
-                prompt_tokens=i,
-                completion_tokens=i,
-                total_tokens=i * 2,
-                tool_call_count=0,
-                turn_count=1,
-            ))
+            runner._snapshots.append(
+                SoakSnapshot(
+                    timestamp=f"2024-01-01T00:00:0{i}",
+                    loop_iteration=i + 1,
+                    case_id=f"case_{i}",
+                    passed=True,
+                    latency_seconds=float(i),
+                    prompt_tokens=i,
+                    completion_tokens=i,
+                    total_tokens=i * 2,
+                    tool_call_count=0,
+                    turn_count=1,
+                )
+            )
             runner._save_checkpoint()
 
         checkpoint_path = tmp_path / "soak_checkpoint_test_model.jsonl"
@@ -462,18 +473,20 @@ class TestGenerateReport:
             # First 4 iterations: low latency (first 20%)
             # Last 4 iterations: high latency (last 20%)
             latency = 1.0 if i < 4 else (10.0 if i >= 16 else 2.0)
-            runner._snapshots.append(SoakSnapshot(
-                timestamp=f"2024-01-01T00:00:{i:02d}",
-                loop_iteration=i + 1,
-                case_id=f"case_{i}",
-                passed=True,
-                latency_seconds=latency,
-                prompt_tokens=10,
-                completion_tokens=10,
-                total_tokens=20,
-                tool_call_count=0,
-                turn_count=1,
-            ))
+            runner._snapshots.append(
+                SoakSnapshot(
+                    timestamp=f"2024-01-01T00:00:{i:02d}",
+                    loop_iteration=i + 1,
+                    case_id=f"case_{i}",
+                    passed=True,
+                    latency_seconds=latency,
+                    prompt_tokens=10,
+                    completion_tokens=10,
+                    total_tokens=20,
+                    tool_call_count=0,
+                    turn_count=1,
+                )
+            )
 
         with patch("time.time", return_value=1100.0):
             report = runner._generate_report(start_time=1000.0, total_iterations=20)
@@ -482,18 +495,20 @@ class TestGenerateReport:
 
     def test_no_degradation_when_latency_stable(self, runner):
         for i in range(20):
-            runner._snapshots.append(SoakSnapshot(
-                timestamp=f"2024-01-01T00:00:{i:02d}",
-                loop_iteration=i + 1,
-                case_id=f"case_{i}",
-                passed=True,
-                latency_seconds=2.0,
-                prompt_tokens=10,
-                completion_tokens=10,
-                total_tokens=20,
-                tool_call_count=0,
-                turn_count=1,
-            ))
+            runner._snapshots.append(
+                SoakSnapshot(
+                    timestamp=f"2024-01-01T00:00:{i:02d}",
+                    loop_iteration=i + 1,
+                    case_id=f"case_{i}",
+                    passed=True,
+                    latency_seconds=2.0,
+                    prompt_tokens=10,
+                    completion_tokens=10,
+                    total_tokens=20,
+                    tool_call_count=0,
+                    turn_count=1,
+                )
+            )
 
         with patch("time.time", return_value=1100.0):
             report = runner._generate_report(start_time=1000.0, total_iterations=20)
@@ -501,18 +516,20 @@ class TestGenerateReport:
         assert report.degradation_detected is False
 
     def test_report_saves_to_disk(self, runner, tmp_path):
-        runner._snapshots.append(SoakSnapshot(
-            timestamp="2024-01-01T00:00:00",
-            loop_iteration=1,
-            case_id="case_1",
-            passed=True,
-            latency_seconds=1.0,
-            prompt_tokens=10,
-            completion_tokens=10,
-            total_tokens=20,
-            tool_call_count=0,
-            turn_count=1,
-        ))
+        runner._snapshots.append(
+            SoakSnapshot(
+                timestamp="2024-01-01T00:00:00",
+                loop_iteration=1,
+                case_id="case_1",
+                passed=True,
+                latency_seconds=1.0,
+                prompt_tokens=10,
+                completion_tokens=10,
+                total_tokens=20,
+                tool_call_count=0,
+                turn_count=1,
+            )
+        )
 
         with patch("time.time", return_value=1100.0):
             with patch("vibe.evals.soak_test.datetime") as mock_dt:

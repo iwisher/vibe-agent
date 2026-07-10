@@ -1,4 +1,5 @@
 """Install skills from git repos, tarballs, or local paths."""
+
 import asyncio
 import json
 import shutil
@@ -35,15 +36,19 @@ class SkillInstaller:
         self.validator = SkillValidator()
         self.approval_gate = approval_gate or AutoRejectGate()
 
-    async def install_from_git(
-        self, url: str, skill_id: str | None = None
-    ) -> InstallResult:
+    async def install_from_git(self, url: str, skill_id: str | None = None) -> InstallResult:
         """Install from a git repository."""
         with tempfile.TemporaryDirectory() as tmp:
             clone_dir = Path(tmp) / "skill"
             try:
                 proc = await asyncio.create_subprocess_exec(
-                    "git", "clone", "--depth", "1", "--", url, str(clone_dir),
+                    "git",
+                    "clone",
+                    "--depth",
+                    "1",
+                    "--",
+                    url,
+                    str(clone_dir),
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
@@ -70,6 +75,7 @@ class SkillInstaller:
             if url_or_path.startswith("http"):
                 # Download via async thread pool to avoid blocking
                 import urllib.request
+
                 try:
                     await asyncio.wait_for(
                         asyncio.to_thread(urllib.request.urlretrieve, url_or_path, tar_path),
@@ -115,9 +121,7 @@ class SkillInstaller:
 
             return await self._install_from_directory(skill_dir, skill_id)
 
-    async def install_from_path(
-        self, source: Path, skill_id: str | None = None
-    ) -> InstallResult:
+    async def install_from_path(self, source: Path, skill_id: str | None = None) -> InstallResult:
         """Install from a local directory."""
         return await self._install_from_directory(source, skill_id)
 

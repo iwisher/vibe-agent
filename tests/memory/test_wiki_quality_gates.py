@@ -47,14 +47,10 @@ async def test_update_page_with_contradiction_drops_to_draft(tmp_wiki):
         title="Page A", content="Original fact: X is true.", tags=["test"]
     )
     # Create page B that links to page A
-    await tmp_wiki.create_page(
-        title="Page B", content="See [[page-a]] for details.", tags=["test"]
-    )
+    await tmp_wiki.create_page(title="Page B", content="See [[page-a]] for details.", tags=["test"])
 
     # Update page A with contradictory content
-    updated = await tmp_wiki.update_page(
-        page_a.id, content="Contradiction: X is now false."
-    )
+    updated = await tmp_wiki.update_page(page_a.id, content="Contradiction: X is now false.")
     assert updated.status == "draft"
     # Should have contradiction flag in citations
     flag_citations = [c for c in updated.citations if c.get("type") == "contradiction_flag"]
@@ -72,7 +68,7 @@ async def test_update_page_without_contradiction_promotes_to_verified(tmp_wiki):
         title="Consistent Page",
         content="Fact: Y is true.",
         tags=["test"],
-        citations=[{"session": "sess-001", "message_index": 0}]
+        citations=[{"session": "sess-001", "message_index": 0}],
     )
     # Add a second citation from a different session to meet verified criteria
     updated = await tmp_wiki.update_page(
@@ -90,9 +86,7 @@ async def test_update_page_with_flash_unavailable(tmp_wiki):
     page = await tmp_wiki.create_page(
         title="No Flash Page", content="Fact: Z is true.", tags=["test"]
     )
-    updated = await tmp_wiki.update_page(
-        page.id, content="Updated fact: Z is still true."
-    )
+    updated = await tmp_wiki.update_page(page.id, content="Updated fact: Z is still true.")
     # Status stays draft because only 1 session citation
     assert updated.status == "draft"
     assert updated.content == "Updated fact: Z is still true."
@@ -108,9 +102,7 @@ async def test_update_page_flash_client_exception(tmp_wiki):
     page = await tmp_wiki.create_page(
         title="Flash Error Page", content="Fact: W is true.", tags=["test"]
     )
-    updated = await tmp_wiki.update_page(
-        page.id, content="Updated fact: W is still true."
-    )
+    updated = await tmp_wiki.update_page(page.id, content="Updated fact: W is still true.")
     # Should not crash; status stays draft (only 1 citation)
     assert updated.status == "draft"
     assert updated.content == "Updated fact: W is still true."
@@ -126,9 +118,7 @@ async def test_update_page_no_backlinks_skips_contradiction_check(tmp_wiki):
     page = await tmp_wiki.create_page(
         title="Orphan Page", content="Standalone fact.", tags=["test"]
     )
-    updated = await tmp_wiki.update_page(
-        page.id, content="Updated standalone fact."
-    )
+    updated = await tmp_wiki.update_page(page.id, content="Updated standalone fact.")
     # detect_contradiction should NOT be called because no backlinks
     flash.detect_contradiction.assert_not_called()
     assert updated.status == "draft"

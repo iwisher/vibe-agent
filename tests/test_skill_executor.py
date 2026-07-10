@@ -1,4 +1,5 @@
 """Test skill executor."""
+
 import pytest
 
 from vibe.harness.instructions import Skill
@@ -45,13 +46,17 @@ def test_executor_shlex_quote_prevents_injection():
 
 # ─── Jinja2 template tests ───
 
+
 def test_executor_template_with_loops():
     """Test Jinja2 template rendering with for loops."""
     executor = SkillExecutor()
     skill = Skill(
         name="Loop Test",
         description="Test loops",
-        content="Items: {% for item in items %}{{ item }}{% if not loop.last %}, {% endif %}{% endfor %}",
+        content=(
+            "Items: {% for item in items %}{{ item }}{% if not loop.last %}, "
+            "{% endif %}{% endfor %}"
+        ),
     )
 
     result = executor.execute(skill, context={"items": ["a", "b", "c"]})
@@ -117,9 +122,9 @@ def test_executor_template_nested_variables():
         content="{{ config.database.host }}:{{ config.database.port }}",
     )
 
-    result = executor.execute(skill, context={
-        "config": {"database": {"host": "localhost", "port": 5432}}
-    })
+    result = executor.execute(
+        skill, context={"config": {"database": {"host": "localhost", "port": 5432}}}
+    )
     assert result.success
     assert "localhost:5432" in result.output
 
@@ -144,6 +149,7 @@ def test_executor_template_with_env_substitution():
 def test_executor_sanitize_blocks_dangerous_patterns():
     """Test that dangerous command patterns are blocked by BashSandbox."""
     from vibe.tools.bash import BashSandbox
+
     sandbox = BashSandbox()
     # BashSandbox blocks dangerous commands
     assert sandbox is not None  # Sandbox exists and provides protection
@@ -152,6 +158,7 @@ def test_executor_sanitize_blocks_dangerous_patterns():
 def test_executor_sanitize_blocks_pipe_to_shell():
     """Test that piping to shell is blocked by BashSandbox."""
     from vibe.tools.bash import BashSandbox
+
     sandbox = BashSandbox()
     assert sandbox is not None  # Sandbox exists and provides protection
 
@@ -159,5 +166,6 @@ def test_executor_sanitize_blocks_pipe_to_shell():
 def test_executor_blocked_commands_list():
     """Test custom blocked commands list via BashSandbox."""
     from vibe.tools.bash import BashSandbox
+
     sandbox = BashSandbox()
     assert sandbox is not None  # Sandbox exists and provides protection

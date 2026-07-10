@@ -1,7 +1,5 @@
 """Tests for the permission auditing module."""
 
-
-
 from vibe.tools.security.audit import AuditSeverity, SecurityAuditLogger
 from vibe.tools.security.permission_audit import PermissionAuditor
 
@@ -199,4 +197,3 @@ class TestPermissionAuditor:
         # Should be CRITICAL (world-readable) not WARNING (group-writable)
         assert any(r for r in results if r and r.severity == AuditSeverity.CRITICAL)
         assert any(r for r in results if r and "world-readable" in r.message)
-

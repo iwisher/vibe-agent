@@ -1,4 +1,5 @@
 """Skill pydantic models."""
+
 import re
 
 from pydantic import BaseModel, Field, model_validator
@@ -52,8 +53,10 @@ class Skill(BaseModel):
 
     @model_validator(mode="after")
     def check_id_and_name(self):
-        if not re.match(r'^[a-zA-Z0-9_-]+$', self.id):
-            raise ValueError("Skill id must contain only alphanumeric characters, hyphens, and underscores")
+        if not re.match(r"^[a-zA-Z0-9_-]+$", self.id):
+            raise ValueError(
+                "Skill id must contain only alphanumeric characters, hyphens, and underscores"
+            )
         if not self.id.strip():
             raise ValueError("Skill id is required")
         if not self.name.strip():

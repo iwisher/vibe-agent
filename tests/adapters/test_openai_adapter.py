@@ -128,7 +128,10 @@ class TestOpenAIAdapter:
 
     def test_parse_health_response_models_endpoint(self):
         adapter = OpenAIAdapter()
-        assert adapter.parse_health_response("GET", "/v1/models", {"data": [{"id": "llama3.2"}]}) is True
+        assert (
+            adapter.parse_health_response("GET", "/v1/models", {"data": [{"id": "llama3.2"}]})
+            is True
+        )
         assert adapter.parse_health_response("GET", "/v1/models", {"data": []}) is False
 
     def test_build_stream_request(self):
@@ -145,14 +148,11 @@ class TestOpenAIAdapter:
         chunk = {
             "choices": [
                 {
-                    "delta": {
-                        "content": "hello",
-                        "reasoning_content": "thinking process"
-                    },
-                    "finish_reason": None
+                    "delta": {"content": "hello", "reasoning_content": "thinking process"},
+                    "finish_reason": None,
                 }
             ],
-            "usage": {"prompt_tokens": 0, "completion_tokens": 1, "total_tokens": 1}
+            "usage": {"prompt_tokens": 0, "completion_tokens": 1, "total_tokens": 1},
         }
         res = adapter.parse_stream_chunk(chunk)
         assert res.content == "hello"
@@ -165,14 +165,7 @@ class TestOpenAIAdapter:
         downstream accumulation does not add zeroed usage on every chunk.
         """
         adapter = OpenAIAdapter()
-        chunk = {
-            "choices": [
-                {
-                    "delta": {"content": "hello"},
-                    "finish_reason": None
-                }
-            ]
-        }
+        chunk = {"choices": [{"delta": {"content": "hello"}, "finish_reason": None}]}
         res = adapter.parse_stream_chunk(chunk)
         assert res is not None
         assert res.content == "hello"
@@ -182,13 +175,8 @@ class TestOpenAIAdapter:
         """Final chunk that carries usage must surface it."""
         adapter = OpenAIAdapter()
         chunk = {
-            "choices": [
-                {
-                    "delta": {"content": ""},
-                    "finish_reason": "stop"
-                }
-            ],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}
+            "choices": [{"delta": {"content": ""}, "finish_reason": "stop"}],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
         }
         res = adapter.parse_stream_chunk(chunk)
         assert res is not None

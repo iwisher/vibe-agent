@@ -157,10 +157,12 @@ class TestFeedbackEngine:
     @pytest.mark.asyncio
     async def test_validation_error_fallback(self):
         """Should return VALIDATION_ERROR on Pydantic validation failure."""
-        llm = MockLLMClient({
-            "score": 2.0,  # Out of range, will fail validation
-            "issues": ["bad"],
-        })
+        llm = MockLLMClient(
+            {
+                "score": 2.0,  # Out of range, will fail validation
+                "issues": ["bad"],
+            }
+        )
         engine = FeedbackEngine(llm)
 
         result = await engine.self_verify("test")

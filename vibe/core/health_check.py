@@ -4,7 +4,6 @@ Uses provider adapters to send correctly-formatted probe requests,
 supporting both OpenAI-compatible and Anthropic-native endpoints.
 """
 
-
 import httpx
 
 from vibe.core.config import VibeConfig
@@ -53,9 +52,7 @@ class ModelHealthChecker:
             return await self._check_with_provider(model_id, timeout, provider_name)
         return await self._check_legacy(model_id, timeout)
 
-    async def _check_with_provider(
-        self, model_id: str, timeout: float, provider_name: str
-    ) -> bool:
+    async def _check_with_provider(self, model_id: str, timeout: float, provider_name: str) -> bool:
         """Provider-aware health check using adapter-defined probes."""
         provider = self.provider_registry.get(provider_name)
         if provider is None:

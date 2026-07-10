@@ -35,6 +35,7 @@ class ProviderProfile:
 
     def __post_init__(self):
         from vibe.adapters.registry import ADAPTER_REGISTRY
+
         if self.adapter_type not in ADAPTER_REGISTRY:
             raise ValueError(
                 f"Unknown adapter_type '{self.adapter_type}' for provider '{self.name}'. "
@@ -53,7 +54,9 @@ class ProviderProfile:
         """Instantiate the adapter for this provider's API format."""
         return get_adapter(self.adapter_type)()
 
-    def create_client(self, model_id: Optional[str] = None, api_key: Optional[str] = None) -> LLMClient:
+    def create_client(
+        self, model_id: Optional[str] = None, api_key: Optional[str] = None
+    ) -> LLMClient:
         """Create an LLMClient wired to this provider with the correct adapter."""
         resolved_key = api_key or self.resolve_api_key()
         adapter = self.create_adapter()
@@ -140,8 +143,12 @@ class ProviderRegistry:
                 default_model=cfg.get("default_model"),
                 cost_tier=cfg.get("cost_tier", "standard"),
                 max_context_tokens=int(cfg.get("max_context_tokens", 8000)),
-                cost_per_1k_prompt=float(cfg.get("cost_per_1k_prompt", cfg.get("cost_per_1k_input", 0.0))),
-                cost_per_1k_completion=float(cfg.get("cost_per_1k_completion", cfg.get("cost_per_1k_output", 0.0))),
+                cost_per_1k_prompt=float(
+                    cfg.get("cost_per_1k_prompt", cfg.get("cost_per_1k_input", 0.0))
+                ),
+                cost_per_1k_completion=float(
+                    cfg.get("cost_per_1k_completion", cfg.get("cost_per_1k_output", 0.0))
+                ),
                 extra_headers=cfg.get("extra_headers", {}),
             )
         return cls(providers)
@@ -149,14 +156,16 @@ class ProviderRegistry:
     @classmethod
     def default_ollama(cls) -> "ProviderRegistry":
         """Convenience factory for a single Ollama provider at localhost."""
-        return cls({
-            "ollama": ProviderProfile(
-                name="ollama",
-                base_url=os.getenv("VIBE_BASE_URL", "http://localhost:11434"),
-                adapter_type="openai",
-                api_key_env_var="LLM_API_KEY",
-                cost_tier="free",
-                cost_per_1k_prompt=0.0,
-                cost_per_1k_completion=0.0,
-            )
-        })
+        return cls(
+            {
+                "ollama": ProviderProfile(
+                    name="ollama",
+                    base_url=os.getenv("VIBE_BASE_URL", "http://localhost:11434"),
+                    adapter_type="openai",
+                    api_key_env_var="LLM_API_KEY",
+                    cost_tier="free",
+                    cost_per_1k_prompt=0.0,
+                    cost_per_1k_completion=0.0,
+                )
+            }
+        )

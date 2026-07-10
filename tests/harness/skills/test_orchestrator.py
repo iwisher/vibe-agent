@@ -3,10 +3,8 @@
 import pytest
 
 from vibe.harness.skills.orchestrator import (
-    OrchestrationResult,
     SkillOrchestrator,
     SubTask,
-    TaskStatus,
 )
 
 
@@ -55,11 +53,13 @@ class TestSkillOrchestrator:
 
     @pytest.mark.asyncio
     async def test_run_parallel(self, orchestrator):
-        results = await orchestrator.run_parallel([
-            ("skill_a", {"x": 1}),
-            ("skill_b", {"y": 2}),
-            ("skill_c", {"z": 3}),
-        ])
+        results = await orchestrator.run_parallel(
+            [
+                ("skill_a", {"x": 1}),
+                ("skill_b", {"y": 2}),
+                ("skill_c", {"z": 3}),
+            ]
+        )
         assert len(results) == 3
         assert results[0]["skill"] == "skill_a"
         assert results[1]["skill"] == "skill_b"
@@ -123,8 +123,6 @@ class TestSkillOrchestrator:
 
     @pytest.mark.asyncio
     async def test_call_skill_from_skill(self, orchestrator):
-        result = await orchestrator.call_skill_from_skill(
-            "skill_a", "skill_b", {"foo": "bar"}
-        )
+        result = await orchestrator.call_skill_from_skill("skill_a", "skill_b", {"foo": "bar"})
         assert result["skill"] == "skill_b"
         assert result["vars"]["foo"] == "bar"

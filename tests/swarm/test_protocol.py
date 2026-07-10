@@ -1,14 +1,14 @@
 """Tests for AgentProtocol message bus and EventBroker."""
 
-import pytest
 import asyncio
+
+import pytest
 
 from vibe.swarm.protocol import (
     AgentMessage,
-    MessageType,
     EventBroker,
     MessageBus,
-    DeadLetterEntry,
+    MessageType,
 )
 
 

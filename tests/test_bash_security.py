@@ -4,7 +4,6 @@ These tests verify that the BashTool fixes for Phase 1 security audit
 are effective against shell injection, whitelist bypass, and path traversal.
 """
 
-
 import pytest
 
 from vibe.tools.bash import BashSandbox, BashTool
@@ -13,6 +12,7 @@ from vibe.tools.bash import BashSandbox, BashTool
 # Shell injection blocking
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_bash_001_shell_injection_semicolon_blocked():
     """Command chaining with ; must be rejected (by any security layer)."""
@@ -20,7 +20,7 @@ async def test_bash_001_shell_injection_semicolon_blocked():
     result = await tool.execute(command="ls; rm -rf /")
     assert not result.success
     # Could be caught by dangerous-pattern OR shell-char layer; both are valid.
-    assert ("Shell metacharacter" in result.error or "blocked by safety policy" in result.error)
+    assert "Shell metacharacter" in result.error or "blocked by safety policy" in result.error
 
 
 @pytest.mark.asyncio
@@ -39,7 +39,7 @@ async def test_bash_003_shell_injection_ampersand_blocked():
     tool = BashTool(BashSandbox(allowed_commands=["echo"]))
     result = await tool.execute(command="echo hello && rm -rf /")
     assert not result.success
-    assert ("Shell metacharacter" in result.error or "blocked by safety policy" in result.error)
+    assert "Shell metacharacter" in result.error or "blocked by safety policy" in result.error
 
 
 @pytest.mark.asyncio
@@ -74,6 +74,7 @@ async def test_bash_006_shell_injection_backtick_blocked():
 # Quoted metacharacters are safe
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_bash_007_quoted_metachar_allowed():
     """Metacharacters inside quotes should be allowed (they are not interpreted)."""
@@ -95,6 +96,7 @@ async def test_bash_008_single_quoted_pipe_allowed():
 # ---------------------------------------------------------------------------
 # Whitelist exact-match (no prefix bypass)
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_bash_009_whitelist_exact_match_required():
@@ -127,6 +129,7 @@ async def test_bash_011_whitelist_accepts_exact_command():
 # Dangerous-pattern layer still works
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_bash_012_dangerous_pattern_still_blocks():
     """The regex-based denylist should still catch dangerous commands."""
@@ -149,6 +152,7 @@ async def test_bash_013_dangerous_pattern_curl_pipe_blocked():
 # Timeout cleanup (orphaned children)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_bash_014_timeout_kills_process_group():
     """A command that spawns children should not leave orphans on timeout."""
@@ -165,6 +169,7 @@ async def test_bash_014_timeout_kills_process_group():
 # Binary / invalid UTF-8 output handling
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_bash_015_binary_output_does_not_crash():
     """Commands producing binary or invalid UTF-8 should not crash decoding."""
@@ -179,6 +184,7 @@ async def test_bash_015_binary_output_does_not_crash():
 # ---------------------------------------------------------------------------
 # Empty / malformed commands
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_bash_016_empty_command_rejected():

@@ -56,7 +56,8 @@ def main():
         # 2. Load Model & Tokenizer
         # We assume base_model is a HuggingFace hub id if it's not a local path.
         # Note: Ollama tags (e.g. qwen3:1.7b) need to be mapped to HF repos.
-        # For simplicity in this implementation, we assume base_model is a valid HF id or local path.
+        # For simplicity in this implementation, we assume base_model is a valid HF id or
+        # local path.
         if hf_model_id is None:
             hf_model_id = base_model
             if "qwen" in base_model.lower():
@@ -71,7 +72,7 @@ def main():
         model = AutoModelForCausalLM.from_pretrained(
             hf_model_id,
             torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-            device_map="auto"
+            device_map="auto",
         )
 
         # 3. Setup LoRA
@@ -81,7 +82,7 @@ def main():
             target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
             lora_dropout=0.05,
             bias="none",
-            task_type="CAUSAL_LM"
+            task_type="CAUSAL_LM",
         )
         model = get_peft_model(model, lora_config)
         logger.info("Initialized PEFT/LoRA model")
@@ -89,15 +90,21 @@ def main():
         # 4. Preprocess dataset
         def format_chat(example):
             # Apply chat template
-            text = tokenizer.apply_chat_template(example["messages"], tokenize=False, add_generation_prompt=False)
+            text = tokenizer.apply_chat_template(
+                example["messages"], tokenize=False, add_generation_prompt=False
+            )
             return {"text": text}
 
         formatted_dataset = dataset.map(format_chat)
 
         def tokenize_function(examples):
-            return tokenizer(examples["text"], truncation=True, max_length=512, padding="max_length")
+            return tokenizer(
+                examples["text"], truncation=True, max_length=512, padding="max_length"
+            )
 
-        tokenized_dataset = formatted_dataset.map(tokenize_function, batched=True, remove_columns=formatted_dataset.column_names)
+        tokenized_dataset = formatted_dataset.map(
+            tokenize_function, batched=True, remove_columns=formatted_dataset.column_names
+        )
 
         # 5. Train
         training_args = TrainingArguments(
@@ -107,16 +114,17 @@ def main():
             max_steps=max_steps,
             learning_rate=2e-4,
             logging_steps=10,
-            save_strategy="no", # We only save at the end
+            save_strategy="no",  # We only save at the end
             optim="adamw_torch",
         )
 
         from transformers import DataCollatorForLanguageModeling
+
         trainer = Trainer(
             model=model,
             args=training_args,
             train_dataset=tokenized_dataset,
-            data_collator=DataCollatorForLanguageModeling(tokenizer, mlm=False)
+            data_collator=DataCollatorForLanguageModeling(tokenizer, mlm=False),
         )
 
         logger.info("Starting training loop...")

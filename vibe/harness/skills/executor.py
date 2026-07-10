@@ -8,7 +8,6 @@ Supports:
 
 import os
 import re
-import shlex
 import string
 from dataclasses import dataclass
 from typing import Any, Optional
@@ -19,6 +18,7 @@ from vibe.harness.instructions import Skill
 @dataclass
 class ExecutionResult:
     """Result of skill execution."""
+
     success: bool
     output: str
     error: Optional[str] = None
@@ -52,6 +52,7 @@ class SkillExecutor:
         if self._jinja_env is None:
             try:
                 from jinja2 import BaseLoader, Environment
+
                 self._jinja_env = Environment(loader=BaseLoader())
             except ImportError:
                 self._jinja_env = False

@@ -120,9 +120,7 @@ class DashboardDataSource:
     async def get_session(self, session_id: str) -> dict[str, Any] | None:
         if self._trace_store is None:
             return None
-        sessions = await run_in_threadpool(
-            self._trace_store.get_sessions, limit=1, success=None
-        )
+        sessions = await run_in_threadpool(self._trace_store.get_sessions, limit=1, success=None)
         for row in sessions:
             if row.get("session_id") == session_id:
                 return dict(row)
@@ -144,7 +142,9 @@ class DashboardDataSource:
                 slug=p.slug,
                 status=p.status,
                 tags=list(p.tags),
-                last_updated=p.last_updated.isoformat() if hasattr(p.last_updated, "isoformat") else str(p.last_updated),
+                last_updated=p.last_updated.isoformat()
+                if hasattr(p.last_updated, "isoformat")
+                else str(p.last_updated),
             )
             for p in pages
         ]
@@ -155,10 +155,7 @@ class DashboardDataSource:
         nodes = await run_in_threadpool(self._wiki_graph.get_all_entities)
         edges = await run_in_threadpool(self._wiki_graph.get_all_edges)
         return {
-            "nodes": [
-                {"id": n.id, "label": n.label, "aliases": n.aliases}
-                for n in nodes
-            ],
+            "nodes": [{"id": n.id, "label": n.label, "aliases": n.aliases} for n in nodes],
             "edges": [
                 {"source": e.source_id, "target": e.target_id, "relation": e.relation}
                 for e in edges
@@ -171,9 +168,7 @@ class DashboardDataSource:
     async def list_skills(self) -> list[SkillSummary]:
         if self._skill_installer is None:
             return []
-        installed = await run_in_threadpool(
-            self._skill_installer.list_installed
-        )
+        installed = await run_in_threadpool(self._skill_installer.list_installed)
         result: list[SkillSummary] = []
         for skill_id, meta in installed.items():
             result.append(
@@ -192,9 +187,7 @@ class DashboardDataSource:
     async def get_telemetry(self, hours: int = 24) -> TelemetryMetrics:
         if self._telemetry is None:
             return TelemetryMetrics(0, 0.0, 0, 0)
-        summary = await run_in_threadpool(
-            self._telemetry.get_summary, hours=hours
-        )
+        summary = await run_in_threadpool(self._telemetry.get_summary, hours=hours)
         return TelemetryMetrics(
             sessions_count=summary.sessions_count,
             avg_duration_seconds=summary.avg_duration_seconds,

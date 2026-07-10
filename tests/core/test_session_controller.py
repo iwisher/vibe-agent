@@ -2,10 +2,11 @@
 
 import asyncio
 from unittest.mock import MagicMock, patch
+
 import pytest
 
 from vibe.core.conversation_queue import SteerCommand
-from vibe.core.query_loop import Message, QueryResult, QueryState
+from vibe.core.query_loop import QueryResult, QueryState
 from vibe.core.session_controller import OutputEvent, SessionController
 
 
@@ -56,7 +57,9 @@ class TestSessionController:
         await controller.start()
 
         # Send inject_context steer
-        await controller.queue.steer(SteerCommand(type="inject_context", payload="System prompt override"))
+        await controller.queue.steer(
+            SteerCommand(type="inject_context", payload="System prompt override")
+        )
         # Send switch_model steer
         await controller.queue.steer(SteerCommand(type="switch_model", payload="gpt-4o"))
         # Send stop steer
@@ -90,11 +93,12 @@ class TestSessionController:
                 QueryResult(response="Live chunk"),
             ]
             mock_runner.is_done.side_effect = [False, True]
-            
+
             async def mock_start(q):
                 pass
+
             mock_runner.start = mock_start
-            
+
             mock_runner_class.return_value = mock_runner
 
             agent_id = await controller.send_bg("Perform background task")
@@ -123,9 +127,10 @@ class TestSessionController:
 
         with patch("vibe.core.session_controller.SubAgentRunner") as mock_runner_class:
             mock_runner = MagicMock()
-            
+
             async def mock_start(q):
                 pass
+
             mock_runner.start = mock_start
 
             async def mock_wait(timeout=None):

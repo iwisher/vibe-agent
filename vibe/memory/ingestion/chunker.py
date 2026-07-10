@@ -12,7 +12,7 @@ class SemanticChunker:
     def chunk(self, markdown_text: str) -> list[str]:
         """Split markdown into semantic chunks bounded by token limits."""
         # Simple paragraph splitting
-        paragraphs = re.split(r'\n\n+', markdown_text.strip())
+        paragraphs = re.split(r"\n\n+", markdown_text.strip())
 
         chunks = []
         current_chunk = ""
@@ -29,7 +29,7 @@ class SemanticChunker:
                 # Split giant paragraph by sentences or just arbitrarily
                 # For simplicity, slice it by max_chars
                 for i in range(0, p_len, self.max_chars):
-                    chunks.append(p[i:i+self.max_chars].strip())
+                    chunks.append(p[i : i + self.max_chars].strip())
                 continue
 
             if len(current_chunk) + p_len + 2 > self.max_chars:

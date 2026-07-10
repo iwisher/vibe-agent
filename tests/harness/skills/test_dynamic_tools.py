@@ -1,7 +1,5 @@
 """Tests for dynamic tool declaration from skills."""
 
-import pytest
-
 from vibe.harness.skills.dynamic_tools import (
     DynamicTool,
     DynamicToolRegistry,
@@ -106,9 +104,7 @@ class TestSkillToolDeclarator:
             def handle_dynamic_tool(self, name, args):
                 return {"tool": name, "args": args}
 
-        handler = declarator.create_handler_wrapper(
-            "test_tool", FakeExecutor(), None
-        )
+        handler = declarator.create_handler_wrapper("test_tool", FakeExecutor(), None)
         result = handler(x=1)
         assert result["tool"] == "test_tool"
         assert result["args"] == {"x": 1}
@@ -120,8 +116,6 @@ class TestSkillToolDeclarator:
         class FakeExecutor:
             pass
 
-        handler = declarator.create_handler_wrapper(
-            "test_tool", FakeExecutor(), None
-        )
+        handler = declarator.create_handler_wrapper("test_tool", FakeExecutor(), None)
         result = handler()
         assert "error" in result

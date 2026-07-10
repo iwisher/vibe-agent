@@ -72,6 +72,7 @@ class TestPatchFlashClient:
 
         # Should work normally
         import asyncio
+
         loop = asyncio.new_event_loop()
         try:
             result = loop.run_until_complete(flash.complete("test"))
@@ -101,6 +102,7 @@ class TestPatchFlashClient:
         patch_flash_client_with_shared_cb(flash, cb)
 
         import asyncio
+
         loop = asyncio.new_event_loop()
         try:
             result = loop.run_until_complete(flash.complete("test"))
@@ -122,6 +124,7 @@ class TestPatchFlashClient:
         patch_flash_client_with_shared_cb(flash, cb)
 
         import asyncio
+
         loop = asyncio.new_event_loop()
         try:
             with pytest.raises(RuntimeError):

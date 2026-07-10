@@ -1,4 +1,5 @@
 """Test skill parser."""
+
 import pytest
 
 from vibe.harness.skills.parser import SkillParser
@@ -156,5 +157,7 @@ def test_parser_yaml_trigger_list():
 
 def test_parser_invalid_format():
     parser = SkillParser()
-    with pytest.raises(ValueError, match="must start with TOML frontmatter|must start with YAML frontmatter"):
+    with pytest.raises(
+        ValueError, match="must start with TOML frontmatter|must start with YAML frontmatter"
+    ):
         parser.parse_string("# Just markdown\nNo frontmatter here.")

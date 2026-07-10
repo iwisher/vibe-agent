@@ -93,7 +93,8 @@ class EvalDashboard:
         }}
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         body {{
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial,
+                sans-serif;
             background: var(--bg);
             color: var(--text);
             line-height: 1.6;
@@ -118,7 +119,10 @@ class EvalDashboard:
             border-radius: 8px;
             padding: 1.25rem;
         }}
-        .card .label {{ font-size: 0.875rem; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.025em; }}
+        .card .label {{
+            font-size: 0.875rem; color: var(--text-secondary); text-transform: uppercase;
+            letter-spacing: 0.025em;
+        }}
         .card .value {{ font-size: 2rem; font-weight: 600; margin-top: 0.5rem; }}
         .card .value.pass {{ color: var(--pass); }}
         .card .value.warn {{ color: var(--warn); }}
@@ -143,8 +147,14 @@ class EvalDashboard:
             overflow: hidden;
             margin-top: 1rem;
         }}
-        th, td {{ padding: 0.75rem 1rem; text-align: left; border-bottom: 1px solid var(--border); }}
-        th {{ font-size: 0.875rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; }}
+        th, td {{
+            padding: 0.75rem 1rem; text-align: left;
+            border-bottom: 1px solid var(--border);
+        }}
+        th {{
+            font-size: 0.875rem; font-weight: 600; color: var(--text-secondary);
+            text-transform: uppercase;
+        }}
         tr:hover {{ background: rgba(88, 166, 255, 0.05); }}
         .bar {{
             height: 8px;
@@ -170,7 +180,7 @@ class EvalDashboard:
         <p class="subtitle">Generated {time.strftime("%Y-%m-%d %H:%M:%S")}</p>
     </div>
 
-    {self._render_summary_cards(latest) if latest else '<p>No eval data available.</p>'}
+    {self._render_summary_cards(latest) if latest else "<p>No eval data available.</p>"}
 
     {self._render_history_table(summaries)}
 
@@ -189,12 +199,16 @@ class EvalDashboard:
     <div class="summary-grid">
         <div class="card">
             <div class="label">Status</div>
-            <div class="value"><span class="status-badge {status_class}">{latest.status}</span></div>
+            <div class="value">
+                <span class="status-badge {status_class}">{latest.status}</span>
+            </div>
         </div>
         <div class="card">
             <div class="label">Pass Rate</div>
             <div class="value {status_class}">{latest.pass_rate:.1%}</div>
-            <div class="bar"><div class="bar-fill {status_class}" style="width: {latest.pass_rate * 100}%"></div></div>
+            <div class="bar">
+                <div class="bar-fill {status_class}" style="width: {latest.pass_rate * 100}%"></div>
+            </div>
         </div>
         <div class="card">
             <div class="label">Total Tests</div>

@@ -21,8 +21,7 @@ async def failing_summarizer(messages):
 
 def _make_messages(count: int):
     return [
-        {"role": "user" if i % 2 == 0 else "assistant", "content": "x" * 500}
-        for i in range(count)
+        {"role": "user" if i % 2 == 0 else "assistant", "content": "x" * 500} for i in range(count)
     ]
 
 

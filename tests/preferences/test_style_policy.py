@@ -4,7 +4,6 @@ from pathlib import Path
 from vibe.preferences.registry import PreferenceRegistry
 from vibe.preferences.style_policy import (
     ConfirmThreshold,
-    PlanFormat,
     ResponseStylePolicy,
     Verbosity,
 )

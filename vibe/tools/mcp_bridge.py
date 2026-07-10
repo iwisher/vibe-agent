@@ -64,14 +64,16 @@ class MCPBridge:
         schemas = []
         for cfg in self.configs:
             for tool in cfg.tools:
-                schemas.append({
-                    "type": "function",
-                    "function": {
-                        "name": tool.get("name", "unknown"),
-                        "description": tool.get("description", ""),
-                        "parameters": tool.get("parameters", {"type": "object"}),
-                    },
-                })
+                schemas.append(
+                    {
+                        "type": "function",
+                        "function": {
+                            "name": tool.get("name", "unknown"),
+                            "description": tool.get("description", ""),
+                            "parameters": tool.get("parameters", {"type": "object"}),
+                        },
+                    }
+                )
         return schemas
 
     async def execute_tool(self, name: str, **kwargs) -> ToolResult:
@@ -81,14 +83,22 @@ class MCPBridge:
                     return await self._invoke(cfg, tool, kwargs)
         return ToolResult(success=False, content=None, error=f"MCP tool '{name}' not found")
 
-    async def _invoke(self, cfg: MCPServerConfig, tool: dict[str, Any], arguments: dict[str, Any]) -> ToolResult:
+    async def _invoke(
+        self, cfg: MCPServerConfig, tool: dict[str, Any], arguments: dict[str, Any]
+    ) -> ToolResult:
         if cfg.url:
             return await self._invoke_http(cfg.url, tool, arguments)
         if cfg.command:
             return await self._invoke_stdio(cfg, tool, arguments)
-        return ToolResult(success=False, content=None, error=f"MCP server '{cfg.name}' has no transport configured")
+        return ToolResult(
+            success=False,
+            content=None,
+            error=f"MCP server '{cfg.name}' has no transport configured",
+        )
 
-    async def _invoke_http(self, url: str, tool: dict[str, Any], arguments: dict[str, Any]) -> ToolResult:
+    async def _invoke_http(
+        self, url: str, tool: dict[str, Any], arguments: dict[str, Any]
+    ) -> ToolResult:
         if httpx is None:
             return ToolResult(success=False, content=None, error="httpx is not installed")
         try:
@@ -104,8 +114,11 @@ class MCPBridge:
         except Exception as e:
             return ToolResult(success=False, content=None, error=str(e))
 
-    async def _invoke_stdio(self, cfg: MCPServerConfig, tool: dict[str, Any], arguments: dict[str, Any]) -> ToolResult:
+    async def _invoke_stdio(
+        self, cfg: MCPServerConfig, tool: dict[str, Any], arguments: dict[str, Any]
+    ) -> ToolResult:
         import asyncio
+
         try:
             proc = await asyncio.create_subprocess_exec(
                 cfg.command,
@@ -115,9 +128,15 @@ class MCPBridge:
                 stderr=asyncio.subprocess.PIPE,
             )
             payload = json.dumps({"tool": tool.get("name"), "arguments": arguments}) + "\n"
-            stdout, stderr = await asyncio.wait_for(proc.communicate(payload.encode()), timeout=30.0)
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(payload.encode()), timeout=30.0
+            )
             if proc.returncode != 0:
-                return ToolResult(success=False, content=None, error=stderr.decode().strip() or "Subprocess failed")
+                return ToolResult(
+                    success=False,
+                    content=None,
+                    error=stderr.decode().strip() or "Subprocess failed",
+                )
             return ToolResult(success=True, content=json.loads(stdout.decode().strip()))
         except Exception as e:
             return ToolResult(success=False, content=None, error=str(e))

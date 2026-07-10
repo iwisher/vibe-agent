@@ -104,6 +104,7 @@ class PromptSkillInstallTool(Tool):
         """Fetch content from URL or local path."""
         if source.startswith("http://") or source.startswith("https://"):
             import aiohttp
+
             async with aiohttp.ClientSession() as session:
                 async with session.get(source, timeout=aiohttp.ClientTimeout(total=30)) as resp:
                     resp.raise_for_status()
@@ -115,6 +116,7 @@ class PromptSkillInstallTool(Tool):
     def _extract_name(self, content: str) -> str | None:
         """Extract skill name from YAML frontmatter."""
         import yaml
+
         try:
             # Find the --- block
             lines = content.split("\n")

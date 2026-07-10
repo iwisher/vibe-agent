@@ -1,4 +1,5 @@
 """Validate skills and detect security risks."""
+
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -18,8 +19,14 @@ _FS_DANGEROUS_PATTERNS = [
 ]
 
 _PHISHING_PATTERNS = [
-    (re.compile(r"(curl|wget|fetch)\s+[^|]*\|\s*(bash|sh|zsh|python|perl|ruby)", re.IGNORECASE), "pipe-to-shell attack"),
-    (re.compile(r"bash\s+.*<\s*\(\s*(curl|wget|fetch)", re.IGNORECASE), "process substitution attack"),
+    (
+        re.compile(r"(curl|wget|fetch)\s+[^|]*\|\s*(bash|sh|zsh|python|perl|ruby)", re.IGNORECASE),
+        "pipe-to-shell attack",
+    ),
+    (
+        re.compile(r"bash\s+.*<\s*\(\s*(curl|wget|fetch)", re.IGNORECASE),
+        "process substitution attack",
+    ),
     (re.compile(r"eval\s*\(", re.IGNORECASE), "eval injection"),
     (re.compile(r"eval\s+[`\"']", re.IGNORECASE), "eval injection"),
     (re.compile(r"\beval\s+\$", re.IGNORECASE), "eval injection"),

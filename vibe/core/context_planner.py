@@ -23,28 +23,28 @@ from vibe.harness.planner import HybridPlanner, PlanRequest
 class IntentType(Enum):
     """Classified user intent."""
 
-    QUESTION = auto()      # Factual query, needs answer
-    COMMAND = auto()       # Direct instruction (run tests, deploy)
-    CREATIVE = auto()      # Generate content (code, text, design)
-    ANALYSIS = auto()      # Analyze data, review, audit
+    QUESTION = auto()  # Factual query, needs answer
+    COMMAND = auto()  # Direct instruction (run tests, deploy)
+    CREATIVE = auto()  # Generate content (code, text, design)
+    ANALYSIS = auto()  # Analyze data, review, audit
     CONVERSATION = auto()  # Chat, clarification, small talk
-    MULTI_STEP = auto()    # Complex task requiring multiple tools
+    MULTI_STEP = auto()  # Complex task requiring multiple tools
 
 
 class ContextPriority(Enum):
     """Priority level for context inclusion."""
 
-    CRITICAL = auto()   # Must include (user query, system prompt)
-    HIGH = auto()       # Strongly relevant (selected tools, wiki hints)
-    MEDIUM = auto()     # Possibly relevant (history summary)
-    LOW = auto()        # Nice to have (telemetry, metadata)
+    CRITICAL = auto()  # Must include (user query, system prompt)
+    HIGH = auto()  # Strongly relevant (selected tools, wiki hints)
+    MEDIUM = auto()  # Possibly relevant (history summary)
+    LOW = auto()  # Nice to have (telemetry, metadata)
 
 
 @dataclass
 class ContextItem:
     """A piece of context with priority and estimated tokens."""
 
-    source: str           # e.g., "wiki", "tool_schema", "history"
+    source: str  # e.g., "wiki", "tool_schema", "history"
     content: str
     priority: ContextPriority
     estimated_tokens: int = 0
@@ -96,34 +96,92 @@ class ContextPlan:
 # Intent classifier
 # ---------------------------------------------------------------------------
 
+
 class IntentClassifier:
     """Lightweight intent classification using keyword patterns."""
 
     PATTERNS: dict[IntentType, list[str]] = {
         IntentType.QUESTION: [
-            "what", "how", "why", "when", "where", "who", "which",
-            "explain", "describe", "tell me", "?",
+            "what",
+            "how",
+            "why",
+            "when",
+            "where",
+            "who",
+            "which",
+            "explain",
+            "describe",
+            "tell me",
+            "?",
         ],
         IntentType.COMMAND: [
-            "run", "execute", "deploy", "build", "test", "install",
-            "start", "stop", "restart", "delete", "create", "update",
-            "git ", "pip ", "npm ", "docker ", "kubectl ",
+            "run",
+            "execute",
+            "deploy",
+            "build",
+            "test",
+            "install",
+            "start",
+            "stop",
+            "restart",
+            "delete",
+            "create",
+            "update",
+            "git ",
+            "pip ",
+            "npm ",
+            "docker ",
+            "kubectl ",
         ],
         IntentType.CREATIVE: [
-            "write", "generate", "create", "design", "draft", "compose",
-            "code", "script", "implement", "build a", "make a",
+            "write",
+            "generate",
+            "create",
+            "design",
+            "draft",
+            "compose",
+            "code",
+            "script",
+            "implement",
+            "build a",
+            "make a",
         ],
         IntentType.ANALYSIS: [
-            "analyze", "review", "audit", "check", "inspect", "evaluate",
-            "compare", "benchmark", "profile", "debug", "trace",
+            "analyze",
+            "review",
+            "audit",
+            "check",
+            "inspect",
+            "evaluate",
+            "compare",
+            "benchmark",
+            "profile",
+            "debug",
+            "trace",
         ],
         IntentType.CONVERSATION: [
-            "hi", "hello", "hey", "thanks", "thank you", "ok", "okay",
-            "got it", "i see", "understood", "never mind",
+            "hi",
+            "hello",
+            "hey",
+            "thanks",
+            "thank you",
+            "ok",
+            "okay",
+            "got it",
+            "i see",
+            "understood",
+            "never mind",
         ],
         IntentType.MULTI_STEP: [
-            "and then", "after that", "next", "first", "finally",
-            "step by step", "workflow", "pipeline", "sequence",
+            "and then",
+            "after that",
+            "next",
+            "first",
+            "finally",
+            "step by step",
+            "workflow",
+            "pipeline",
+            "sequence",
         ],
     }
 
@@ -162,6 +220,7 @@ class IntentClassifier:
 # ---------------------------------------------------------------------------
 # ContextPlanner
 # ---------------------------------------------------------------------------
+
 
 class ContextPlanner:
     """Pre-LLM context planner: intent + tool selection + context assembly.
@@ -224,7 +283,10 @@ class ContextPlanner:
         if self.complexity_scorer is not None:
             try:
                 messages = [{"role": "user", "content": query}]
-                tools = [{"name": t.get("function", {}).get("name", t.get("name", ""))} for t in available_tools]
+                tools = [
+                    {"name": t.get("function", {}).get("name", t.get("name", ""))}
+                    for t in available_tools
+                ]
                 comp_result = self.complexity_scorer.score(messages, tools)
                 complexity_score = comp_result.overall
             except Exception:
@@ -234,59 +296,69 @@ class ContextPlanner:
         context_items: list[ContextItem] = []
 
         # CRITICAL: User query
-        context_items.append(ContextItem(
-            source="user_query",
-            content=query,
-            priority=ContextPriority.CRITICAL,
-            estimated_tokens=len(query) // self.CHARS_PER_TOKEN,
-        ))
+        context_items.append(
+            ContextItem(
+                source="user_query",
+                content=query,
+                priority=ContextPriority.CRITICAL,
+                estimated_tokens=len(query) // self.CHARS_PER_TOKEN,
+            )
+        )
 
         # HIGH: Selected tools (schemas)
         if plan_result.selected_tool_names:
             selected_schemas = [
-                t for t in available_tools
-                if t.get("function", {}).get("name", t.get("name", "")) in plan_result.selected_tool_names
+                t
+                for t in available_tools
+                if t.get("function", {}).get("name", t.get("name", ""))
+                in plan_result.selected_tool_names
             ]
-            schema_text = "\n".join(
-                f"- {self._schema_to_text(s)}" for s in selected_schemas
+            schema_text = "\n".join(f"- {self._schema_to_text(s)}" for s in selected_schemas)
+            context_items.append(
+                ContextItem(
+                    source="tool_schema",
+                    content=schema_text,
+                    priority=ContextPriority.HIGH,
+                    estimated_tokens=len(schema_text) // self.CHARS_PER_TOKEN,
+                    metadata={"selected_tools": plan_result.selected_tool_names},
+                )
             )
-            context_items.append(ContextItem(
-                source="tool_schema",
-                content=schema_text,
-                priority=ContextPriority.HIGH,
-                estimated_tokens=len(schema_text) // self.CHARS_PER_TOKEN,
-                metadata={"selected_tools": plan_result.selected_tool_names},
-            ))
 
         # HIGH: Wiki hint
         if wiki_hint:
-            context_items.append(ContextItem(
-                source="wiki",
-                content=wiki_hint,
-                priority=ContextPriority.HIGH,
-                estimated_tokens=len(wiki_hint) // self.CHARS_PER_TOKEN,
-            ))
+            context_items.append(
+                ContextItem(
+                    source="wiki",
+                    content=wiki_hint,
+                    priority=ContextPriority.HIGH,
+                    estimated_tokens=len(wiki_hint) // self.CHARS_PER_TOKEN,
+                )
+            )
 
         # HIGH: Skills
         if plan_result.selected_skills:
             for skill in plan_result.selected_skills:
                 skill_text = f"### {skill.name}\n{skill.description}\n{skill.content}"
-                context_items.append(ContextItem(
-                    source="skill",
-                    content=skill_text,
-                    priority=ContextPriority.HIGH,
-                    estimated_tokens=len(skill_text) // self.CHARS_PER_TOKEN,
-                    metadata={"name": skill.name, "tags": skill.tags},
-                ))
+                context_items.append(
+                    ContextItem(
+                        source="skill",
+                        content=skill_text,
+                        priority=ContextPriority.HIGH,
+                        estimated_tokens=len(skill_text) // self.CHARS_PER_TOKEN,
+                        metadata={"name": skill.name, "tags": skill.tags},
+                    )
+                )
 
         # MEDIUM: History summary
         if history_summary:
-            context_items.append(ContextItem(
-                source="history",
-                content=history_summary,
-                priority=ContextPriority.MEDIUM,
-                estimated_tokens=len(history_summary) // self.CHARS_PER_TOKEN,
-            ))
+            context_items.append(
+                ContextItem(
+                    source="history",
+                    content=history_summary,
+                    priority=ContextPriority.MEDIUM,
+                    estimated_tokens=len(history_summary) // self.CHARS_PER_TOKEN,
+                )
+            )
 
         # MEDIUM: MCPs
         if plan_result.selected_mcps:
@@ -294,20 +366,20 @@ class ContextPlanner:
                 f"- {m.get('name', 'unknown')}: {m.get('description', '')}"
                 for m in plan_result.selected_mcps
             )
-            context_items.append(ContextItem(
-                source="mcp",
-                content=mcp_text,
-                priority=ContextPriority.MEDIUM,
-                estimated_tokens=len(mcp_text) // self.CHARS_PER_TOKEN,
-            ))
+            context_items.append(
+                ContextItem(
+                    source="mcp",
+                    content=mcp_text,
+                    priority=ContextPriority.MEDIUM,
+                    estimated_tokens=len(mcp_text) // self.CHARS_PER_TOKEN,
+                )
+            )
 
         # Step 5: Token budget
         estimated_tokens = sum(item.estimated_tokens for item in context_items)
 
         # Step 6: Model tier suggestion
-        suggested_tier = self._suggest_model_tier(
-            intent, complexity_score, estimated_tokens
-        )
+        suggested_tier = self._suggest_model_tier(intent, complexity_score, estimated_tokens)
 
         return ContextPlan(
             intent=intent,
@@ -319,7 +391,8 @@ class ContextPlanner:
             estimated_tokens=estimated_tokens,
             complexity_score=complexity_score,
             suggested_model_tier=suggested_tier,
-            reasoning=plan_result.reasoning or f"Intent: {intent.name} (confidence: {intent_confidence:.2f})",
+            reasoning=plan_result.reasoning
+            or f"Intent: {intent.name} (confidence: {intent_confidence:.2f})",
         )
 
     def _schema_to_text(self, schema: dict[str, Any]) -> str:
@@ -352,12 +425,24 @@ class ContextPlanner:
 
         # Upgrade for high complexity
         if complexity > 0.7:
-            upgrades = {"free": "budget", "budget": "standard", "standard": "premium", "premium": "ultra", "ultra": "ultra"}
+            upgrades = {
+                "free": "budget",
+                "budget": "standard",
+                "standard": "premium",
+                "premium": "ultra",
+                "ultra": "ultra",
+            }
             base_tier = upgrades.get(base_tier, base_tier)
 
         # Upgrade for long context
         if estimated_tokens > 8000:
-            upgrades = {"free": "budget", "budget": "standard", "standard": "premium", "premium": "ultra", "ultra": "ultra"}
+            upgrades = {
+                "free": "budget",
+                "budget": "standard",
+                "standard": "premium",
+                "premium": "ultra",
+                "ultra": "ultra",
+            }
             base_tier = upgrades.get(base_tier, base_tier)
 
         return base_tier

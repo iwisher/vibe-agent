@@ -62,15 +62,19 @@ class AnthropicAdapter(BaseLLMAdapter):
             elif block_type == "tool_use":
                 # ... existing logic ...
                 tool_input = block.get("input", {})
-                arguments = json.dumps(tool_input) if isinstance(tool_input, dict) else str(tool_input)
-                tool_calls.append({
-                    "id": block.get("id"),
-                    "type": "function",
-                    "function": {
-                        "name": block.get("name"),
-                        "arguments": arguments,
-                    },
-                })
+                arguments = (
+                    json.dumps(tool_input) if isinstance(tool_input, dict) else str(tool_input)
+                )
+                tool_calls.append(
+                    {
+                        "id": block.get("id"),
+                        "type": "function",
+                        "function": {
+                            "name": block.get("name"),
+                            "arguments": arguments,
+                        },
+                    }
+                )
 
         usage = response_json.get("usage", {})
         resp = LLMResponse(
@@ -112,26 +116,22 @@ class AnthropicAdapter(BaseLLMAdapter):
                 reasoning_content = delta.get("thinking") or ""
             elif delta_type == "input_json_delta":
                 index = chunk_json.get("index", 0)
-                tool_calls = [{
-                    "index": index,
-                    "function": {
-                        "arguments": delta.get("partial_json") or ""
-                    }
-                }]
+                tool_calls = [
+                    {"index": index, "function": {"arguments": delta.get("partial_json") or ""}}
+                ]
         elif event_type == "content_block_start":
             block = chunk_json.get("content_block", {})
             block_type = block.get("type")
             if block_type == "tool_use":
                 index = chunk_json.get("index", 0)
-                tool_calls = [{
-                    "index": index,
-                    "id": block.get("id"),
-                    "type": "function",
-                    "function": {
-                        "name": block.get("name"),
-                        "arguments": ""
+                tool_calls = [
+                    {
+                        "index": index,
+                        "id": block.get("id"),
+                        "type": "function",
+                        "function": {"name": block.get("name"), "arguments": ""},
                     }
-                }]
+                ]
         elif event_type == "message_delta":
             delta = chunk_json.get("delta", {})
             finish_reason = delta.get("stop_reason")
@@ -141,7 +141,7 @@ class AnthropicAdapter(BaseLLMAdapter):
                 usage = {
                     "prompt_tokens": 0,
                     "completion_tokens": out_tokens,
-                    "total_tokens": out_tokens
+                    "total_tokens": out_tokens,
                 }
         elif event_type == "message_start":
             msg = chunk_json.get("message", {})
@@ -151,7 +151,7 @@ class AnthropicAdapter(BaseLLMAdapter):
                 usage = {
                     "prompt_tokens": in_tokens,
                     "completion_tokens": 0,
-                    "total_tokens": in_tokens
+                    "total_tokens": in_tokens,
                 }
 
         return LLMResponse(
@@ -159,7 +159,7 @@ class AnthropicAdapter(BaseLLMAdapter):
             reasoning_content=reasoning_content,
             tool_calls=tool_calls,
             finish_reason=finish_reason,
-            usage=usage
+            usage=usage,
         )
 
     def health_check_endpoints(self, base_url: str, model_id: str) -> List[Tuple[str, str]]:
@@ -203,11 +203,15 @@ class AnthropicAdapter(BaseLLMAdapter):
         for tool in tools:
             if tool.get("type") == "function":
                 func = tool.get("function", {})
-                converted.append({
-                    "name": func.get("name"),
-                    "description": func.get("description", ""),
-                    "input_schema": func.get("parameters", {"type": "object", "properties": {}}),
-                })
+                converted.append(
+                    {
+                        "name": func.get("name"),
+                        "description": func.get("description", ""),
+                        "input_schema": func.get(
+                            "parameters", {"type": "object", "properties": {}}
+                        ),
+                    }
+                )
             else:
                 converted.append(tool)
         return converted

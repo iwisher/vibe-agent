@@ -70,7 +70,7 @@ class RLMTrainer:
                     "messages": [
                         {"role": "system", "content": "You are a helpful AI assistant."},
                         {"role": "user", "content": f"Tell me about {page.title}."},
-                        {"role": "assistant", "content": page.content}
+                        {"role": "assistant", "content": page.content},
                     ]
                 }
                 lines.append(json.dumps(record))
@@ -109,7 +109,9 @@ class RLMTrainer:
                 logger.warning(f"Failed to export traces for RLM: {e}")
 
         if lines:
-            await asyncio.to_thread(output_path.write_text, "\n".join(lines) + "\n", encoding="utf-8")
+            await asyncio.to_thread(
+                output_path.write_text, "\n".join(lines) + "\n", encoding="utf-8"
+            )
         else:
             await asyncio.to_thread(output_path.write_text, "", encoding="utf-8")
 
@@ -127,7 +129,9 @@ class RLMTrainer:
         try:
             # The worker script must be executed in the same python environment
             process = await asyncio.create_subprocess_exec(
-                sys.executable, "-m", "vibe.memory._rlm_train_worker",
+                sys.executable,
+                "-m",
+                "vibe.memory._rlm_train_worker",
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -156,14 +160,11 @@ class RLMTrainer:
             # We would write a Modelfile pointing to the adapter, then call Ollama API
             # For Phase 3b MVP, we simulate the Ollama API call
 
-            modelfile_content = f"""FROM {model_name.replace('-rlm', '')}
+            modelfile_content = f"""FROM {model_name.replace("-rlm", "")}
 ADAPTER {adapter_path}
 """
             url = f"{self.ollama_base_url.rstrip('/')}/api/create"
-            payload = {
-                "name": model_name,
-                "modelfile": modelfile_content
-            }
+            payload = {"name": model_name, "modelfile": modelfile_content}
 
             async with httpx.AsyncClient(timeout=30.0) as client:
                 resp = await client.post(url, json=payload)

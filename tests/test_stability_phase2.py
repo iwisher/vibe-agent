@@ -14,6 +14,7 @@ from vibe.tools.tool_system import ToolSystem
 
 # ─── QueryLoop State Machine ───
 
+
 @pytest.mark.asyncio
 async def test_queryloop_001_incomplete_on_max_iterations():
     """QueryLoop should set INCOMPLETE state when max_iterations is reached."""
@@ -24,7 +25,13 @@ async def test_queryloop_001_incomplete_on_max_iterations():
     llm.complete = AsyncMock(
         side_effect=lambda msgs, tools=None: LLMResponse(
             content="",
-            tool_calls=[{"id": "1", "type": "function", "function": {"name": "fake_tool", "arguments": "{}"}}],
+            tool_calls=[
+                {
+                    "id": "1",
+                    "type": "function",
+                    "function": {"name": "fake_tool", "arguments": "{}"},
+                }
+            ],
         )
     )
 
@@ -36,8 +43,6 @@ async def test_queryloop_001_incomplete_on_max_iterations():
     all_results = []
     async for r in loop.run(initial_query="test"):
         all_results.append(r)
-    results = [r for r in all_results if not r.is_status]
-
     assert loop.state == QueryState.INCOMPLETE
 
 
@@ -47,9 +52,7 @@ async def test_queryloop_002_completed_on_natural_break():
     llm = MagicMock(spec=LLMClient)
     llm.model = "test-model"
     llm.close = AsyncMock()
-    llm.complete = AsyncMock(
-        return_value=LLMResponse(content="done", tool_calls=None)
-    )
+    llm.complete = AsyncMock(return_value=LLMResponse(content="done", tool_calls=None))
 
     tools = MagicMock(spec=ToolSystem)
     tools.get_tool_schemas.return_value = []
@@ -67,6 +70,7 @@ async def test_queryloop_002_completed_on_natural_break():
 
 # ─── Resource Lifecycle ───
 
+
 @pytest.mark.asyncio
 async def test_queryloop_003_close_releases_llm_client():
     """QueryLoop.close() should call LLMClient.close()."""
@@ -81,6 +85,7 @@ async def test_queryloop_003_close_releases_llm_client():
 
 
 # ─── EvalStore Schema Migration ───
+
 
 class TestEvalStoreSchemaMigration:
     """Tests for EvalStore schema migration (total_tokens + latency_seconds)."""
@@ -104,7 +109,9 @@ class TestEvalStoreSchemaMigration:
             # Create old-style database
             with sqlite3.connect(db_path) as conn:
                 conn.execute(
-                    "CREATE TABLE eval_results (id INTEGER PRIMARY KEY, eval_id TEXT, passed INTEGER, diff TEXT, timestamp TEXT)"
+                    "CREATE TABLE eval_results ("
+                    "id INTEGER PRIMARY KEY, eval_id TEXT, passed INTEGER, diff TEXT, "
+                    "timestamp TEXT)"
                 )
 
             EvalStore(db_path=str(db_path))
@@ -136,6 +143,7 @@ class TestEvalStoreSchemaMigration:
 
 
 # ─── Observability Singleton Identity ───
+
 
 class TestObservabilitySingleton:
     """Tests for Observability double-default bug fix."""

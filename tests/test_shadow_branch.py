@@ -1,12 +1,10 @@
 """Tests for ShadowBranchManager (Phase 5.2)."""
 
-import os
 import subprocess
-from pathlib import Path
 
 import pytest
 
-from vibe.tools.git_shadow import ShadowBranchManager, NoOpShadowManager
+from vibe.tools.git_shadow import NoOpShadowManager, ShadowBranchManager
 
 
 @pytest.fixture
@@ -20,12 +18,16 @@ def git_repo(tmp_path):
     subprocess.run(
         ["git", "config", "user.email", "test@test.com"], cwd=repo, check=True, capture_output=True
     )
-    subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "config", "user.name", "Test User"], cwd=repo, check=True, capture_output=True
+    )
 
     # Create initial commit
     (repo / "README.md").write_text("# Test Repo")
     subprocess.run(["git", "add", "."], cwd=repo, check=True, capture_output=True)
-    subprocess.run(["git", "commit", "-m", "Initial commit"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "Initial commit"], cwd=repo, check=True, capture_output=True
+    )
 
     yield repo
     # No teardown needed; tmp_path cleans up automatically
@@ -68,7 +70,9 @@ class TestShadowBranchManager:
         # Create a file and shadow
         (git_repo / "test.txt").write_text("original")
         subprocess.run(["git", "add", "."], cwd=git_repo, check=True, capture_output=True)
-        subprocess.run(["git", "commit", "-m", "Add test file"], cwd=git_repo, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Add test file"], cwd=git_repo, check=True, capture_output=True
+        )
 
         shadow = manager.create_shadow("sess-003")
         assert shadow is not None
@@ -77,7 +81,12 @@ class TestShadowBranchManager:
         # Modify the file
         (git_repo / "test.txt").write_text("modified")
         subprocess.run(["git", "add", "."], cwd=git_repo, check=True, capture_output=True)
-        subprocess.run(["git", "commit", "-m", "Modify test file"], cwd=git_repo, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "commit", "-m", "Modify test file"],
+            cwd=git_repo,
+            check=True,
+            capture_output=True,
+        )
 
         # Restore shadow
         success = manager.restore_shadow("sess-003")
@@ -85,7 +94,11 @@ class TestShadowBranchManager:
 
         # Should be back on the original branch with restored content
         result = subprocess.run(
-            ["git", "branch", "--show-current"], cwd=git_repo, capture_output=True, text=True, check=True
+            ["git", "branch", "--show-current"],
+            cwd=git_repo,
+            capture_output=True,
+            text=True,
+            check=True,
         )
         assert result.stdout.strip() == original
         assert (git_repo / "test.txt").read_text() == "original"

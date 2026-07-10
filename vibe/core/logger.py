@@ -36,9 +36,7 @@ class SessionLogger:
 
         # File handler
         handler = logging.FileHandler(self.log_file, encoding="utf-8")
-        formatter = logging.Formatter(
-            "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-        )
+        formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
         handler.setFormatter(formatter)
         self._logger.addHandler(handler)
 
@@ -54,7 +52,9 @@ class SessionLogger:
                 # If file too big, we just stop logging for this session
                 # to avoid disk bloat, but we log a final warning.
                 if self._logger.isEnabledFor(logging.WARNING):
-                    self._logger.warning(f"Log size limit ({self.config.max_file_size_mb}MB) reached. Stopping log.")
+                    self._logger.warning(
+                        f"Log size limit ({self.config.max_file_size_mb}MB) reached. Stopping log."
+                    )
                 self._logger = None
                 return
 

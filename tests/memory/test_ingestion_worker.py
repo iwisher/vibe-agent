@@ -25,16 +25,20 @@ class FakeLLMResponse:
 async def test_extract_from_text_happy_path():
     # Setup mock LLM, Wiki, and PageIndex
     fake_llm = MagicMock()
-    fake_llm.complete = AsyncMock(return_value=FakeLLMResponse(
-        content=json.dumps([
-            {
-                "title": "Clean Energy",
-                "content": "Clean energy comes from renewable zero-emission sources.",
-                "tags": ["energy", "environment"],
-                "citations": [],
-            }
-        ])
-    ))
+    fake_llm.complete = AsyncMock(
+        return_value=FakeLLMResponse(
+            content=json.dumps(
+                [
+                    {
+                        "title": "Clean Energy",
+                        "content": "Clean energy comes from renewable zero-emission sources.",
+                        "tags": ["energy", "environment"],
+                        "citations": [],
+                    }
+                ]
+            )
+        )
+    )
 
     fake_wiki = MagicMock()
     # Mock search_pages to return empty (page doesn't exist)
@@ -81,16 +85,20 @@ async def test_extract_from_text_happy_path():
 @pytest.mark.asyncio
 async def test_extract_from_text_updates_existing():
     fake_llm = MagicMock()
-    fake_llm.complete = AsyncMock(return_value=FakeLLMResponse(
-        content=json.dumps([
-            {
-                "title": "Clean Energy",
-                "content": "Updated content.",
-                "tags": ["energy"],
-                "citations": [],
-            }
-        ])
-    ))
+    fake_llm.complete = AsyncMock(
+        return_value=FakeLLMResponse(
+            content=json.dumps(
+                [
+                    {
+                        "title": "Clean Energy",
+                        "content": "Updated content.",
+                        "tags": ["energy"],
+                        "citations": [],
+                    }
+                ]
+            )
+        )
+    )
 
     fake_wiki = MagicMock()
     # Mock search_pages to return existing page
@@ -175,10 +183,12 @@ async def test_ingestion_worker_fallback():
         title="doc Chunk 2",
         content="Test chunk",
         tags=["document-chunk"],
-        citations=[{
-            "session": "document_ingestion",
-            "source": "doc.md",
-            "chunk_index": 2,
-        }],
+        citations=[
+            {
+                "session": "document_ingestion",
+                "source": "doc.md",
+                "chunk_index": 2,
+            }
+        ],
         status="draft",
     )

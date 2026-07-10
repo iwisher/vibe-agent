@@ -148,13 +148,23 @@ class SoakTestRunner:
 
                 total_tokens = result.total_tokens
                 metrics = getattr(result, "metrics", None) or {}
-                prompt_tokens = getattr(metrics, "prompt_tokens", 0) if hasattr(metrics, "prompt_tokens") else metrics.get("prompt_tokens", 0)
-                completion_tokens = getattr(metrics, "completion_tokens", 0) if hasattr(metrics, "completion_tokens") else metrics.get("completion_tokens", 0)
+                prompt_tokens = (
+                    getattr(metrics, "prompt_tokens", 0)
+                    if hasattr(metrics, "prompt_tokens")
+                    else metrics.get("prompt_tokens", 0)
+                )
+                completion_tokens = (
+                    getattr(metrics, "completion_tokens", 0)
+                    if hasattr(metrics, "completion_tokens")
+                    else metrics.get("completion_tokens", 0)
+                )
 
                 # Record observability metrics for this iteration
                 if self.obs:
                     self.obs.histogram("soak_latency", latency, labels={"case_id": case.id})
-                    self.obs.counter("soak_passed", 1.0 if result.passed else 0.0, labels={"case_id": case.id})
+                    self.obs.counter(
+                        "soak_passed", 1.0 if result.passed else 0.0, labels={"case_id": case.id}
+                    )
                     self.obs.gauge("soak_tokens", total_tokens, labels={"case_id": case.id})
 
                 snapshot = SoakSnapshot(
@@ -202,8 +212,8 @@ class SoakTestRunner:
                 recent_pass_rate = sum(1 for s in recent if s.passed) / len(recent)
                 avg_lat = statistics.mean(s.latency_seconds for s in recent)
                 print(
-                    f"[soak] iter={loop_iteration:4d} | elapsed={elapsed/60:.1f}min | "
-                    f"remaining={remaining/60:.1f}min | pass_rate(10)={recent_pass_rate:.0%} | "
+                    f"[soak] iter={loop_iteration:4d} | elapsed={elapsed / 60:.1f}min | "
+                    f"remaining={remaining / 60:.1f}min | pass_rate(10)={recent_pass_rate:.0%} | "
                     f"avg_lat={avg_lat:.1f}s"
                 )
 
@@ -218,20 +228,25 @@ class SoakTestRunner:
     def _save_checkpoint(self):
         checkpoint_path = self.output_dir / f"soak_checkpoint_{self.model.replace('/', '_')}.jsonl"
         with open(checkpoint_path, "a") as f:
-            for s in self._snapshots[self._checkpoint_index:]:
-                f.write(json.dumps({
-                    "timestamp": s.timestamp,
-                    "loop_iteration": s.loop_iteration,
-                    "case_id": s.case_id,
-                    "passed": s.passed,
-                    "latency_seconds": s.latency_seconds,
-                    "prompt_tokens": s.prompt_tokens,
-                    "completion_tokens": s.completion_tokens,
-                    "total_tokens": s.total_tokens,
-                    "tool_call_count": s.tool_call_count,
-                    "turn_count": s.turn_count,
-                    "error": s.error,
-                }) + "\n")
+            for s in self._snapshots[self._checkpoint_index :]:
+                f.write(
+                    json.dumps(
+                        {
+                            "timestamp": s.timestamp,
+                            "loop_iteration": s.loop_iteration,
+                            "case_id": s.case_id,
+                            "passed": s.passed,
+                            "latency_seconds": s.latency_seconds,
+                            "prompt_tokens": s.prompt_tokens,
+                            "completion_tokens": s.completion_tokens,
+                            "total_tokens": s.total_tokens,
+                            "tool_call_count": s.tool_call_count,
+                            "turn_count": s.turn_count,
+                            "error": s.error,
+                        }
+                    )
+                    + "\n"
+                )
         self._checkpoint_index = len(self._snapshots)
 
     def _generate_report(self, start_time: float, total_iterations: int) -> SoakReport:
@@ -304,8 +319,12 @@ class SoakTestRunner:
             p50_latency=latencies[n // 2] if n > 0 else 0,
             p95_latency=latencies[int(n * 0.95)] if n > 0 else 0,
             p99_latency=latencies[int(n * 0.99)] if n > 0 else 0,
-            avg_tokens_per_case=statistics.mean(s.total_tokens for s in snapshots) if snapshots else 0.0,
-            tokens_per_second=(sum(s.total_tokens for s in snapshots) / elapsed) if elapsed > 0 and snapshots else 0.0,
+            avg_tokens_per_case=statistics.mean(s.total_tokens for s in snapshots)
+            if snapshots
+            else 0.0,
+            tokens_per_second=(sum(s.total_tokens for s in snapshots) / elapsed)
+            if elapsed > 0 and snapshots
+            else 0.0,
             rss_start_mb=rss_start,
             rss_end_mb=rss_end,
             rss_delta_mb=rss_end - rss_start,
@@ -320,7 +339,9 @@ class SoakTestRunner:
 
     def _save_report(self, report: SoakReport):
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        report_path = self.output_dir / f"soak_report_{self.model.replace('/', '_')}_{timestamp}.json"
+        report_path = (
+            self.output_dir / f"soak_report_{self.model.replace('/', '_')}_{timestamp}.json"
+        )
 
         report_dict = {
             "model": report.model,
@@ -360,7 +381,9 @@ class SoakTestRunner:
             json.dump(report_dict, f, indent=2)
 
         # Also save human-readable summary
-        summary_path = self.output_dir / f"soak_summary_{self.model.replace('/', '_')}_{timestamp}.md"
+        summary_path = (
+            self.output_dir / f"soak_summary_{self.model.replace('/', '_')}_{timestamp}.md"
+        )
         with open(summary_path, "w", encoding="utf-8") as f:
             f.write(self._format_summary(report))
 
@@ -411,7 +434,10 @@ def print_report(report: SoakReport):
     print(f"  Cases Run: {report.total_cases_run}")
     print(f"  Pass Rate: {report.pass_rate:.1%} ({report.pass_count}/{report.total_cases_run})")
     print(f"  Avg Latency: {report.avg_latency:.2f}s")
-    print(f"  P50/P95/P99: {report.p50_latency:.2f}s / {report.p95_latency:.2f}s / {report.p99_latency:.2f}s")
+    print(
+        f"  P50/P95/P99: {report.p50_latency:.2f}s / {report.p95_latency:.2f}s / "
+        f"{report.p99_latency:.2f}s"
+    )
     print(f"  Errors: {report.error_count}")
     print(f"  Degradation: {'⚠️ DETECTED' if report.degradation_detected else '✅ None'}")
     print(f"{'═' * 70}")

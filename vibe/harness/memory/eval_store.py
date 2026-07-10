@@ -114,7 +114,8 @@ class EvalStore:
     def save_eval(self, case: EvalCase) -> None:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
-                "INSERT OR REPLACE INTO evals (id, tags, input, expected, optimization_set, holdout_set) VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT OR REPLACE INTO evals (id, tags, input, expected, optimization_set, "
+                "holdout_set) VALUES (?, ?, ?, ?, ?, ?)",
                 (
                     case.id,
                     json.dumps(case.tags),
@@ -128,7 +129,8 @@ class EvalStore:
     def record_result(self, result: EvalResult) -> None:
         with sqlite3.connect(self.db_path) as conn:
             conn.execute(
-                "INSERT INTO eval_results (eval_id, passed, diff, timestamp, total_tokens, latency_seconds) VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO eval_results (eval_id, passed, diff, timestamp, total_tokens, "
+                "latency_seconds) VALUES (?, ?, ?, ?, ?, ?)",
                 (
                     result.eval_id,
                     int(result.passed),
@@ -154,5 +156,12 @@ class EvalStore:
     def summary(self) -> dict[str, Any]:
         with sqlite3.connect(self.db_path) as conn:
             total = conn.execute("SELECT COUNT(*) FROM eval_results").fetchone()[0]
-            passed = conn.execute("SELECT COUNT(*) FROM eval_results WHERE passed = 1").fetchone()[0]
-            return {"total_runs": total, "passed": passed, "failed": total - passed, "score": passed / total if total else 0.0}
+            passed = conn.execute("SELECT COUNT(*) FROM eval_results WHERE passed = 1").fetchone()[
+                0
+            ]
+            return {
+                "total_runs": total,
+                "passed": passed,
+                "failed": total - passed,
+                "score": passed / total if total else 0.0,
+            }

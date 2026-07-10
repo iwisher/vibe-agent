@@ -10,6 +10,8 @@ from pathlib import Path
 
 import pytest
 
+from vibe.core.config import SecurityConfig
+from vibe.core.coordinators import SecurityCoordinator
 from vibe.tools.file import ReadFileTool, WriteFileTool
 from vibe.tools.mcp_bridge import MCPServerConfig
 from vibe.tools.skill_manage import SkillManageTool
@@ -17,6 +19,7 @@ from vibe.tools.skill_manage import SkillManageTool
 # ---------------------------------------------------------------------------
 # File tool symlink escape
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_file_001_symlink_escape_blocked(tmp_path):
@@ -87,6 +90,7 @@ async def test_file_004_write_symlink_escape_blocked(tmp_path):
 # SkillManageTool path traversal
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_skill_001_path_traversal_blocked(tmp_path):
     """Skill names containing .. must be blocked."""
@@ -148,6 +152,7 @@ command = "echo hello"
 # MCPServerConfig mutable defaults
 # ---------------------------------------------------------------------------
 
+
 def test_mcp_001_mutable_defaults_isolated():
     """Mutating one config's args must not affect another config."""
     cfg1 = MCPServerConfig(name="a", description="A")
@@ -159,9 +164,6 @@ def test_mcp_001_mutable_defaults_isolated():
 
 
 # ─── 5-Layer SecurityCoordinator tests ───
-
-from vibe.core.config import SecurityConfig
-from vibe.core.coordinators import SecurityCoordinator
 
 
 def test_security_layer1_pattern_blocks_critical():
@@ -188,11 +190,17 @@ def test_security_layer2_file_safety_blocks_denylist():
     """Layer 2: Writing to denylisted paths must be blocked."""
     config = SecurityConfig(
         approval_mode="auto",
-        file_safety={"write_denylist_enabled": True, "read_blocklist_enabled": True, "safe_root": str(Path.home())},
+        file_safety={
+            "write_denylist_enabled": True,
+            "read_blocklist_enabled": True,
+            "safe_root": str(Path.home()),
+        },
     )
     coord = SecurityCoordinator(config=config)
 
-    result = coord.evaluate_tool_call("write_file", {"path": "~/.ssh/authorized_keys", "content": "x"})
+    result = coord.evaluate_tool_call(
+        "write_file", {"path": "~/.ssh/authorized_keys", "content": "x"}
+    )
     assert not result.allowed
     assert result.layer == "file_safety"
 
@@ -201,11 +209,17 @@ def test_security_layer2_file_safety_allows_safe_path():
     """Layer 2: Safe paths should pass file safety."""
     config = SecurityConfig(
         approval_mode="auto",
-        file_safety={"write_denylist_enabled": True, "read_blocklist_enabled": True, "safe_root": str(Path.home())},
+        file_safety={
+            "write_denylist_enabled": True,
+            "read_blocklist_enabled": True,
+            "safe_root": str(Path.home()),
+        },
     )
     coord = SecurityCoordinator(config=config)
 
-    result = coord.evaluate_tool_call("write_file", {"path": "~/workspace/test.txt", "content": "x"})
+    result = coord.evaluate_tool_call(
+        "write_file", {"path": "~/workspace/test.txt", "content": "x"}
+    )
     assert result.allowed
 
 
@@ -287,6 +301,7 @@ def test_security_disabled_passes_all():
 # QueryLoop integration
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_query_loop_security_blocks_destructive_tool():
     """QueryLoop with security should block destructive tool calls."""
@@ -298,12 +313,16 @@ async def test_query_loop_security_blocks_destructive_tool():
     tool_system = ToolSystem()
     mock_llm = MagicMock()
     mock_llm.model = "test"
-    mock_llm.complete = AsyncMock(return_value=MagicMock(
-        content="",
-        tool_calls=[{"id": "c1", "function": {"name": "bash", "arguments": '{"command": "rm -rf /"}'}}],
-        is_error=False,
-        usage={},
-    ))
+    mock_llm.complete = AsyncMock(
+        return_value=MagicMock(
+            content="",
+            tool_calls=[
+                {"id": "c1", "function": {"name": "bash", "arguments": '{"command": "rm -rf /"}'}}
+            ],
+            is_error=False,
+            usage={},
+        )
+    )
 
     security_config = SecurityConfig(approval_mode="strict")
     loop = QueryLoop(

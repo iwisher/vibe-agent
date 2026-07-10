@@ -57,7 +57,9 @@ class TestRegressionGate:
     def test_absolute_min_violation(self):
         """Should fail when absolute minimum is violated."""
         baseline = {"pass_rate": 0.90}
-        thresholds = [RegressionThreshold("pass_rate", max_regression_percent=10.0, absolute_min=0.8)]
+        thresholds = [
+            RegressionThreshold("pass_rate", max_regression_percent=10.0, absolute_min=0.8)
+        ]
         gate = RegressionGate(baseline, thresholds=thresholds)
 
         results = [
@@ -130,8 +132,12 @@ class TestRegressionGate:
 
         gate = RegressionGate({})
         results = [
-            EvalResult(eval_id="case-1", passed=True, diff={}, total_tokens=100, latency_seconds=1.0),
-            EvalResult(eval_id="case-2", passed=False, diff={}, total_tokens=200, latency_seconds=2.0),
+            EvalResult(
+                eval_id="case-1", passed=True, diff={}, total_tokens=100, latency_seconds=1.0
+            ),
+            EvalResult(
+                eval_id="case-2", passed=False, diff={}, total_tokens=200, latency_seconds=2.0
+            ),
         ]
 
         gate.save_baseline(results, path)
@@ -150,8 +156,12 @@ class TestRegressionGate:
         gate = RegressionGate(baseline)
 
         results = [
-            EvalResult(eval_id="case-1", passed=True, diff={}, total_tokens=100, latency_seconds=1.0),
-            EvalResult(eval_id="case-2", passed=True, diff={}, total_tokens=100, latency_seconds=20.0),
+            EvalResult(
+                eval_id="case-1", passed=True, diff={}, total_tokens=100, latency_seconds=1.0
+            ),
+            EvalResult(
+                eval_id="case-2", passed=True, diff={}, total_tokens=100, latency_seconds=20.0
+            ),
         ]
 
         report = gate.check(results)

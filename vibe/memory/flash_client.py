@@ -117,11 +117,7 @@ class FlashLLMClient:
             payload = {
                 "model": self.model,
                 "messages": [
-                    *(
-                        [{"role": "system", "content": system}]
-                        if system
-                        else []
-                    ),
+                    *([{"role": "system", "content": system}] if system else []),
                     {"role": "user", "content": prompt},
                 ],
                 "stream": False,
@@ -135,11 +131,7 @@ class FlashLLMClient:
                 response = await client.post(url, json=payload, headers=headers)
                 response.raise_for_status()
                 data = response.json()
-                content = (
-                    data.get("choices", [{}])[0]
-                    .get("message", {})
-                    .get("content", "")
-                )
+                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
                 return FlashLLMResponse(content=content)
 
         except asyncio.TimeoutError:
@@ -164,7 +156,8 @@ class FlashLLMClient:
             return False
 
         existing_summary = "\n\n---\n\n".join(existing_pages_content[:3])
-        prompt = f"""You are a fact-checker. Determine if the NEW CONTENT contradicts any of the EXISTING PAGES.
+        prompt = f"""You are a fact-checker. Determine if the NEW CONTENT contradicts any of \
+the EXISTING PAGES.
 
 EXISTING PAGES:
 {existing_summary}
@@ -190,7 +183,8 @@ Answer with ONLY "yes" or "no"."""
         if not await self.check_available():
             return 0.0
 
-        prompt = f"""Rate the factual accuracy and reliability of this content on a scale of 0.0 to 1.0.
+        prompt = f"""Rate the factual accuracy and reliability of this content on a scale of \
+0.0 to 1.0.
 Consider: specificity, internal consistency, presence of concrete evidence.
 
 CONTENT:

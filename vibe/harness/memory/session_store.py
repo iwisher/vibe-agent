@@ -52,7 +52,8 @@ class SessionStore:
                         created_at TEXT,
                         updated_at TEXT
                     );
-                    CREATE INDEX IF NOT EXISTS idx_checkpoints_updated ON session_checkpoints(updated_at);
+                    CREATE INDEX IF NOT EXISTS idx_checkpoints_updated
+                    ON session_checkpoints(updated_at);
                     """
                 )
 
@@ -60,6 +61,7 @@ class SessionStore:
         """Redact secrets from session data before persistence."""
         try:
             from vibe.harness.security.redactor import get_default_redactor
+
             redactor = get_default_redactor()
             return redactor.redact_dict(data)
         except ImportError:
@@ -125,7 +127,9 @@ class SessionStore:
                 "session_id": row["session_id"],
                 "state": row["state"],
                 "messages": json.loads(row["messages_json"]),
-                "plan_result": json.loads(row["plan_result_json"]) if row["plan_result_json"] else None,
+                "plan_result": json.loads(row["plan_result_json"])
+                if row["plan_result_json"]
+                else None,
                 "iteration": row["iteration"],
                 "feedback_retries": row["feedback_retries"],
                 "model": row["model"],
@@ -203,7 +207,6 @@ class SessionStore:
             result = cursor.fetchone()
             return result[0] if result else 0
 
-
     def cleanup_stale(self, max_age_hours: float = 24.0) -> int:
         """Remove checkpoints older than max_age_hours that are not COMPLETED.
 
@@ -256,9 +259,7 @@ class SessionStore:
             by_state = conn.execute(
                 "SELECT state, COUNT(*) as count FROM session_checkpoints GROUP BY state"
             ).fetchall()
-            oldest = conn.execute(
-                "SELECT MIN(updated_at) FROM session_checkpoints"
-            ).fetchone()[0]
+            oldest = conn.execute("SELECT MIN(updated_at) FROM session_checkpoints").fetchone()[0]
             return {
                 "total": total,
                 "by_state": {row["state"]: row["count"] for row in by_state},

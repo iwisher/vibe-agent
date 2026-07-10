@@ -184,9 +184,7 @@ class TestAnthropicAdapter:
 
     def test_health_check_endpoints(self):
         adapter = AnthropicAdapter()
-        endpoints = adapter.health_check_endpoints(
-            "https://api.anthropic.com", "claude-3-opus"
-        )
+        endpoints = adapter.health_check_endpoints("https://api.anthropic.com", "claude-3-opus")
         assert ("GET", "https://api.anthropic.com/v1/models") in endpoints
         assert ("POST", "https://api.anthropic.com/v1/messages") in endpoints
 
@@ -204,10 +202,7 @@ class TestAnthropicAdapter:
         chunk = {
             "type": "content_block_delta",
             "index": 0,
-            "delta": {
-                "type": "text_delta",
-                "text": "hello text"
-            }
+            "delta": {"type": "text_delta", "text": "hello text"},
         }
         res = adapter.parse_stream_chunk(chunk)
         assert res.content == "hello text"
@@ -218,10 +213,7 @@ class TestAnthropicAdapter:
         chunk = {
             "type": "content_block_delta",
             "index": 0,
-            "delta": {
-                "type": "thinking_delta",
-                "thinking": "thinking process"
-            }
+            "delta": {"type": "thinking_delta", "thinking": "thinking process"},
         }
         res = adapter.parse_stream_chunk(chunk)
         assert res.content == ""
@@ -231,12 +223,8 @@ class TestAnthropicAdapter:
         adapter = AnthropicAdapter()
         chunk = {
             "type": "message_delta",
-            "delta": {
-                "stop_reason": "end_turn"
-            },
-            "usage": {
-                "output_tokens": 10
-            }
+            "delta": {"stop_reason": "end_turn"},
+            "usage": {"output_tokens": 10},
         }
         res = adapter.parse_stream_chunk(chunk)
         assert res.finish_reason == "end_turn"

@@ -8,6 +8,8 @@ from vibe.core.error_recovery import ErrorRecovery, RetryPolicy
 from vibe.core.model_gateway import LLMClient
 from vibe.core.query_loop import QueryLoop
 from vibe.harness.constraints import HookPipeline
+from vibe.harness.instructions import InstructionLoader, InstructionSet
+from vibe.harness.planner import HybridPlanner
 from vibe.tools.bash import BashSandbox, BashTool
 from vibe.tools.file import ReadFileTool, WriteFileTool
 from vibe.tools.skill_install import SkillInstallExecutableTool, SkillListTool
@@ -15,8 +17,6 @@ from vibe.tools.skill_install_prompt import PromptSkillInstallTool
 from vibe.tools.skill_manage import SkillManageTool
 from vibe.tools.skill_runner import SkillRunnerTool
 from vibe.tools.tool_system import ToolSystem
-from vibe.harness.instructions import InstructionLoader, InstructionSet
-from vibe.harness.planner import HybridPlanner
 
 
 class QueryLoopFactory:
@@ -173,16 +173,26 @@ class QueryLoopFactory:
             )
             # Wire LLM summarization if the client supports it
             if hasattr(llm, "complete"):
+
                 async def _summarize(msgs: list[dict[str, Any]]) -> str:
                     summary_prompt = [
                         {
                             "role": "system",
-                            "content": "Summarize the following conversation concisely, preserving key facts, decisions, and action items.",
+                            "content": (
+                                "Summarize the following conversation concisely, "
+                                "preserving key facts, decisions, and action items."
+                            ),
                         },
-                        {"role": "user", "content": "\n".join(f"{m.get('role', 'user')}: {m.get('content', '')}" for m in msgs)},
+                        {
+                            "role": "user",
+                            "content": "\n".join(
+                                f"{m.get('role', 'user')}: {m.get('content', '')}" for m in msgs
+                            ),
+                        },
                     ]
                     resp = await llm.complete(summary_prompt)
                     return resp.content
+
                 compactor.summarize_fn = _summarize
             kwargs["context_compactor"] = compactor
         if self.with_error_recovery:
@@ -351,6 +361,7 @@ class QueryLoopFactory:
             return None
         try:
             from vibe.harness.memory.session_store import SessionStore
+
             return SessionStore()
         except Exception:
             return None
@@ -364,6 +375,7 @@ class QueryLoopFactory:
             return None
         try:
             from vibe.harness.memory.trace_store import TraceStore
+
             storage_type = getattr(ts_cfg, "storage_type", "sqlite")
             db_path = getattr(ts_cfg, "db_path", None)
             return TraceStore(storage_type=storage_type, db_path=db_path)
@@ -386,17 +398,27 @@ class QueryLoopFactory:
             wiki_cfg = getattr(mem_cfg, "wiki", None)
             idx_cfg = getattr(mem_cfg, "pageindex", None)
 
-            base_path = getattr(wiki_cfg, "base_path", "~/.vibe/wiki") if wiki_cfg else "~/.vibe/wiki"
-            index_path = getattr(idx_cfg, "index_path", "~/.vibe/memory/index.json") if idx_cfg else "~/.vibe/memory/index.json"
+            base_path = (
+                getattr(wiki_cfg, "base_path", "~/.vibe/wiki") if wiki_cfg else "~/.vibe/wiki"
+            )
+            index_path = (
+                getattr(idx_cfg, "index_path", "~/.vibe/memory/index.json")
+                if idx_cfg
+                else "~/.vibe/memory/index.json"
+            )
 
             db = SharedMemoryDB()
             wiki = LLMWiki(base_path=base_path, db=db)
             pageindex = PageIndex(
                 index_path=index_path,
                 llm_client=None,  # wired separately when flash client available
-                max_nodes_per_index=getattr(idx_cfg, "max_nodes_per_index", 100) if idx_cfg else 100,
+                max_nodes_per_index=getattr(idx_cfg, "max_nodes_per_index", 100)
+                if idx_cfg
+                else 100,
                 token_threshold=getattr(idx_cfg, "token_threshold", 4000) if idx_cfg else 4000,
-                routing_timeout_seconds=getattr(idx_cfg, "routing_timeout_seconds", 2.0) if idx_cfg else 2.0,
+                routing_timeout_seconds=getattr(idx_cfg, "routing_timeout_seconds", 2.0)
+                if idx_cfg
+                else 2.0,
             )
             telemetry = TelemetryCollector(db=db)
 
@@ -404,6 +426,7 @@ class QueryLoopFactory:
                 from pathlib import Path
 
                 from vibe.memory.vector_index import get_vector_index
+
                 model_name = getattr(idx_cfg, "embedding_model", "all-MiniLM-L6-v2")
                 cache_path = Path(str(index_path)).with_suffix(".npy")
                 pageindex.set_vector_index(get_vector_index(model_name, cache_path))
@@ -422,9 +445,11 @@ class QueryLoopFactory:
             return wiki, pageindex, telemetry
         except Exception as e:
             import logging
+
             logging.getLogger(__name__).warning(
                 "Failed to initialize tripartite memory components: %s. "
-                "Continuing without wiki/pageindex.", e
+                "Continuing without wiki/pageindex.",
+                e,
             )
             return None, None, None
 

@@ -32,8 +32,18 @@ def test_planner_falls_back_to_all_tools_when_no_match():
 def test_planner_matches_skills_by_tag():
     planner = HybridPlanner()
     skills = [
-        Skill(name="python_helper", description="Help with Python", content="Use this for Python code.", tags=["python"]),
-        Skill(name="js_helper", description="Help with JS", content="Use this for JS code.", tags=["javascript"]),
+        Skill(
+            name="python_helper",
+            description="Help with Python",
+            content="Use this for Python code.",
+            tags=["python"],
+        ),
+        Skill(
+            name="js_helper",
+            description="Help with JS",
+            content="Use this for JS code.",
+            tags=["javascript"],
+        ),
     ]
     request = PlanRequest(query="Write some python functions", available_skills=skills)
     result = planner.plan(request)
@@ -56,7 +66,12 @@ def test_planner_selects_mcps():
 def test_planner_builds_system_prompt():
     planner = HybridPlanner()
     skills = [
-        Skill(name="python_helper", description="Help with Python", content="Use this for Python code.", tags=["python"]),
+        Skill(
+            name="python_helper",
+            description="Help with Python",
+            content="Use this for Python code.",
+            tags=["python"],
+        ),
     ]
     mcps = [
         {"name": "filesystem", "description": "Access local filesystem via MCP"},
@@ -105,7 +120,12 @@ def test_planner_uses_trace_store_memory():
         planner = HybridPlanner(trace_store=store)
         # Include a skill so keyword plan triggers and includes memory hint
         skills = [
-            Skill(name="rust_helper", description="Help with Rust", content="Use this for Rust code.", tags=["rust"]),
+            Skill(
+                name="rust_helper",
+                description="Help with Rust",
+                content="Use this for Rust code.",
+                tags=["rust"],
+            ),
         ]
         request = PlanRequest(query="help with rust programming", available_skills=skills)
         result = planner.plan(request)
@@ -114,6 +134,7 @@ def test_planner_uses_trace_store_memory():
 
 
 # ─── Phase 2 eval-style planner tests ───
+
 
 def test_planner_001_correct_tool_selection_for_query():
     """planner_001: 'execute ls' should select bash_tool."""
@@ -149,18 +170,38 @@ def test_planner_003_skill_matching_accuracy():
     """planner_003: 'install a skill' should match skill_manage skill."""
     planner = HybridPlanner()
     skills = [
-        Skill(name="skill_manage", description="Manage and install skills", content="Use this to install or update skills.", tags=["skill", "install"]),
-        Skill(name="docker_helper", description="Docker operations", content="Use this for Docker.", tags=["docker", "container"]),
-        Skill(name="git_helper", description="Git operations", content="Use this for Git.", tags=["git", "version-control"]),
+        Skill(
+            name="skill_manage",
+            description="Manage and install skills",
+            content="Use this to install or update skills.",
+            tags=["skill", "install"],
+        ),
+        Skill(
+            name="docker_helper",
+            description="Docker operations",
+            content="Use this for Docker.",
+            tags=["docker", "container"],
+        ),
+        Skill(
+            name="git_helper",
+            description="Git operations",
+            content="Use this for Git.",
+            tags=["git", "version-control"],
+        ),
     ]
     request = PlanRequest(query="install a skill", available_skills=skills)
     result = planner.plan(request)
     assert any(s.name == "skill_manage" for s in result.selected_skills), "Expected skill_manage"
-    assert not any(s.name == "docker_helper" for s in result.selected_skills), "docker_helper should not be selected"
-    assert not any(s.name == "git_helper" for s in result.selected_skills), "git_helper should not be selected"
+    assert not any(s.name == "docker_helper" for s in result.selected_skills), (
+        "docker_helper should not be selected"
+    )
+    assert not any(s.name == "git_helper" for s in result.selected_skills), (
+        "git_helper should not be selected"
+    )
 
 
 # ─── Tier transition tests for HybridPlanner ───
+
 
 def _mock_get_embedding(text: str) -> list[float]:
     """Return deterministic 384-dim vectors for testing."""

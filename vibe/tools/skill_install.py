@@ -37,6 +37,7 @@ class ChatApprovalGate(ApprovalGate):
         # Primary path: POSIX select()
         try:
             import select
+
             rlist, _, _ = select.select([sys.stdin], [], [], timeout)
             if rlist:
                 return sys.stdin.readline().strip()
@@ -65,23 +66,26 @@ class ChatApprovalGate(ApprovalGate):
         # Block on critical risks unless config gates allow interactive CLI prompts
         if risks:
             import sys
+
             try:
                 from vibe.core.config import VibeConfig
+
                 config = VibeConfig.load()
                 interactive_enabled = config.security.interactive_skill_install
             except Exception:
                 interactive_enabled = False
 
             if interactive_enabled and sys.stdin.isatty():
-                print(f"\n⚠️  SECURITY RISK WARNING")
+                print("\n⚠️  SECURITY RISK WARNING")
                 print(f"Skill '{skill_name}' contains critical security risks:")
                 for risk in risks:
                     print(f" - {risk}")
                 response = self._prompt_with_timeout(
-                    f"\nDo you want to override and install this skill anyway? [y/N] (30s timeout): ",
+                    "\nDo you want to override and install this skill anyway? "
+                    "[y/N] (30s timeout): ",
                     30.0,
                 )
-                if response == 'y':
+                if response == "y":
                     return True
                 if response is None:
                     print("\n[Timeout - Auto-rejecting skill installation]")
@@ -89,7 +93,6 @@ class ChatApprovalGate(ApprovalGate):
 
         # Auto-approve warnings in chat context
         return True
-
 
 
 class SkillInstallExecutableTool(Tool):

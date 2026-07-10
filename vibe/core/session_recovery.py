@@ -131,8 +131,12 @@ class SessionRecoveryManager:
             checkpoint = SessionCheckpoint(
                 session_id=data["session_id"],
                 state=data["state"],
-                messages=json.loads(data["messages"]) if isinstance(data["messages"], str) else data["messages"],
-                plan_result=json.loads(data["plan_result"]) if isinstance(data.get("plan_result"), str) else data.get("plan_result"),
+                messages=json.loads(data["messages"])
+                if isinstance(data["messages"], str)
+                else data["messages"],
+                plan_result=json.loads(data["plan_result"])
+                if isinstance(data.get("plan_result"), str)
+                else data.get("plan_result"),
                 iteration=data.get("iteration", 0),
                 feedback_retries=data.get("feedback_retries", 0),
                 model=data.get("model"),
@@ -145,6 +149,7 @@ class SessionRecoveryManager:
         if isinstance(created_at, str):
             try:
                 from datetime import datetime
+
                 created_at = datetime.fromisoformat(created_at.replace("Z", "+00:00")).timestamp()
             except Exception:
                 created_at = checkpoint.created_at

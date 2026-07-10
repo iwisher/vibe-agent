@@ -71,7 +71,9 @@ async def test_complete_auth_error(client):
 @pytest.mark.asyncio
 async def test_complete_timeout(client):
     with patch(
-        "httpx.AsyncClient.post", new_callable=AsyncMock, side_effect=httpx.TimeoutException("timeout")
+        "httpx.AsyncClient.post",
+        new_callable=AsyncMock,
+        side_effect=httpx.TimeoutException("timeout"),
     ):
         with patch("vibe.core.error_recovery.asyncio.sleep"):
             result = await client.complete(messages=[{"role": "user", "content": "hi"}])
@@ -106,7 +108,7 @@ async def test_structured_output_with_markdown_fencing(client):
         "choices": [
             {
                 "message": {
-                    "content": "```json\n{\"x\": 1}\n```",
+                    "content": '```json\n{"x": 1}\n```',
                 },
                 "finish_reason": "stop",
             }

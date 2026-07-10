@@ -29,9 +29,9 @@ class CostBudget:
     """Budget configuration for cost tracking."""
 
     session_limit: float | None = None  # Max cost per session
-    daily_limit: float | None = None    # Max cost per day
-    global_limit: float | None = None   # Max total cost
-    warning_threshold: float = 0.8      # Warn at 80% of limit
+    daily_limit: float | None = None  # Max cost per day
+    global_limit: float | None = None  # Max total cost
+    warning_threshold: float = 0.8  # Warn at 80% of limit
 
     @classmethod
     def from_config(cls, config: Any | None) -> "CostBudget":
@@ -102,7 +102,9 @@ class CostTracker:
 
         # Update session cost
         if session_id:
-            self._session_costs[session_id] = self._session_costs.get(session_id, 0.0) + estimated_cost
+            self._session_costs[session_id] = (
+                self._session_costs.get(session_id, 0.0) + estimated_cost
+            )
 
         # Update daily cost
         day_key = time.strftime("%Y-%m-%d", time.localtime())
@@ -183,7 +185,9 @@ class CostTracker:
         provider_breakdown: dict[str, float] = {}
         model_breakdown: dict[str, float] = {}
         for r in self._records:
-            provider_breakdown[r.provider] = provider_breakdown.get(r.provider, 0.0) + r.estimated_cost
+            provider_breakdown[r.provider] = (
+                provider_breakdown.get(r.provider, 0.0) + r.estimated_cost
+            )
             model_breakdown[r.model] = model_breakdown.get(r.model, 0.0) + r.estimated_cost
 
         return {

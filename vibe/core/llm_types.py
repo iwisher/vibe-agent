@@ -42,7 +42,9 @@ class LLMResponse:
     error_type: ErrorType = ErrorType.NONE
     actionable_hint: Optional[str] = None
     model_used: Optional[str] = None  # Actual model after fallback resolution
-    reasoning_content: Optional[str] = None  # DeepSeek reasoning, Claude thinking, o1 reasoning tokens
+    reasoning_content: Optional[str] = (
+        None  # DeepSeek reasoning, Claude thinking, o1 reasoning tokens
+    )
 
     @property
     def is_error(self) -> bool:

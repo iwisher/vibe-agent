@@ -1,6 +1,5 @@
 """Tests for the human approval system."""
 
-
 from vibe.tools.security.human_approval import (
     ApprovalChoice,
     ApprovalMode,

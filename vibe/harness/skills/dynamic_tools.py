@@ -62,7 +62,8 @@ class DynamicToolRegistry:
         """
         if tool.name in self._tools:
             logger.warning(
-                f"Dynamic tool '{tool.name}' already registered (from {self._tools[tool.name].skill_source})"
+                f"Dynamic tool '{tool.name}' already registered "
+                f"(from {self._tools[tool.name].skill_source})"
             )
             return False
 
@@ -162,6 +163,7 @@ class SkillToolDeclarator:
 
         This allows the skill to handle its own dynamic tool invocations.
         """
+
         def handler(**kwargs):
             logger.debug(f"Dynamic tool '{tool_name}' called with {kwargs}")
             # Route to skill's execution context

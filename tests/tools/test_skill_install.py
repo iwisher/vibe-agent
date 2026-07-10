@@ -1,15 +1,13 @@
 """Unit tests for skill_install and skill_list tools and ChatApprovalGate."""
 
+import sys
 import tempfile
 from pathlib import Path
-import pytest
-from unittest.mock import patch, MagicMock
-
-import sys
 from unittest.mock import MagicMock, patch
 
-from vibe.tools.skill_install import SkillInstallExecutableTool, SkillListTool, ChatApprovalGate
-from vibe.tools.tool_system import ToolResult
+import pytest
+
+from vibe.tools.skill_install import ChatApprovalGate, SkillInstallExecutableTool, SkillListTool
 
 SAMPLE_SKILL = """+++
 vibe_skill_version = "2.0.0"
@@ -164,7 +162,9 @@ def test_chat_approval_gate_blocks_risks():
     gate = ChatApprovalGate()
     # risks present
     assert gate.approve("Sample", risks=["critical vulnerability"], warnings=[]) is False
-    assert gate.approve("Sample", risks=["critical vulnerability"], warnings=["some warning"]) is False
+    assert (
+        gate.approve("Sample", risks=["critical vulnerability"], warnings=["some warning"]) is False
+    )
 
 
 def test_chat_approval_gate_approves_warnings():

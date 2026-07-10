@@ -191,6 +191,7 @@ async def test_query_loop_stream_metrics_fallback_estimate(mock_llm, tool_system
     """When the streaming provider does not report usage, metrics should be
     estimated from content length so that tokens_per_second is non-zero.
     """
+
     async def mock_stream(*args, **kwargs):
         # Simulate a provider that never sends usage (common for Ollama, vLLM)
         yield LLMResponse(content="Hello ", finish_reason=None, usage=None)
@@ -211,12 +212,12 @@ async def test_query_loop_stream_metrics_fallback_estimate(mock_llm, tool_system
     assert m.tokens_per_second > 0.0
 
 
-
 @pytest.mark.asyncio
 async def test_query_loop_stream_metrics_cjk_estimate(mock_llm, tool_system):
     """When streaming CJK or mixed ASCII/CJK content without usage, token
     estimation should apply the higher per-char rate for non-ASCII characters.
     """
+
     # Pure CJK: "你好世界" = 4 chars * 0.8 = 3.2 -> int = 3
     async def mock_stream_cjk(*args, **kwargs):
         yield LLMResponse(content="你好世界", finish_reason="stop", usage=None)
@@ -252,30 +253,11 @@ async def test_query_loop_stream_metrics_cjk_estimate(mock_llm, tool_system):
     assert m.total_tokens == m.completion_tokens
     assert m.tokens_per_second > 0.0
 
-@pytest.mark.asyncio
-async def test_query_loop_stream_metrics_cjk_estimate(mock_llm, tool_system):
-    """CJK characters should use higher token density (0.8 tokens/char)."""
-    async def mock_stream(*args, **kwargs):
-        # Pure CJK: 4 chars * 0.8 = 3.2 -> 3 tokens
-        yield LLMResponse(content="你好世界", finish_reason="stop", usage=None)
-
-    mock_llm.complete_stream.side_effect = mock_stream
-    loop = QueryLoop(llm_client=mock_llm, tool_system=tool_system)
-
-    results = [r async for r in loop.run("hi", stream=True)]
-    final_results = [r for r in results if not r.is_status and not r.is_stream_chunk]
-    assert len(final_results) == 1
-
-    m = final_results[0].metrics
-    assert m is not None
-    # "你好世界" is 4 CJK chars -> 4 * 0.8 = 3.2 -> int = 3
-    assert m.completion_tokens == 3
-    assert m.tokens_per_second > 0.0
-
 
 @pytest.mark.asyncio
 async def test_query_loop_stream_metrics_mixed_ascii_cjk(mock_llm, tool_system):
     """Mixed ASCII and CJK should blend token ratios correctly."""
+
     async def mock_stream(*args, **kwargs):
         # "Hello 你好" = 6 ASCII (6 * 0.25 = 1.5) + 2 CJK (2 * 0.8 = 1.6) = 3.1 -> 3
         yield LLMResponse(content="Hello 你好", finish_reason="stop", usage=None)
@@ -293,10 +275,10 @@ async def test_query_loop_stream_metrics_mixed_ascii_cjk(mock_llm, tool_system):
     assert m.tokens_per_second > 0.0
 
 
-
 @pytest.mark.asyncio
 async def test_query_loop_stream_interrupt_mid_stream(mock_llm, tool_system):
     """Calling stop() mid-stream should halt chunk yielding and skip partial output."""
+
     async def mock_stream(*args, **kwargs):
         yield LLMResponse(content="Hello ", finish_reason=None)
         yield LLMResponse(content="world", finish_reason=None)

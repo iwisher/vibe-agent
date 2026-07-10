@@ -59,7 +59,9 @@ class TestProviderAwareCheck:
 
     async def test_check_provider_4xx_returns_false(self):
         registry = ProviderRegistry()
-        registry.register(ProviderProfile(name="p", base_url="http://localhost", adapter_type="openai"))
+        registry.register(
+            ProviderProfile(name="p", base_url="http://localhost", adapter_type="openai")
+        )
         checker = ModelHealthChecker(provider_registry=registry)
 
         with patch("httpx.AsyncClient.get") as mock_get:
@@ -71,7 +73,9 @@ class TestProviderAwareCheck:
 
     async def test_check_provider_timeout_returns_false(self):
         registry = ProviderRegistry()
-        registry.register(ProviderProfile(name="p", base_url="http://localhost", adapter_type="openai"))
+        registry.register(
+            ProviderProfile(name="p", base_url="http://localhost", adapter_type="openai")
+        )
         checker = ModelHealthChecker(provider_registry=registry)
 
         with patch("httpx.AsyncClient.get", side_effect=httpx.TimeoutException("timeout")):
@@ -81,7 +85,9 @@ class TestProviderAwareCheck:
     async def test_check_fallback_to_post_probe(self):
         """When GET /v1/models returns empty list, POST probe should be tried."""
         registry = ProviderRegistry()
-        registry.register(ProviderProfile(name="p", base_url="http://localhost", adapter_type="openai"))
+        registry.register(
+            ProviderProfile(name="p", base_url="http://localhost", adapter_type="openai")
+        )
         checker = ModelHealthChecker(provider_registry=registry)
 
         get_mock = MagicMock()
@@ -106,7 +112,9 @@ class TestResolveModelWithProviders:
         """When ModelProfile specifies a provider, health check uses that provider's adapter."""
         provider_reg = ProviderRegistry()
         provider_reg.register(
-            ProviderProfile(name="kimi", base_url="https://api.kimi.com/coding", adapter_type="anthropic")
+            ProviderProfile(
+                name="kimi", base_url="https://api.kimi.com/coding", adapter_type="anthropic"
+            )
         )
         checker = ModelHealthChecker(provider_registry=provider_reg)
 
@@ -137,7 +145,9 @@ class TestResolveModelWithProviders:
         """Fallback chain can cross providers (e.g., kimi fails, ollama succeeds)."""
         provider_reg = ProviderRegistry()
         provider_reg.register(
-            ProviderProfile(name="kimi", base_url="https://api.kimi.com/coding", adapter_type="anthropic")
+            ProviderProfile(
+                name="kimi", base_url="https://api.kimi.com/coding", adapter_type="anthropic"
+            )
         )
         provider_reg.register(
             ProviderProfile(name="ollama", base_url="http://localhost:11434", adapter_type="openai")
@@ -146,10 +156,20 @@ class TestResolveModelWithProviders:
 
         model_reg = ModelRegistry()
         model_reg.add_profile(
-            ModelProfile(name="kimi-sonnet", provider="kimi", base_url="https://api.kimi.com/coding", model_id="claude-sonnet")
+            ModelProfile(
+                name="kimi-sonnet",
+                provider="kimi",
+                base_url="https://api.kimi.com/coding",
+                model_id="claude-sonnet",
+            )
         )
         model_reg.add_profile(
-            ModelProfile(name="llama3.2", provider="ollama", base_url="http://localhost:11434", model_id="llama3.2")
+            ModelProfile(
+                name="llama3.2",
+                provider="ollama",
+                base_url="http://localhost:11434",
+                model_id="llama3.2",
+            )
         )
 
         config = VibeConfig.load(auto_create=False)
@@ -157,6 +177,7 @@ class TestResolveModelWithProviders:
         config.fallback.chain = ["kimi-sonnet", "llama3.2"]
 
         call_count = 0
+
         async def _mock_get(*args, **kwargs):
             nonlocal call_count
             call_count += 1

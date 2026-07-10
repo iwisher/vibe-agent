@@ -114,7 +114,10 @@ class SkillRunnerTool(Tool):
                 return ToolResult(
                     success=False,
                     content=None,
-                    error=f"Circular execution blocked: step '{step.id}' cannot call 'run_skill' recursively.",
+                    error=(
+                        f"Circular execution blocked: step '{step.id}' cannot call "
+                        f"'run_skill' recursively."
+                    ),
                 )
 
             command = self._substitute_vars(step.command, variables)
@@ -137,12 +140,14 @@ class SkillRunnerTool(Tool):
 
             verified = self._verify_step(result, step.verification, command, variables)
 
-            step_results.append({
-                "step_id": step.id,
-                "success": result.success and verified,
-                "output": result.content,
-                "error": result.error,
-            })
+            step_results.append(
+                {
+                    "step_id": step.id,
+                    "success": result.success and verified,
+                    "output": result.content,
+                    "error": result.error,
+                }
+            )
 
             if not (result.success and verified):
                 break

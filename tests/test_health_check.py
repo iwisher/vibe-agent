@@ -11,7 +11,9 @@ from vibe.core.health_check import ModelHealthChecker
 class TestCheckAvailable:
     async def test_available_model_returns_true(self):
         checker = ModelHealthChecker(api_key="sk-test")
-        with patch.object(checker, "_legacy_headers", return_value={"Authorization": "Bearer sk-test"}):
+        with patch.object(
+            checker, "_legacy_headers", return_value={"Authorization": "Bearer sk-test"}
+        ):
             with patch("httpx.AsyncClient.get") as mock_get:
                 mock_response = MagicMock()
                 mock_response.status_code = 200
@@ -60,8 +62,7 @@ class TestResolveModel:
     async def test_first_available_model_returned(self, tmp_path):
         config_path = tmp_path / "config.yaml"
         config_path.write_text(
-            "llm:\n  default_model: model-a\n"
-            "fallback:\n  chain:\n    - model-a\n    - model-b\n",
+            "llm:\n  default_model: model-a\nfallback:\n  chain:\n    - model-a\n    - model-b\n",
             encoding="utf-8",
         )
         cfg = VibeConfig.load(path=config_path, auto_create=False)
@@ -90,8 +91,7 @@ class TestResolveModel:
     async def test_returns_default_when_none_available(self, tmp_path):
         config_path = tmp_path / "config.yaml"
         config_path.write_text(
-            "llm:\n  default_model: model-a\n"
-            "fallback:\n  chain:\n    - model-a\n    - model-b\n",
+            "llm:\n  default_model: model-a\nfallback:\n  chain:\n    - model-a\n    - model-b\n",
             encoding="utf-8",
         )
         cfg = VibeConfig.load(path=config_path, auto_create=False)

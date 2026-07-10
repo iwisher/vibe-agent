@@ -1,17 +1,18 @@
 """Tests for SubAgent lifecycle, roles, and scratchpad."""
 
-import pytest
 import asyncio
 
+import pytest
+
 from vibe.swarm.agent import (
+    ROLE_PROMPTS,
+    AgentLifecycle,
+    Scratchpad,
     SubAgent,
     SubAgentConfig,
     SubAgentRole,
-    AgentLifecycle,
-    Scratchpad,
-    ROLE_PROMPTS,
 )
-from vibe.swarm.protocol import MessageBus, MessageType, AgentMessage
+from vibe.swarm.protocol import MessageBus, MessageType
 
 
 class TestScratchpad:

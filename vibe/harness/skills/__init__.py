@@ -1,4 +1,5 @@
 """Vibe-native skill system."""
+
 # Type aliases to disambiguate the two Skill classes
 from vibe.harness.instructions import Skill as PromptSkill  # YAML, prompt-based
 

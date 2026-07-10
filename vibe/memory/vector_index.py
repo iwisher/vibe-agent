@@ -25,9 +25,7 @@ class VectorIndex(Protocol):
         """Encode a list of texts into dense vectors."""
         ...
 
-    def search(
-        self, query: str, nodes: list[IndexNode], top_k: int = 5
-    ) -> list[IndexNode]:
+    def search(self, query: str, nodes: list[IndexNode], top_k: int = 5) -> list[IndexNode]:
         """Search across nodes using the given query."""
         ...
 
@@ -43,9 +41,7 @@ class KeywordIndex:
         # We don't actually encode dense vectors
         return np.zeros((len(texts), 1), dtype=np.float32)
 
-    def search(
-        self, query: str, nodes: list[IndexNode], top_k: int = 5
-    ) -> list[IndexNode]:
+    def search(self, query: str, nodes: list[IndexNode], top_k: int = 5) -> list[IndexNode]:
         q = query.lower().split()
         scored: list[tuple[float, IndexNode]] = []
 
@@ -84,7 +80,9 @@ class SentenceTransformerIndex:
     Lazy loads the model on first use. Caches embeddings to a .npy file.
     """
 
-    def __init__(self, model_name: str = "all-MiniLM-L6-v2", cache_path: str | Path | None = None) -> None:
+    def __init__(
+        self, model_name: str = "all-MiniLM-L6-v2", cache_path: str | Path | None = None
+    ) -> None:
         self.model_name = model_name
         if cache_path:
             self.cache_path = Path(cache_path)
@@ -121,7 +119,9 @@ class SentenceTransformerIndex:
             logger.debug(f"Loaded SentenceTransformer {self.model_name} on {device}")
             return self._model
         except ImportError:
-            logger.error("sentence-transformers is not installed. Run: pip install vibe-agent[memory]")
+            logger.error(
+                "sentence-transformers is not installed. Run: pip install vibe-agent[memory]"
+            )
             raise
 
     def _load_cache(self) -> None:
@@ -160,9 +160,7 @@ class SentenceTransformerIndex:
     def _get_node_text(self, node: IndexNode) -> str:
         return f"{node.title}\n{node.description}\nTags: {', '.join(node.tags)}"
 
-    def search(
-        self, query: str, nodes: list[IndexNode], top_k: int = 5
-    ) -> list[IndexNode]:
+    def search(self, query: str, nodes: list[IndexNode], top_k: int = 5) -> list[IndexNode]:
         """Search using cosine similarity on node embeddings."""
         if not nodes:
             return []
@@ -232,6 +230,7 @@ def get_vector_index(model_name: str, cache_path: str | Path | None = None) -> V
     """Factory to get the best available VectorIndex."""
     try:
         import sentence_transformers  # noqa
+
         return SentenceTransformerIndex(model_name=model_name, cache_path=cache_path)
     except ImportError:
         logger.debug("sentence-transformers not installed; falling back to KeywordIndex.")

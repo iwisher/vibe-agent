@@ -1,4 +1,5 @@
 """CLI commands for vibe skill management."""
+
 import asyncio
 from pathlib import Path
 
@@ -162,7 +163,8 @@ def run_skill(
 
     # Create ToolSystem with BashTool and run skill
     tool_system = ToolSystem()
-    from vibe.tools.bash import BashTool, BashSandbox
+    from vibe.tools.bash import BashSandbox, BashTool
+
     tool_system.register_tool(BashTool(sandbox=BashSandbox()))
 
     runner = SkillRunnerTool(executable_skills, tool_system)
@@ -194,7 +196,8 @@ def create_skill(
     """Scaffold a new skill directory with SKILL.md template."""
     # Validate name — prevent path traversal
     import re
-    if not re.match(r'^[a-zA-Z0-9_-]+$', name):
+
+    if not re.match(r"^[a-zA-Z0-9_-]+$", name):
         console.print("[red]Invalid skill name. Use only alphanumeric, hyphens, underscores.[/red]")
         raise typer.Exit(code=1)
 
@@ -209,7 +212,7 @@ def create_skill(
     template = f'''+++
 vibe_skill_version = "2.0.0"
 id = "{name}"
-name = "{name.replace('-', ' ').title()}"
+name = "{name.replace("-", " ").title()}"
 description = "Describe what this skill does"
 category = "general"
 tags = []
@@ -232,7 +235,7 @@ created_at = "2026-04-24T00:00:00Z"
 auto_generated = false
 +++
 
-# {name.replace('-', ' ').title()}
+# {name.replace("-", " ").title()}
 
 ## Overview
 Describe what this skill does and when to use it.

@@ -48,9 +48,7 @@ class TestSecurityConfigDefaults:
         assert env.enabled is True
         assert env.block_path_overrides is True
         assert env.strip_shell_env is True
-        assert env.secret_prefixes == [
-            "*_API_KEY", "*_TOKEN", "*_SECRET", "AWS_*", "GITHUB_*"
-        ]
+        assert env.secret_prefixes == ["*_API_KEY", "*_TOKEN", "*_SECRET", "AWS_*", "GITHUB_*"]
 
     def test_sandbox_defaults(self):
         sb = SandboxConfig()
@@ -115,7 +113,8 @@ class TestVibeConfigLoading:
 
     def test_load_with_security_section(self, tmp_path):
         config_path = tmp_path / "config.yaml"
-        config_path.write_text('''
+        config_path.write_text(
+            """
 llm:
   default_model: "test-model"
   base_url: "http://localhost:11434"
@@ -141,7 +140,8 @@ security:
     log_path: "{tmpdir}/security.log"
     max_events: 5000
     redact_in_logs: false
-'''.format(tmpdir=tmp_path))
+""".format(tmpdir=tmp_path)
+        )
 
         cfg = VibeConfig.load(path=config_path, auto_create=False)
         sec = cfg.get_security_config()
@@ -164,11 +164,11 @@ security:
     def test_load_without_security_section_uses_defaults(self, tmp_path):
         """Backward compatibility: config without security section loads defaults."""
         config_path = tmp_path / "config.yaml"
-        config_path.write_text('''
+        config_path.write_text("""
 llm:
   default_model: "test-model"
   base_url: "http://localhost:11434"
-''')
+""")
 
         cfg = VibeConfig.load(path=config_path, auto_create=False)
         sec = cfg.get_security_config()
@@ -197,14 +197,14 @@ llm:
     def test_load_partial_security_section(self, tmp_path):
         """Partial security section merges with defaults."""
         config_path = tmp_path / "config.yaml"
-        config_path.write_text('''
+        config_path.write_text("""
 llm:
   default_model: "test-model"
 security:
   approval_mode: "auto"
   file_safety:
     write_denylist_enabled: false
-''')
+""")
 
         cfg = VibeConfig.load(path=config_path, auto_create=False)
         sec = cfg.get_security_config()
@@ -224,12 +224,12 @@ class TestVibeConfigEnvOverrides:
     def test_env_approval_mode_override(self, tmp_path, monkeypatch):
         """VIBE_APPROVAL_MODE env var overrides config file."""
         config_path = tmp_path / "config.yaml"
-        config_path.write_text('''
+        config_path.write_text("""
 llm:
   default_model: "test-model"
 security:
   approval_mode: "manual"
-''')
+""")
 
         monkeypatch.setenv("VIBE_APPROVAL_MODE", "auto")
         cfg = VibeConfig.load(path=config_path, auto_create=False)
@@ -239,12 +239,12 @@ security:
     def test_env_approval_mode_unset_uses_file(self, tmp_path, monkeypatch):
         """Without env var, config file value is used."""
         config_path = tmp_path / "config.yaml"
-        config_path.write_text('''
+        config_path.write_text("""
 llm:
   default_model: "test-model"
 security:
   approval_mode: "manual"
-''')
+""")
 
         monkeypatch.delenv("VIBE_APPROVAL_MODE", raising=False)
         cfg = VibeConfig.load(path=config_path, auto_create=False)

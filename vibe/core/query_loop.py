@@ -1,7 +1,6 @@
 """Query loop implementation for Vibe Agent."""
 
 import asyncio
-import json
 import copy
 import time
 import uuid
@@ -286,13 +285,11 @@ class QueryLoop:
             stream = self.stream
             try:
                 from unittest.mock import Mock, sentinel
+
                 if isinstance(self.llm, Mock):
-                    has_stream_config = (
-                        self.llm.complete_stream.side_effect is not None
-                        or (
-                            hasattr(self.llm.complete_stream, "_mock_return_value")
-                            and self.llm.complete_stream._mock_return_value is not sentinel.DEFAULT
-                        )
+                    has_stream_config = self.llm.complete_stream.side_effect is not None or (
+                        hasattr(self.llm.complete_stream, "_mock_return_value")
+                        and self.llm.complete_stream._mock_return_value is not sentinel.DEFAULT
                     )
                     if not has_stream_config:
                         stream = False
@@ -368,9 +365,7 @@ class QueryLoop:
                     style_policy = ResponseStylePolicy()
                     style_append = style_policy.get_system_prompt_append()
                     if style_append:
-                        self.messages.insert(
-                            0, Message(role="system", content=style_append)
-                        )
+                        self.messages.insert(0, Message(role="system", content=style_append))
                 except Exception:
                     pass  # Non-critical: style preferences are optional
 
@@ -391,7 +386,9 @@ class QueryLoop:
             max_iterations = (
                 self._iteration_budget.allocated
                 if self.adaptive_budget and self._iteration_budget
-                else int(self.max_iterations) if self.max_iterations is not None else 50
+                else int(self.max_iterations)
+                if self.max_iterations is not None
+                else 50
             )
             while self._running and iteration < max_iterations:
                 iteration += 1
@@ -442,7 +439,9 @@ class QueryLoop:
                         async def run_stream():
                             nonlocal model_used, finish_reason, error, error_type
                             try:
-                                async for chunk in self.llm.complete_stream(llm_msgs, tools=tools_for_llm):
+                                async for chunk in self.llm.complete_stream(
+                                    llm_msgs, tools=tools_for_llm
+                                ):
                                     if not self._running:
                                         break
                                     if chunk.is_error:
@@ -461,9 +460,17 @@ class QueryLoop:
                                     if chunk.tool_calls:
                                         tool_calls_acc.extend(chunk.tool_calls)
                                     if chunk.usage:
-                                        usage_acc["prompt_tokens"] = max(usage_acc["prompt_tokens"], chunk.usage.get("prompt_tokens", 0))
-                                        usage_acc["completion_tokens"] += chunk.usage.get("completion_tokens", 0)
-                                        usage_acc["total_tokens"] = usage_acc["prompt_tokens"] + usage_acc["completion_tokens"]
+                                        usage_acc["prompt_tokens"] = max(
+                                            usage_acc["prompt_tokens"],
+                                            chunk.usage.get("prompt_tokens", 0),
+                                        )
+                                        usage_acc["completion_tokens"] += chunk.usage.get(
+                                            "completion_tokens", 0
+                                        )
+                                        usage_acc["total_tokens"] = (
+                                            usage_acc["prompt_tokens"]
+                                            + usage_acc["completion_tokens"]
+                                        )
 
                                     yield chunk
                             except Exception as e:
@@ -497,7 +504,11 @@ class QueryLoop:
                                 model_used=model_used,
                             )
                         else:
-                            assembled_tool_calls = self._assemble_tool_calls(tool_calls_acc) if tool_calls_acc else None
+                            assembled_tool_calls = (
+                                self._assemble_tool_calls(tool_calls_acc)
+                                if tool_calls_acc
+                                else None
+                            )
                             response = LLMResponse(
                                 content="".join(content_acc),
                                 reasoning_content="".join(reasoning_acc) if reasoning_acc else None,
@@ -525,7 +536,9 @@ class QueryLoop:
                         # Yield status message showing which model failed
                         yield QueryResult(
                             is_status=True,
-                            status_message=f"Connection failed for model '{failed_model}' at {failed_base_url}",
+                            status_message=(
+                                f"Connection failed for model '{failed_model}' at {failed_base_url}"
+                            ),
                             state=self._state,
                         )
 
@@ -571,7 +584,9 @@ class QueryLoop:
 
                         # Check stagnation
                         current_tools = sum(1 for m in self.messages if m.role == "tool")
-                        sig = self._iteration_budget.check_stagnation(current_tools, len(self.messages))
+                        sig = self._iteration_budget.check_stagnation(
+                            current_tools, len(self.messages)
+                        )
                         if sig.name != "CONTINUE":
                             self._iteration_budget.add_signal(sig)
                             if self.logger:
@@ -581,7 +596,9 @@ class QueryLoop:
                         # Check token pressure
                         total_chars = sum(len(m.content) for m in self.messages if m.content)
                         estimated_tokens = total_chars // 4
-                        sig = self._iteration_budget.check_token_pressure(estimated_tokens, self.max_context_tokens)
+                        sig = self._iteration_budget.check_token_pressure(
+                            estimated_tokens, self.max_context_tokens
+                        )
                         if sig.name != "CONTINUE":
                             self._iteration_budget.add_signal(sig)
                             if self.logger:
@@ -720,7 +737,8 @@ class QueryLoop:
                     # Logging failures must not crash the session
                     pass
 
-            # Phase 5.2: Offer rollback if shadow exists and session ended in error/incomplete/interrupted
+            # Phase 5.2: Offer rollback if shadow exists and session ended in
+            # error/incomplete/interrupted
             if self.shadow_manager is not None and self._session_id:
                 if self._state != QueryState.COMPLETED:
                     try:
@@ -730,12 +748,11 @@ class QueryLoop:
                             latest = max(matching, key=lambda s: s.created_at)
                             if self.logger:
                                 self.logger.info(
-                                    f"Session {self._session_id[:16]}... ended in {self._state.name}. "
-                                    f"Rollback available: {latest.branch_name}"
+                                    f"Session {self._session_id[:16]}... ended in "
+                                    f"{self._state.name}. Rollback available: {latest.branch_name}"
                                 )
                     except Exception:
                         pass
-
 
     async def _maybe_compact(self, llm_msgs: list[dict]) -> QueryResult | None:
         """Compact context if needed. Returns a QueryResult if compaction occurred."""
@@ -811,9 +828,7 @@ class QueryLoop:
         allowed_calls, allowed_indices, results = self._filter_tool_calls(tool_calls)
 
         if allowed_calls:
-            executed = await self.tool_executor.execute(
-                allowed_calls, session_id=self._session_id
-            )
+            executed = await self.tool_executor.execute(allowed_calls, session_id=self._session_id)
             for idx, result in zip(allowed_indices, executed):
                 results[idx] = result
 
@@ -844,9 +859,7 @@ class QueryLoop:
                     f"DAG fallback: valid={dag.is_valid}, depth={dag.max_depth}, "
                     f"nodes={dag.node_count}"
                 )
-            executed = await self.tool_executor.execute(
-                allowed_calls, session_id=self._session_id
-            )
+            executed = await self.tool_executor.execute(allowed_calls, session_id=self._session_id)
             for idx, result in zip(allowed_indices, executed):
                 results[idx] = result
             return [r for r in results if r is not None]
@@ -958,9 +971,8 @@ class QueryLoop:
         rt = 0
         if "reasoning_tokens" in usage:
             rt = usage["reasoning_tokens"]
-        elif (
-            "completion_tokens_details" in usage
-            and isinstance(usage["completion_tokens_details"], dict)
+        elif "completion_tokens_details" in usage and isinstance(
+            usage["completion_tokens_details"], dict
         ):
             rt = usage["completion_tokens_details"].get("reasoning_tokens", 0)
 
@@ -973,17 +985,16 @@ class QueryLoop:
             combined = response.content
             if response.reasoning_content:
                 combined += response.reasoning_content
-            
+
             estimated_tokens = 0.0
             for char in combined:
                 if ord(char) < 128:
                     estimated_tokens += 0.25
                 else:
                     estimated_tokens += 0.8
-            
+
             ct = max(1, int(estimated_tokens))
             tt = pt + ct
-
 
         tps = ct / elapsed if elapsed > 0 else 0
         return Metrics(
@@ -995,7 +1006,9 @@ class QueryLoop:
             reasoning_tokens=rt,
         )
 
-    def _assemble_tool_calls(self, tool_calls_list: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
+    def _assemble_tool_calls(
+        self, tool_calls_list: list[dict[str, Any]]
+    ) -> list[dict[str, Any]] | None:
         """Assembles stream tool call chunks into standardized list of tool calls."""
         assembled = {}
         for tc in tool_calls_list:
@@ -1009,7 +1022,7 @@ class QueryLoop:
                     "function": {
                         "name": tc.get("function", {}).get("name") or "",
                         "arguments": tc.get("function", {}).get("arguments") or "",
-                    }
+                    },
                 }
             else:
                 tc_id = tc.get("id")
@@ -1021,7 +1034,7 @@ class QueryLoop:
                 args = tc.get("function", {}).get("arguments")
                 if args:
                     assembled[idx]["function"]["arguments"] += args
-        
+
         return list(assembled.values()) if assembled else None
 
     # ------------------------------------------------------------------
@@ -1167,7 +1180,8 @@ class QueryLoop:
             if decision.should_trigger:
                 if self.logger:
                     self.logger.info(
-                        f"RLM trigger decision: YES — {decision.reason} (metrics: {decision.metrics})"
+                        f"RLM trigger decision: YES — {decision.reason} "
+                        f"(metrics: {decision.metrics})"
                     )
             else:
                 if self.logger:
@@ -1190,6 +1204,7 @@ class QueryLoop:
             if not tool_name:
                 # Try to infer from error message
                 import re
+
                 m = re.search(r"tool ['\"]?([^'\"]+)['\"]?", error_msg, re.I)
                 if m:
                     tool_name = m.group(1)
@@ -1206,7 +1221,9 @@ class QueryLoop:
             if self.logger:
                 self.logger.info(
                     f"Recovery: attempting {action.recovery_tool} for {tool_name} "
-                    f"(attempt {self._session_state.get(f'recovery_attempts:{action.error_pattern}', 0)}/{action.max_attempts})"
+                    f"(attempt "
+                    f"{self._session_state.get(f'recovery_attempts:{action.error_pattern}', 0)}/"
+                    f"{action.max_attempts})"
                 )
 
             recovery_result = await self.tools.execute_tool(

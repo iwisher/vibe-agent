@@ -25,7 +25,9 @@ class TestMacroSessionRunner:
             name="conditional",
             steps=[
                 MacroStep(name="always", query="run", store_result_as="ran"),
-                MacroStep(name="skip", query="skip me", condition="{{skip}}", store_result_as="skipped"),
+                MacroStep(
+                    name="skip", query="skip me", condition="{{skip}}", store_result_as="skipped"
+                ),
             ],
         )
 

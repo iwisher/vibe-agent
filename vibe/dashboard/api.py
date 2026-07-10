@@ -42,7 +42,11 @@ def create_app(data_source: DashboardDataSource | None = None) -> FastAPI:
         index = static_dir / "index.html"
         if index.exists():
             return FileResponse(index)
-        return FileResponse(static_dir / "app.html") if (static_dir / "app.html").exists() else _fallback_html()
+        return (
+            FileResponse(static_dir / "app.html")
+            if (static_dir / "app.html").exists()
+            else _fallback_html()
+        )
 
     # ------------------------------------------------------------------
     # API: Sessions
@@ -79,6 +83,7 @@ def create_app(data_source: DashboardDataSource | None = None) -> FastAPI:
     @app.get("/api/sessions/stream")
     async def stream_sessions() -> StreamingResponse:
         """Server-Sent Events for live session updates."""
+
         async def event_generator():
             while True:
                 stats = await ds.get_stats()

@@ -1,7 +1,5 @@
 """Tests for vector index upgrade (fastText → sentence-transformers)."""
 
-import pytest
-
 from vibe.memory.models import IndexNode
 from vibe.memory.vector_index import KeywordIndex
 from vibe.memory.vector_index_upgrade import UpgradedVectorIndex, upgrade_page_index
@@ -15,6 +13,7 @@ class TestUpgradedVectorIndex:
         idx._index = None
         # Mock the import to fail
         import sys
+
         real_module = sys.modules.get("vibe.memory.vector_index")
         original = None
         try:

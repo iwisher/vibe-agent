@@ -1,8 +1,5 @@
 """Tests for factory-per-case EvalRunner — state isolation between cases."""
 
-import pytest
-
-from vibe.core.query_loop import QueryLoop
 from vibe.evals.factory_runner import FactoryEvalRunner
 from vibe.harness.memory.eval_store import EvalCase
 
@@ -24,6 +21,7 @@ class FakeQueryLoop:
 
     async def run(self, initial_query=""):
         from vibe.core.query_loop import QueryResult
+
         yield QueryResult(response=f"result for {initial_query}")
 
     async def close(self):
@@ -50,6 +48,7 @@ class TestFactoryEvalRunner:
         ]
 
         import asyncio
+
         loop = asyncio.new_event_loop()
         try:
             results = loop.run_until_complete(runner.run_all(cases))
@@ -68,6 +67,7 @@ class TestFactoryEvalRunner:
         case = EvalCase(id="case_1", tags=[], input={"prompt": "test"}, expected={})
 
         import asyncio
+
         loop = asyncio.new_event_loop()
         try:
             loop.run_until_complete(runner.run_case(case))
@@ -99,6 +99,7 @@ class TestFactoryEvalRunner:
         ]
 
         import asyncio
+
         loop = asyncio.new_event_loop()
         try:
             loop.run_until_complete(runner.run_all(cases))
@@ -140,6 +141,7 @@ class TestFactoryEvalRunner:
         ]
 
         import asyncio
+
         loop = asyncio.new_event_loop()
         try:
             loop.run_until_complete(runner.run_all(cases))

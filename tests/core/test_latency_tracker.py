@@ -2,7 +2,7 @@
 
 import pytest
 
-from vibe.core.latency_tracker import LatencyAwareRouter, LatencyStats, LatencyTracker
+from vibe.core.latency_tracker import LatencyAwareRouter, LatencyTracker
 
 
 class TestLatencyTracker:
@@ -55,7 +55,9 @@ class TestLatencyTracker:
         tracker.record("fast-but-broken", 10.0, success=False)
         tracker.record("slower-but-reliable", 100.0, success=True)
 
-        fastest = tracker.get_fastest(["fast-but-broken", "slower-but-reliable"], max_error_rate=0.1)
+        fastest = tracker.get_fastest(
+            ["fast-but-broken", "slower-but-reliable"], max_error_rate=0.1
+        )
         assert fastest == "slower-but-reliable"
 
     def test_get_fastest_no_data(self):

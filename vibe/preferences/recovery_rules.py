@@ -77,8 +77,7 @@ class RecoveryRuleDB:
                 r
                 for r in self._policy.rules
                 if not (
-                    r.pattern == tool_name
-                    and r.action_args.get("error_pattern") == error_pattern
+                    r.pattern == tool_name and r.action_args.get("error_pattern") == error_pattern
                 )
             ]
             self._policy.add_rule(rule)
@@ -144,10 +143,7 @@ class RecoveryRuleDB:
         self._policy.rules = [
             r
             for r in self._policy.rules
-            if not (
-                r.pattern == tool_name
-                and r.action_args.get("error_pattern") == error_pattern
-            )
+            if not (r.pattern == tool_name and r.action_args.get("error_pattern") == error_pattern)
         ]
         if len(self._policy.rules) < original_count:
             self._save()

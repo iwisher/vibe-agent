@@ -1,4 +1,5 @@
 """Tests for SkillRunnerTool."""
+
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -54,11 +55,13 @@ class TestSkillRunnerTool:
         tool_system = ToolSystem()
         mock_bash = MagicMock()
         mock_bash.name = "bash"
-        mock_bash.execute = AsyncMock(return_value=ToolResult(
-            success=True,
-            content="hello world",
-            metadata={"exit_code": 0},
-        ))
+        mock_bash.execute = AsyncMock(
+            return_value=ToolResult(
+                success=True,
+                content="hello world",
+                metadata={"exit_code": 0},
+            )
+        )
         tool_system.register_tool(mock_bash)
 
         step = FakeStep(command="echo hello")
@@ -73,12 +76,14 @@ class TestSkillRunnerTool:
     async def test_step_failure_stops_execution(self):
         tool_system = ToolSystem()
         mock_bash = MagicMock()
-        mock_bash.execute = AsyncMock(return_value=ToolResult(
-            success=False,
-            content="",
-            error="Command failed",
-            metadata={"exit_code": 1},
-        ))
+        mock_bash.execute = AsyncMock(
+            return_value=ToolResult(
+                success=False,
+                content="",
+                error="Command failed",
+                metadata={"exit_code": 1},
+            )
+        )
         tool_system.register_tool(mock_bash)
         mock_bash.name = "bash"
 
@@ -142,11 +147,13 @@ class TestSkillRunnerTool:
         tool_system = ToolSystem()
         mock_bash = MagicMock()
         mock_bash.name = "bash"
-        mock_bash.execute = AsyncMock(return_value=ToolResult(
-            success=True,
-            content="success",
-            metadata={"exit_code": 0},
-        ))
+        mock_bash.execute = AsyncMock(
+            return_value=ToolResult(
+                success=True,
+                content="success",
+                metadata={"exit_code": 0},
+            )
+        )
         tool_system.register_tool(mock_bash)
 
         variables = [
@@ -189,9 +196,14 @@ class TestSkillRunnerTool:
         assert "Circular execution blocked" in result.error
 
     def test_verify_step_output_contains_with_substitution(self):
-        result = ToolResult(success=True, content="hello world-substituted", metadata={"exit_code": 0})
+        result = ToolResult(
+            success=True, content="hello world-substituted", metadata={"exit_code": 0}
+        )
         verification = MagicMock()
         verification.exit_code = None
         verification.output_contains = "world-{{suffix}}"
         verification.file_exists = None
-        assert SkillRunnerTool._verify_step(result, verification, "cmd", {"suffix": "substituted"}) is True
+        assert (
+            SkillRunnerTool._verify_step(result, verification, "cmd", {"suffix": "substituted"})
+            is True
+        )

@@ -44,7 +44,7 @@ def test_validator_passes_on_valid_eval():
         content = script_src.read_text()
         content = content.replace(
             'EVAL_DIR = Path(__file__).parent.parent / "vibe" / "evals" / "builtin"',
-            f'EVAL_DIR = Path("{eval_dir}")'
+            f'EVAL_DIR = Path("{eval_dir}")',
         )
         script_copy.write_text(content)
 
@@ -66,7 +66,7 @@ def test_validator_fails_on_missing_keys():
         content = script_src.read_text()
         content = content.replace(
             'EVAL_DIR = Path(__file__).parent.parent / "vibe" / "evals" / "builtin"',
-            f'EVAL_DIR = Path("{eval_dir}")'
+            f'EVAL_DIR = Path("{eval_dir}")',
         )
         script_copy.write_text(content)
 
@@ -88,7 +88,7 @@ def test_validator_fails_on_invalid_difficulty():
         content = script_src.read_text()
         content = content.replace(
             'EVAL_DIR = Path(__file__).parent.parent / "vibe" / "evals" / "builtin"',
-            f'EVAL_DIR = Path("{eval_dir}")'
+            f'EVAL_DIR = Path("{eval_dir}")',
         )
         script_copy.write_text(content)
 
@@ -111,7 +111,7 @@ def test_validator_fails_on_duplicate_id():
         content = script_src.read_text()
         content = content.replace(
             'EVAL_DIR = Path(__file__).parent.parent / "vibe" / "evals" / "builtin"',
-            f'EVAL_DIR = Path("{eval_dir}")'
+            f'EVAL_DIR = Path("{eval_dir}")',
         )
         script_copy.write_text(content)
 

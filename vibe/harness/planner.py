@@ -94,6 +94,7 @@ class HybridPlanner:
     def _init_fasttext(self, model_path: Optional[str]) -> None:
         """Initialize embedding model via shared module (singleton)."""
         from vibe.harness.embeddings import load_model
+
         self._embedding_model = load_model(model_path)
         if self._embedding_model is None:
             pass  # Silent fallback — keyword tier will handle
@@ -101,21 +102,21 @@ class HybridPlanner:
     def _get_embedding(self, text: str) -> list[float]:
         """Get embedding vector for text via shared module."""
         from vibe.harness.embeddings import get_embedding
+
         result = get_embedding(text)
         return result if result is not None else []
 
     def _cosine_similarity(self, a: list[float], b: list[float]) -> float:
         """Compute cosine similarity between two vectors via shared module."""
         from vibe.harness.embeddings import cosine_similarity
+
         return cosine_similarity(a, b)
 
     def _check_query_cache(self, request: PlanRequest) -> Optional[PlanResult]:
         """Check if we have a cached result for this query."""
         # Build cache key from query + tool set hash
         tool_names = sorted([t.get("name", "") for t in request.available_tools])
-        cache_key = hashlib.md5(
-            f"{request.query}:{','.join(tool_names)}".encode()
-        ).hexdigest()
+        cache_key = hashlib.md5(f"{request.query}:{','.join(tool_names)}".encode()).hexdigest()
 
         if cache_key in self._query_cache:
             result, timestamp = self._query_cache[cache_key]
@@ -127,9 +128,7 @@ class HybridPlanner:
     def _cache_result(self, request: PlanRequest, result: PlanResult) -> None:
         """Cache planner result."""
         tool_names = sorted([t.get("name", "") for t in request.available_tools])
-        cache_key = hashlib.md5(
-            f"{request.query}:{','.join(tool_names)}".encode()
-        ).hexdigest()
+        cache_key = hashlib.md5(f"{request.query}:{','.join(tool_names)}".encode()).hexdigest()
 
         self._query_cache[cache_key] = (result, time.time())
 
@@ -148,7 +147,11 @@ class HybridPlanner:
 
         # Tier 1: Keyword fast-path
         keyword_result = self._keyword_plan(request)
-        if keyword_result and (keyword_result.selected_tool_names or keyword_result.selected_skills or keyword_result.selected_mcps):
+        if keyword_result and (
+            keyword_result.selected_tool_names
+            or keyword_result.selected_skills
+            or keyword_result.selected_mcps
+        ):
             keyword_result.planner_tier = "keyword"
             self._cache_result(request, keyword_result)
             return keyword_result
@@ -156,7 +159,7 @@ class HybridPlanner:
         # Tier 2: Embedding scorer
         embedding_result = self._embedding_plan(request)
         if embedding_result:
-            max_sim = getattr(embedding_result, '_max_similarity', 0.0)
+            max_sim = getattr(embedding_result, "_max_similarity", 0.0)
 
             # High-confidence fast-path
             if max_sim >= self.EMBEDDING_HIGH_CONFIDENCE:
@@ -220,9 +223,12 @@ class HybridPlanner:
         if self.trace_store is not None:
             similar = self.trace_store.get_similar_sessions(request.query, limit=3)
             if similar:
-                memory_hint = "\n\n## Historical Context\nPreviously successful sessions on similar topics used models such as: " + ", ".join(
-                    {s.get("model", "unknown") for s in similar if s.get("model")}
-                ) + "."
+                models = ", ".join({s.get("model", "unknown") for s in similar if s.get("model")})
+                memory_hint = (
+                    "\n\n## Historical Context\n"
+                    "Previously successful sessions on similar topics used models such as: "
+                    f"{models}."
+                )
 
         # v4: Wiki hint comes from PlanRequest.wiki_hint (injected by QueryLoop.run())
         # PageIndex retrieval happens BEFORE planner in async context, NOT here.
@@ -301,11 +307,10 @@ class HybridPlanner:
             return None
 
         # Build minimal prompt
-        tools_subset = request.available_tools[:self.MAX_LLM_TOOLS]
-        tool_list = "\n".join([
-            f"- {t.get('name', '')}: {t.get('description', '')}"
-            for t in tools_subset
-        ])
+        tools_subset = request.available_tools[: self.MAX_LLM_TOOLS]
+        tool_list = "\n".join(
+            [f"- {t.get('name', '')}: {t.get('description', '')}" for t in tools_subset]
+        )
 
         prompt = f"""Select the most relevant tools for this query.
 
@@ -322,7 +327,7 @@ Only select tools that are clearly relevant. Return empty array if none match.""
         try:
             response = self.llm_client.complete(prompt)
             # Extract JSON from response
-            json_match = re.search(r'\{.*\}', response, re.DOTALL)
+            json_match = re.search(r"\{.*\}", response, re.DOTALL)
             if json_match:
                 parsed = json.loads(json_match.group())
                 selected_names = parsed.get("selected_tools", [])

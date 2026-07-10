@@ -1,7 +1,5 @@
 """Tests for TelemetryCollector — decoupled telemetry access."""
 
-import pytest
-
 from vibe.memory.telemetry_collector import TelemetryCollector, TelemetrySummary
 
 

@@ -94,9 +94,7 @@ async def test_create_page_writes_file(tmp_wiki):
 
 @pytest.mark.asyncio
 async def test_get_page_by_id(tmp_wiki):
-    created = await tmp_wiki.create_page(
-        title="Get Test", content="Content", tags=["t1"]
-    )
+    created = await tmp_wiki.create_page(title="Get Test", content="Content", tags=["t1"])
     fetched = await tmp_wiki.get_page(created.id)
     assert fetched is not None
     assert fetched.id == created.id
@@ -111,9 +109,7 @@ async def test_get_page_not_found(tmp_wiki):
 
 @pytest.mark.asyncio
 async def test_get_page_by_slug(tmp_wiki):
-    created = await tmp_wiki.create_page(
-        title="Slug Test", content="Content", tags=[]
-    )
+    created = await tmp_wiki.create_page(title="Slug Test", content="Content", tags=[])
     fetched = await tmp_wiki.get_page_by_slug("slug-test")
     assert fetched is not None
     assert fetched.id == created.id
@@ -121,9 +117,7 @@ async def test_get_page_by_slug(tmp_wiki):
 
 @pytest.mark.asyncio
 async def test_update_page_content(tmp_wiki):
-    page = await tmp_wiki.create_page(
-        title="Update Test", content="Original content.", tags=["a"]
-    )
+    page = await tmp_wiki.create_page(title="Update Test", content="Original content.", tags=["a"])
     updated = await tmp_wiki.update_page(page.id, content="Updated content.")
     assert updated.content == "Updated content."
     assert updated.last_updated == date.today().isoformat()
@@ -131,9 +125,7 @@ async def test_update_page_content(tmp_wiki):
 
 @pytest.mark.asyncio
 async def test_update_page_tags(tmp_wiki):
-    page = await tmp_wiki.create_page(
-        title="Tag Update", content="Content", tags=["old"]
-    )
+    page = await tmp_wiki.create_page(title="Tag Update", content="Content", tags=["old"])
     updated = await tmp_wiki.update_page(page.id, tags=["new1", "new2"])
     assert "new1" in updated.tags
     assert "old" not in updated.tags
@@ -141,9 +133,7 @@ async def test_update_page_tags(tmp_wiki):
 
 @pytest.mark.asyncio
 async def test_update_page_adds_citations(tmp_wiki):
-    page = await tmp_wiki.create_page(
-        title="Citation Test", content="Content", tags=[]
-    )
+    page = await tmp_wiki.create_page(title="Citation Test", content="Content", tags=[])
     citation = {"session": "sess-001", "date": "2026-04-26", "summary": "Finding 1"}
     updated = await tmp_wiki.update_page(page.id, citations=[citation])
     assert len(updated.citations) == 1
@@ -152,9 +142,7 @@ async def test_update_page_adds_citations(tmp_wiki):
 
 @pytest.mark.asyncio
 async def test_update_preserves_unmodified_fields(tmp_wiki):
-    page = await tmp_wiki.create_page(
-        title="Preserve Test", content="Original", tags=["keep-me"]
-    )
+    page = await tmp_wiki.create_page(title="Preserve Test", content="Original", tags=["keep-me"])
     updated = await tmp_wiki.update_page(page.id, content="Updated")
     assert "keep-me" in updated.tags
     assert updated.title == "Preserve Test"
@@ -162,9 +150,7 @@ async def test_update_preserves_unmodified_fields(tmp_wiki):
 
 @pytest.mark.asyncio
 async def test_delete_page(tmp_wiki):
-    page = await tmp_wiki.create_page(
-        title="Delete Me", content="Content", tags=[]
-    )
+    page = await tmp_wiki.create_page(title="Delete Me", content="Content", tags=[])
     path = page.path
     assert path.exists()
 
@@ -319,6 +305,7 @@ async def test_expire_drafts_verified_not_deleted(tmp_wiki):
     page = await tmp_wiki.create_page(title="Verified Page", content="Content", tags=[])
     # Mark as verified directly
     import yaml
+
     data = page.path.read_text()
     parts = data.split("---", 2)
     meta = yaml.safe_load(parts[1])
@@ -409,9 +396,7 @@ async def test_concurrent_updates_no_corruption(tmp_wiki):
     )
 
     async def update_one(i: int):
-        await tmp_wiki.update_page(
-            page.id, content=f"Updated content version {i}"
-        )
+        await tmp_wiki.update_page(page.id, content=f"Updated content version {i}")
 
     await asyncio.gather(*[update_one(i) for i in range(5)])
 

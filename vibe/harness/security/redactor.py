@@ -24,6 +24,7 @@ from typing import Optional
 @dataclass(frozen=True)
 class RedactionPattern:
     """A single secret detection pattern."""
+
     name: str
     regex: re.Pattern
     placeholder: str
@@ -145,8 +146,11 @@ class SecretRedactor:
                 result[key] = self.redact_dict(value, keys_to_scan)
             elif isinstance(value, list):
                 result[key] = [
-                    self.redact(v) if isinstance(v, str) else
-                    self.redact_dict(v, keys_to_scan) if isinstance(v, dict) else v
+                    self.redact(v)
+                    if isinstance(v, str)
+                    else self.redact_dict(v, keys_to_scan)
+                    if isinstance(v, dict)
+                    else v
                     for v in value
                 ]
             else:

@@ -5,7 +5,9 @@ from typing import Any
 
 class ToolError(Exception):
     """Base exception for tool execution errors."""
+
     pass
+
 
 @dataclass
 class ToolResult:
@@ -13,6 +15,7 @@ class ToolResult:
     content: Any
     error: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+
 
 class Tool(abc.ABC):
     def __init__(self, name: str, description: str):
@@ -29,6 +32,7 @@ class Tool(abc.ABC):
         """Execute the tool logic."""
         pass
 
+
 class ToolSystem:
     def __init__(self):
         self._tools: dict[str, Tool] = {}
@@ -40,14 +44,16 @@ class ToolSystem:
         schemas = []
         for tool in self._tools.values():
             schema = tool.get_schema()
-            schemas.append({
-                "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": schema,
-                },
-            })
+            schemas.append(
+                {
+                    "type": "function",
+                    "function": {
+                        "name": tool.name,
+                        "description": tool.description,
+                        "parameters": schema,
+                    },
+                }
+            )
         return schemas
 
     def list_tools(self) -> list[str]:

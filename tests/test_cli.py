@@ -39,8 +39,11 @@ def test_cli_single_query_runs_without_crash():
         return_value=async_gen(
             [
                 MagicMock(
-                    response="hi", error=None, tool_results=[],
-                    context_truncated=False, metrics=None,
+                    response="hi",
+                    error=None,
+                    tool_results=[],
+                    context_truncated=False,
+                    metrics=None,
                 )
             ]
         )
@@ -71,9 +74,7 @@ def test_session_resume_prompt():
         ]
         MockStore.return_value = mock_store
 
-        with patch(
-            "vibe.core.query_loop.QueryLoop.resume", new_callable=AsyncMock
-        ) as mock_resume:
+        with patch("vibe.core.query_loop.QueryLoop.resume", new_callable=AsyncMock) as mock_resume:
             mock_resume.return_value = mock_loop
 
             with patch("vibe.cli.main.interactive_mode", new_callable=AsyncMock):

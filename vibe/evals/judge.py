@@ -21,6 +21,7 @@ from vibe.core.model_gateway import LLMClient
 @dataclass
 class JudgmentRubric:
     """A single criterion for judgment."""
+
     name: str
     description: str
     weight: float = 1.0  # Weight in final score
@@ -30,6 +31,7 @@ class JudgmentRubric:
 @dataclass
 class JudgmentResult:
     """Result of a judgment evaluation."""
+
     case_id: str
     overall_score: float  # 0-100
     passed: bool
@@ -94,7 +96,7 @@ class AgentJudge:
     ) -> str:
         """Build the prompt for the judge LLM."""
         rubric_text = "\n".join(
-            f"{i+1}. {r.name} (weight {r.weight}x, max {r.max_score}): {r.description}"
+            f"{i + 1}. {r.name} (weight {r.weight}x, max {r.max_score}): {r.description}"
             for i, r in enumerate(self.rubrics)
         )
 
@@ -158,9 +160,7 @@ Be strict but fair. Focus on whether the agent actually solved the user's proble
         Returns:
             JudgmentResult with scores and explanations
         """
-        prompt = self._build_judge_prompt(
-            case_id, user_prompt, agent_response, tool_outputs or []
-        )
+        prompt = self._build_judge_prompt(case_id, user_prompt, agent_response, tool_outputs or [])
 
         try:
             response = await self.llm.complete(
@@ -174,10 +174,7 @@ Be strict but fair. Focus on whether the agent actually solved the user's proble
 
             # Calculate weighted overall score (0-100)
             sum(r.weight for r in self.rubrics)
-            weighted_sum = sum(
-                scores.get(r.name, 0) * r.weight
-                for r in self.rubrics
-            )
+            weighted_sum = sum(scores.get(r.name, 0) * r.weight for r in self.rubrics)
             max_possible = sum(r.max_score * r.weight for r in self.rubrics)
             overall = (weighted_sum / max_possible * 100) if max_possible > 0 else 0
 
@@ -225,9 +222,7 @@ Be strict but fair. Focus on whether the agent actually solved the user's proble
                 k: float(v) if isinstance(v, (int, float)) else 0.0
                 for k, v in data.get("scores", {}).items()
             }
-            explanations = {
-                k: str(v) for k, v in data.get("explanations", {}).items()
-            }
+            explanations = {k: str(v) for k, v in data.get("explanations", {}).items()}
             return scores, explanations
         except (json.JSONDecodeError, ValueError):
             return {}, {}

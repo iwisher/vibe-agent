@@ -75,7 +75,7 @@ class TestSmartApprover:
         approver = SmartApprover()
         result = approver.assess_tool_call(
             "execute_code",
-            {"code": "eval('__import__(\"os\").system(\"ls\")')"},
+            {"code": 'eval(\'__import__("os").system("ls")\')'},
         )
         assert result.decision == ApprovalDecision.REJECT
         assert result.risk_level == RiskLevel.CRITICAL
@@ -90,11 +90,13 @@ class TestSmartApprover:
 
     def test_llm_client_success(self):
         """LLM client returning valid JSON."""
-        response = json.dumps({
-            "risk_level": "low",
-            "reasoning": "Safe read operation",
-            "suggested_modifications": None,
-        })
+        response = json.dumps(
+            {
+                "risk_level": "low",
+                "reasoning": "Safe read operation",
+                "suggested_modifications": None,
+            }
+        )
         mock_client = MockLLMClient(response=response)
         approver = SmartApprover(llm_client=mock_client)
         result = approver.assess_tool_call("read_file", {"path": "/tmp/test.txt"})
@@ -134,15 +136,19 @@ class TestSmartApprover:
 
     def test_suggested_modifications(self):
         """LLM can suggest safer alternatives."""
-        response = json.dumps({
-            "risk_level": "medium",
-            "reasoning": "Could be safer",
-            "suggested_modifications": "Use shutil.rmtree() instead of rm -rf",
-        })
+        response = json.dumps(
+            {
+                "risk_level": "medium",
+                "reasoning": "Could be safer",
+                "suggested_modifications": "Use shutil.rmtree() instead of rm -rf",
+            }
+        )
         mock_client = MockLLMClient(response=response)
         approver = SmartApprover(llm_client=mock_client)
         # Use a non-critical command so LLM path is taken (not heuristic)
-        result = approver.assess_tool_call("write_file", {"path": "/tmp/test.txt", "content": "hello"})
+        result = approver.assess_tool_call(
+            "write_file", {"path": "/tmp/test.txt", "content": "hello"}
+        )
         assert result.suggested_modifications is not None
         assert "shutil" in result.suggested_modifications
 

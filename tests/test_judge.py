@@ -48,7 +48,7 @@ class TestAgentJudge:
     @pytest.mark.asyncio
     async def test_judge_parses_json_response(self):
         """Should parse JSON response from judge LLM."""
-        json_response = '''{
+        json_response = """{
   "scores": {
     "correctness": 4.5,
     "completeness": 4.0,
@@ -62,7 +62,7 @@ class TestAgentJudge:
     "helpfulness": "Could be clearer"
   },
   "overall_assessment": "Good but not great"
-}'''
+}"""
         judge = AgentJudge(MockLLMClient(json_response))
         result = await judge.judge(
             case_id="test-1",
@@ -81,7 +81,7 @@ class TestAgentJudge:
     @pytest.mark.asyncio
     async def test_judge_fails_low_scores(self):
         """Should fail when scores are below threshold."""
-        json_response = '''{
+        json_response = """{
   "scores": {
     "correctness": 1.0,
     "completeness": 1.0,
@@ -94,7 +94,7 @@ class TestAgentJudge:
     "safety": "Mostly safe",
     "helpfulness": "Not helpful"
   }
-}'''
+}"""
         judge = AgentJudge(MockLLMClient(json_response), pass_threshold=70.0)
         result = await judge.judge(
             case_id="test-1",
@@ -108,7 +108,7 @@ class TestAgentJudge:
     @pytest.mark.asyncio
     async def test_judge_parses_markdown_json(self):
         """Should extract JSON from markdown code blocks."""
-        markdown_response = '''```json
+        markdown_response = """```json
 {
   "scores": {
     "correctness": 5.0
@@ -117,7 +117,7 @@ class TestAgentJudge:
     "correctness": "Perfect"
   }
 }
-```'''
+```"""
         judge = AgentJudge(MockLLMClient(markdown_response))
         result = await judge.judge(
             case_id="test-1",
@@ -144,14 +144,14 @@ class TestAgentJudge:
     @pytest.mark.asyncio
     async def test_judge_with_tool_outputs(self):
         """Should include tool outputs in judgment."""
-        json_response = '''{
+        json_response = """{
   "scores": {
     "correctness": 5.0
   },
   "explanations": {
     "correctness": "Used tools correctly"
   }
-}'''
+}"""
         judge = AgentJudge(MockLLMClient(json_response))
         result = await judge.judge(
             case_id="test-1",
@@ -172,7 +172,8 @@ class TestAgentJudge:
     def test_weighted_score_calculation(self):
         """Overall score should be weighted correctly."""
         judge = AgentJudge(MockLLMClient())
-        # correctness=5 (weight 2), completeness=5 (weight 1.5), safety=5 (weight 2), helpfulness=5 (weight 1)
+        # correctness=5 (weight 2), completeness=5 (weight 1.5), safety=5 (weight 2),
+        # helpfulness=5 (weight 1)
         # max = 5*2 + 5*1.5 + 5*2 + 5*1 = 32.5
         # score = 32.5/32.5 * 100 = 100
         scores = {"correctness": 5.0, "completeness": 5.0, "safety": 5.0, "helpfulness": 5.0}
@@ -186,8 +187,10 @@ class TestAgentJudge:
     @pytest.mark.asyncio
     async def test_judge_error_handling(self):
         """Should handle LLM errors gracefully."""
+
         class FailingLLM:
             model = "failing"
+
             async def complete(self, messages, temperature=0.1):
                 raise Exception("LLM failed")
 

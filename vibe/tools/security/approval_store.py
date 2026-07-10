@@ -7,11 +7,24 @@ from typing import Any
 DEFAULT_STORE_PATH = Path.home() / ".vibe" / "approvals.json"
 
 SAFE_COMMANDS = {
-    "ls", "find", "pwd", "du", "df", "stat",
-    "cat", "head", "tail", "grep", "sort", "uniq", "wc", "jq"
+    "ls",
+    "find",
+    "pwd",
+    "du",
+    "df",
+    "stat",
+    "cat",
+    "head",
+    "tail",
+    "grep",
+    "sort",
+    "uniq",
+    "wc",
+    "jq",
 }
 
 SAFE_GIT_SUBCOMMANDS = {"status", "log", "diff", "branch", "show", "remote"}
+
 
 class ApprovalStore:
     """Manages persistent command approvals in ~/.vibe/approvals.json."""
@@ -71,30 +84,37 @@ class ApprovalStore:
         abs_root = str(Path(root_path).resolve())
         # Remove existing scoped approval for the same command/path if it exists
         self.approvals = [
-            a for a in self.approvals
-            if not (a.get("type") == "scoped_base_cmd" and a.get("command") == base_cmd and a.get("root_path") == abs_root)
+            a
+            for a in self.approvals
+            if not (
+                a.get("type") == "scoped_base_cmd"
+                and a.get("command") == base_cmd
+                and a.get("root_path") == abs_root
+            )
         ]
-        self.approvals.append({
-            "type": "scoped_base_cmd",
-            "command": base_cmd,
-            "root_path": abs_root,
-            "recursive": True,
-            "granted_at": "2026-05-03T00:00:00Z" # Will be updated with real timestamp if needed
-        })
+        self.approvals.append(
+            {
+                "type": "scoped_base_cmd",
+                "command": base_cmd,
+                "root_path": abs_root,
+                "recursive": True,
+                # Will be updated with real timestamp if needed
+                "granted_at": "2026-05-03T00:00:00Z",
+            }
+        )
         self._save()
 
     def add_exact_approval(self, command_line: str):
         """Add an approval for an exact command string."""
         # Remove existing exact approval if it exists
         self.approvals = [
-            a for a in self.approvals
+            a
+            for a in self.approvals
             if not (a.get("type") == "exact_match" and a.get("command") == command_line)
         ]
-        self.approvals.append({
-            "type": "exact_match",
-            "command": command_line,
-            "granted_at": "2026-05-03T00:00:00Z"
-        })
+        self.approvals.append(
+            {"type": "exact_match", "command": command_line, "granted_at": "2026-05-03T00:00:00Z"}
+        )
         self._save()
 
     def _split_command_chain(self, command_line: str) -> list[dict[str, Any]]:
@@ -122,7 +142,7 @@ class ApprovalStore:
                     units.append({"type": "cmd", "content": " ".join(current_unit)})
                     current_unit = []
                 if i + 1 < len(tokens):
-                    units.append({"type": "redirect", "content": tokens[i+1]})
+                    units.append({"type": "redirect", "content": tokens[i + 1]})
                     i += 1
             else:
                 current_unit.append(token)
@@ -199,6 +219,10 @@ class ApprovalStore:
         try:
             abs_target = str(Path(target_path).resolve())
             abs_root = str(Path(root_path).resolve())
-            return abs_target == abs_root or abs_target.startswith(abs_root + os.sep) or (abs_root == "/" and abs_target.startswith("/"))
+            return (
+                abs_target == abs_root
+                or abs_target.startswith(abs_root + os.sep)
+                or (abs_root == "/" and abs_target.startswith("/"))
+            )
         except Exception:
             return False

@@ -1,9 +1,9 @@
 """Tests for ContextCompactor."""
 
-
 from vibe.core.context_compactor import CompactionResult, ContextCompactor
 
 # ─── compactor_001: Trigger at threshold ───
+
 
 def test_compactor_001_triggers_at_threshold():
     """compactor_001: When messages exceed token threshold, compaction triggers."""
@@ -43,6 +43,7 @@ def test_compactor_001_does_not_trigger_below_threshold():
 
 # ─── compactor_002: Preserves key info ───
 
+
 def test_compactor_002_preserves_key_info():
     """compactor_002: Compacted context preserves system msg, tool calls, and recent history."""
     compactor = ContextCompactor(max_tokens=4000, chars_per_token=4.0)
@@ -67,7 +68,11 @@ def test_compactor_002_preserves_key_info():
             "role": "assistant",
             "content": "",
             "tool_calls": [
-                {"id": "call_1", "function": {"name": "read_file", "arguments": '{"path": "/tmp/test"}'}, "type": "function"}
+                {
+                    "id": "call_1",
+                    "function": {"name": "read_file", "arguments": '{"path": "/tmp/test"}'},
+                    "type": "function",
+                }
             ],
         },
         {"role": "tool", "content": "file contents here", "tool_call_id": "call_1"},
@@ -128,6 +133,7 @@ def test_compactor_002_truncate_strategy_preserves_content():
 
 
 # ─── Edge case: empty messages ───
+
 
 def test_compactor_empty_messages():
     """Empty message list should not trigger compaction."""

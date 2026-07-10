@@ -6,16 +6,7 @@ from vibe.adapters.openai import OpenAIAdapter
 
 def test_openai_stream_text_chunks():
     adapter = OpenAIAdapter()
-    chunk = {
-        "choices": [
-            {
-                "delta": {
-                    "content": "hello world"
-                },
-                "finish_reason": None
-            }
-        ]
-    }
+    chunk = {"choices": [{"delta": {"content": "hello world"}, "finish_reason": None}]}
     res = adapter.parse_stream_chunk(chunk)
     assert res is not None
     assert res.content == "hello world"
@@ -26,12 +17,7 @@ def test_openai_stream_reasoning_chunks():
     adapter = OpenAIAdapter()
     chunk = {
         "choices": [
-            {
-                "delta": {
-                    "reasoning_content": "let's think about this..."
-                },
-                "finish_reason": None
-            }
+            {"delta": {"reasoning_content": "let's think about this..."}, "finish_reason": None}
         ]
     }
     res = adapter.parse_stream_chunk(chunk)
@@ -53,10 +39,7 @@ def test_anthropic_stream_text_chunks():
     chunk = {
         "type": "content_block_delta",
         "index": 0,
-        "delta": {
-            "type": "text_delta",
-            "text": "hello anthropic"
-        }
+        "delta": {"type": "text_delta", "text": "hello anthropic"},
     }
     res = adapter.parse_stream_chunk(chunk)
     assert res is not None
@@ -69,10 +52,7 @@ def test_anthropic_stream_thinking_chunks():
     chunk = {
         "type": "content_block_delta",
         "index": 0,
-        "delta": {
-            "type": "thinking_delta",
-            "thinking": "thinking hard"
-        }
+        "delta": {"type": "thinking_delta", "thinking": "thinking hard"},
     }
     res = adapter.parse_stream_chunk(chunk)
     assert res is not None

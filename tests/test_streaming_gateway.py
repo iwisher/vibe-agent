@@ -45,9 +45,7 @@ async def test_stream_success(base_client):
     mock_resp.raise_for_status = MagicMock()
     mock_resp.aiter_lines = mock_aiter_lines
 
-    with patch(
-        "httpx.AsyncClient.stream", return_value=MockStreamContext(mock_resp)
-    ):
+    with patch("httpx.AsyncClient.stream", return_value=MockStreamContext(mock_resp)):
         chunks = []
         async for chunk in base_client.complete_stream(
             messages=[{"role": "user", "content": "hi"}]
@@ -67,8 +65,7 @@ async def test_stream_with_reasoning(base_client):
     async def mock_aiter_lines():
         yield 'data: {"choices": [{"delta": {"reasoning_content": "thinking "}}]}'
         yield (
-            'data: {"choices": [{"delta": {"reasoning_content": "hard... ", '
-            '"content": "hello"}}]}'
+            'data: {"choices": [{"delta": {"reasoning_content": "hard... ", "content": "hello"}}]}'
         )
         yield "data: [DONE]"
 

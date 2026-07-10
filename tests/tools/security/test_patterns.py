@@ -1,6 +1,5 @@
 """Tests for the dangerous pattern engine."""
 
-
 from vibe.tools.security.patterns import (
     BUILTIN_PATTERNS,
     PatternEngine,
@@ -36,7 +35,9 @@ class TestPatternEngine:
     def test_critical_rm_rf_root(self):
         engine = PatternEngine()
         matches = engine.scan("rm -rf /")
-        assert any(m.pattern_id == "rm-rf-root" and m.severity == PatternSeverity.CRITICAL for m in matches)
+        assert any(
+            m.pattern_id == "rm-rf-root" and m.severity == PatternSeverity.CRITICAL for m in matches
+        )
 
     def test_critical_fork_bomb(self):
         engine = PatternEngine()
@@ -51,7 +52,10 @@ class TestPatternEngine:
     def test_warning_git_reset_hard(self):
         engine = PatternEngine()
         matches = engine.scan("git reset --hard HEAD")
-        assert any(m.pattern_id == "git-reset-hard" and m.severity == PatternSeverity.WARNING for m in matches)
+        assert any(
+            m.pattern_id == "git-reset-hard" and m.severity == PatternSeverity.WARNING
+            for m in matches
+        )
 
     def test_warning_curl_pipe_bash(self):
         engine = PatternEngine()
@@ -61,7 +65,9 @@ class TestPatternEngine:
     def test_info_sudo_with_s(self):
         engine = PatternEngine()
         matches = engine.scan("sudo -S ls")
-        assert any(m.pattern_id == "sudo-with-s" and m.severity == PatternSeverity.INFO for m in matches)
+        assert any(
+            m.pattern_id == "sudo-with-s" and m.severity == PatternSeverity.INFO for m in matches
+        )
 
     def test_safe_command_no_matches(self):
         engine = PatternEngine()
@@ -89,12 +95,14 @@ class TestPatternEngine:
 
     def test_add_custom_pattern(self):
         engine = PatternEngine()
-        engine.add_pattern({
-            "id": "custom-test",
-            "severity": "critical",
-            "pattern": r"custom_dangerous_command",
-            "description": "Custom test pattern",
-        })
+        engine.add_pattern(
+            {
+                "id": "custom-test",
+                "severity": "critical",
+                "pattern": r"custom_dangerous_command",
+                "description": "Custom test pattern",
+            }
+        )
         matches = engine.scan("custom_dangerous_command")
         assert any(m.pattern_id == "custom-test" for m in matches)
 
@@ -106,7 +114,7 @@ class TestPatternEngine:
 
     def test_inline_python_detection(self):
         engine = PatternEngine()
-        matches = engine.scan('python -c "import os; os.system(\"rm -rf /\")"')
+        matches = engine.scan('python -c "import os; os.system("rm -rf /")"')
         assert any(m.pattern_id == "python-inline" for m in matches)
 
     def test_wrapper_detection(self):
@@ -122,7 +130,10 @@ class TestPatternEngine:
     def test_read_etc_shadow(self):
         engine = PatternEngine()
         matches = engine.scan("cat /etc/shadow")
-        assert any(m.pattern_id == "cat-etc-shadow" and m.severity == PatternSeverity.CRITICAL for m in matches)
+        assert any(
+            m.pattern_id == "cat-etc-shadow" and m.severity == PatternSeverity.CRITICAL
+            for m in matches
+        )
 
     def test_all_patterns_have_required_fields(self):
         for p in BUILTIN_PATTERNS:

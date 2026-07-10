@@ -155,6 +155,7 @@ def _parse_providers(raw: dict[str, Any], llm_config: "LLMConfig") -> ProviderRe
 
 class LogConfig(BaseModel):
     """Logging configuration."""
+
     enabled: bool = True
     log_dir: str = "./logs"
     max_file_size_mb: float = Field(default=10.0, ge=0.1)
@@ -164,6 +165,7 @@ class LogConfig(BaseModel):
 
 class LLMConfig(BaseModel):
     """LLM configuration (backward compatible with old config)."""
+
     default_model: str = "default"
     base_url: str = "http://localhost:11434"
     api_key: Optional[str] = None
@@ -184,6 +186,7 @@ class LLMConfig(BaseModel):
 
 class ModelConfig(BaseModel):
     """Model-specific configuration."""
+
     provider: str = "openai"
     model: str = "gpt-4o"
     base_url: Optional[str] = None
@@ -196,6 +199,7 @@ class ModelConfig(BaseModel):
     @classmethod
     def validate_provider(cls, v: str) -> str:
         from vibe.adapters.registry import ADAPTER_REGISTRY
+
         if v not in ADAPTER_REGISTRY:
             raise ValueError(
                 f"Unknown provider '{v}'. Available: {sorted(ADAPTER_REGISTRY.keys())}"
@@ -212,6 +216,7 @@ class ModelConfig(BaseModel):
 
 class PlannerConfig(BaseModel):
     """Planner configuration."""
+
     enabled: bool = True
     use_embeddings: bool = False
     embedding_model_path: Optional[str] = None
@@ -252,6 +257,7 @@ class PreferenceConfig(BaseModel):
 
 class TraceStoreConfig(BaseModel):
     """Trace store configuration."""
+
     enabled: bool = True
     storage_type: str = Field(default="sqlite", pattern=r"^(sqlite|json|memory)$")
     db_path: Optional[str] = None
@@ -261,14 +267,13 @@ class TraceStoreConfig(BaseModel):
 
 class EvalConfig(BaseModel):
     """Evaluation configuration."""
+
     enabled: bool = True
     parallel: bool = True
     max_workers: int = Field(default=4, ge=1, le=16)
     timeout: float = Field(default=300.0, ge=10.0)
     output_dir: str = "./eval_results"
-    scorecard_dir: str = Field(
-        default_factory=lambda: os.path.expanduser("~/.vibe/scorecards")
-    )
+    scorecard_dir: str = Field(default_factory=lambda: os.path.expanduser("~/.vibe/scorecards"))
 
 
 # ---------------------------------------------------------------------------
@@ -323,9 +328,7 @@ class SandboxConfig(BaseModel):
 class AuditConfig(BaseModel):
     """Security audit log configuration."""
 
-    log_path: str = Field(
-        default_factory=lambda: os.path.expanduser("~/.vibe/logs/security.log")
-    )
+    log_path: str = Field(default_factory=lambda: os.path.expanduser("~/.vibe/logs/security.log"))
     max_events: int = Field(default=10000)
     redact_in_logs: bool = True
 
@@ -335,7 +338,6 @@ class AuditConfig(BaseModel):
         if v < 1:
             raise ValueError("max_events must be >= 1")
         return v
-
 
 
 class SecurityConfig(BaseModel):
@@ -356,8 +358,6 @@ class SecurityConfig(BaseModel):
     # never hang. Setting to True allows interactive stdin prompts to override critical risks,
     # which slightly weakens the auto-reject policy in favor of interactive control.
     interactive_skill_install: bool = False
-
-
 
     file_safety: FileSafetyConfig = Field(default_factory=FileSafetyConfig)
     env_sanitization: EnvSanitizationConfig = Field(default_factory=EnvSanitizationConfig)
@@ -425,7 +425,6 @@ class FallbackConfig(BaseModel):
         if env_chain is not None:
             return _parse_list(env_chain, None)
         return v
-
 
 
 # ---------------------------------------------------------------------------
@@ -606,15 +605,21 @@ class VibeConfig(BaseSettings):
         llm_raw = raw.get("llm", {})
         llm_cfg = LLMConfig(
             default_model=os.environ.get("VIBE_MODEL", llm_raw.get("default_model", "default")),
-            base_url=os.environ.get("VIBE_BASE_URL", llm_raw.get("base_url", "http://localhost:11434")),
+            base_url=os.environ.get(
+                "VIBE_BASE_URL", llm_raw.get("base_url", "http://localhost:11434")
+            ),
             api_key=llm_raw.get("api_key"),
             timeout=_parse_float("VIBE_TIMEOUT", float(llm_raw.get("timeout", 60.0))),
             fallback_chain=_parse_list(
                 os.environ.get("VIBE_FALLBACK_CHAIN"),
                 llm_raw.get("fallback_chain", []),
             ),
-            stream=os.environ.get("VIBE_STREAM", str(llm_raw.get("stream", True))).lower() == "true",
-            show_reasoning=os.environ.get("VIBE_SHOW_REASONING", str(llm_raw.get("show_reasoning", True))).lower() == "true",
+            stream=os.environ.get("VIBE_STREAM", str(llm_raw.get("stream", True))).lower()
+            == "true",
+            show_reasoning=os.environ.get(
+                "VIBE_SHOW_REASONING", str(llm_raw.get("show_reasoning", True))
+            ).lower()
+            == "true",
         )
 
         # ---- FallbackConfig ----
@@ -642,9 +647,7 @@ class VibeConfig(BaseSettings):
         # ---- EvalConfig ----
         eval_raw = raw.get("eval", {})
         eval_cfg = EvalConfig(
-            scorecard_dir=os.path.expanduser(
-                eval_raw.get("scorecard_dir", "~/.vibe/scorecards")
-            ),
+            scorecard_dir=os.path.expanduser(eval_raw.get("scorecard_dir", "~/.vibe/scorecards")),
         )
 
         # ---- Providers ----

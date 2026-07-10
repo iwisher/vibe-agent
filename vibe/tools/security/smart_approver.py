@@ -8,6 +8,7 @@ from typing import Optional
 
 class RiskLevel(Enum):
     """Risk assessment levels."""
+
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
@@ -16,6 +17,7 @@ class RiskLevel(Enum):
 
 class ApprovalDecision(Enum):
     """Approval decisions."""
+
     APPROVE = "approve"
     REJECT = "reject"
     WARN = "warn"
@@ -24,6 +26,7 @@ class ApprovalDecision(Enum):
 @dataclass
 class RiskAssessment:
     """Result of LLM risk assessment."""
+
     decision: ApprovalDecision
     risk_level: RiskLevel
     reasoning: str
@@ -36,7 +39,7 @@ class SmartApprover:
 
     # Risk thresholds for auto-decisions
     AUTO_APPROVE_THRESHOLD = 0.15  # Risk below this -> auto approve
-    AUTO_REJECT_THRESHOLD = 0.85   # Risk above this -> auto reject
+    AUTO_REJECT_THRESHOLD = 0.85  # Risk above this -> auto reject
 
     def __init__(self, llm_client=None, auto_mode: bool = False):
         self.llm_client = llm_client
@@ -76,17 +79,29 @@ class SmartApprover:
 
         # High-risk tools
         high_risk_tools = {
-            "terminal", "shell", "execute", "run_command",
-            "file_delete", "rm", "remove",
-            "network_request", "curl", "wget",
-            "database_write", "db_execute",
+            "terminal",
+            "shell",
+            "execute",
+            "run_command",
+            "file_delete",
+            "rm",
+            "remove",
+            "network_request",
+            "curl",
+            "wget",
+            "database_write",
+            "db_execute",
         }
 
         # Medium-risk tools
         medium_risk_tools = {
-            "file_write", "write_file", "patch",
-            "send_email", "send_message",
-            "browser_navigate", "browser_click",
+            "file_write",
+            "write_file",
+            "patch",
+            "send_email",
+            "send_message",
+            "browser_navigate",
+            "browser_click",
         }
 
         if any(rt in tool_name.lower() for rt in high_risk_tools):
@@ -196,13 +211,15 @@ Respond in JSON format:
 
     def record_assessment(self, assessment: RiskAssessment, tool_name: str) -> None:
         """Record assessment for learning/auditing."""
-        self._risk_history.append({
-            "tool_name": tool_name,
-            "decision": assessment.decision.value,
-            "risk_level": assessment.risk_level.value,
-            "reasoning": assessment.reasoning,
-            "confidence": assessment.confidence,
-        })
+        self._risk_history.append(
+            {
+                "tool_name": tool_name,
+                "decision": assessment.decision.value,
+                "risk_level": assessment.risk_level.value,
+                "reasoning": assessment.reasoning,
+                "confidence": assessment.confidence,
+            }
+        )
 
     def get_risk_summary(self) -> dict:
         """Get summary of recent risk assessments."""
@@ -226,11 +243,13 @@ class MockLLMClient:
     """Mock LLM client for testing."""
 
     def __init__(self, response: Optional[str] = None):
-        self.response = response or json.dumps({
-            "risk_level": "medium",
-            "reasoning": "Mock assessment",
-            "suggested_modifications": None,
-        })
+        self.response = response or json.dumps(
+            {
+                "risk_level": "medium",
+                "reasoning": "Mock assessment",
+                "suggested_modifications": None,
+            }
+        )
 
     def complete(self, prompt: str) -> str:
         return self.response

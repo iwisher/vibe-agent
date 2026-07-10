@@ -64,19 +64,23 @@ def test_memory_status_with_wiki(tmp_path):
     # Create slug index
     index_path = wiki_dir / ".slug_index.json"
     index_path.write_text(
-        json.dumps({
-            "slug_to_id": {
-                "verified-page": "v-page-001",
-                "draft-page": "d-page-001",
+        json.dumps(
+            {
+                "slug_to_id": {
+                    "verified-page": "v-page-001",
+                    "draft-page": "d-page-001",
+                }
             }
-        })
+        )
     )
 
     with patch("vibe.cli.main._get_wiki") as mock_get_wiki:
         mock_wiki = MagicMock()
         mock_wiki.base_path = str(wiki_dir)
         mock_wiki.db = None  # No telemetry DB
-        mock_wiki.get_status_counts = AsyncMock(return_value={"total": 2, "verified": 1, "draft": 1})
+        mock_wiki.get_status_counts = AsyncMock(
+            return_value={"total": 2, "verified": 1, "draft": 1}
+        )
         mock_get_wiki.return_value = mock_wiki
 
         result = runner.invoke(app, ["memory", "status"])
@@ -100,7 +104,9 @@ def test_memory_status_empty_wiki(tmp_path):
         mock_wiki = MagicMock()
         mock_wiki.base_path = str(wiki_dir)
         mock_wiki.db = None
-        mock_wiki.get_status_counts = AsyncMock(return_value={"total": 0, "verified": 0, "draft": 0})
+        mock_wiki.get_status_counts = AsyncMock(
+            return_value={"total": 0, "verified": 0, "draft": 0}
+        )
         mock_get_wiki.return_value = mock_wiki
 
         result = runner.invoke(app, ["memory", "status"])
@@ -143,7 +149,9 @@ def test_memory_status_with_telemetry(tmp_path):
         mock_wiki = MagicMock()
         mock_wiki.base_path = str(wiki_dir)
         mock_wiki.db = mock_db
-        mock_wiki.get_status_counts = AsyncMock(return_value={"total": 1, "verified": 1, "draft": 0})
+        mock_wiki.get_status_counts = AsyncMock(
+            return_value={"total": 1, "verified": 1, "draft": 0}
+        )
         mock_get_wiki.return_value = mock_wiki
 
         result = runner.invoke(app, ["memory", "status"])

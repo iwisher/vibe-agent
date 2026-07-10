@@ -86,7 +86,9 @@ class WikiGraph:
             return self._entities.get(entity_id)
         return None
 
-    def get_related(self, entity_id: str, relation: str | None = None) -> list[tuple[EntityNode, float]]:
+    def get_related(
+        self, entity_id: str, relation: str | None = None
+    ) -> list[tuple[EntityNode, float]]:
         """Get entities related to the given entity.
 
         Args:
@@ -225,7 +227,9 @@ class WikiGraph:
             entities = [e for e in entities if e.entity_type == entity_type]
         return sorted(entities, key=lambda e: e.name)
 
-    def suggest_merge_candidates(self, similarity_threshold: float = 0.8) -> list[tuple[str, str, float]]:
+    def suggest_merge_candidates(
+        self, similarity_threshold: float = 0.8
+    ) -> list[tuple[str, str, float]]:
         """Suggest entity pairs that might be duplicates.
 
         Returns list of (entity_id_1, entity_id_2, similarity) tuples.
@@ -234,7 +238,7 @@ class WikiGraph:
         entity_list = list(self._entities.values())
 
         for i, e1 in enumerate(entity_list):
-            for e2 in entity_list[i + 1:]:
+            for e2 in entity_list[i + 1 :]:
                 # Check name similarity
                 names1 = {e1.name.lower()} | set(a.lower() for a in e1.aliases)
                 names2 = {e2.name.lower()} | set(a.lower() for a in e2.aliases)

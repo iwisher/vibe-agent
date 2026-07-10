@@ -110,9 +110,7 @@ class MigrationManager:
     def current_version(self) -> int:
         """Get current schema version from _schema_version table."""
         try:
-            row = self.conn.execute(
-                "SELECT MAX(version) FROM _schema_version"
-            ).fetchone()
+            row = self.conn.execute("SELECT MAX(version) FROM _schema_version").fetchone()
             return row[0] or 0
         except sqlite3.OperationalError:
             return 0
@@ -123,9 +121,7 @@ class MigrationManager:
         if current >= target_version:
             return
 
-        logger.info(
-            "Running memory.db migrations: version %d → %d", current, target_version
-        )
+        logger.info("Running memory.db migrations: version %d → %d", current, target_version)
         migrations = {
             1: self._migrate_v1,
         }
@@ -250,9 +246,7 @@ class SharedMemoryDB:
             conn.executescript(_WIKI_FTS_DDL)
         else:
             # Fallback: regular table instead of FTS5
-            logger.warning(
-                "FTS5 not available in SQLite — using plain text search for wiki_chunks"
-            )
+            logger.warning("FTS5 not available in SQLite — using plain text search for wiki_chunks")
             conn.execute(
                 """CREATE TABLE IF NOT EXISTS wiki_chunks (
                     chunk_id TEXT PRIMARY KEY,
@@ -311,9 +305,7 @@ class SharedMemoryDB:
 
             # Split content into chunks
             content = page.content
-            chunks = [
-                content[i: i + CHUNK_SIZE] for i in range(0, len(content), CHUNK_SIZE)
-            ]
+            chunks = [content[i : i + CHUNK_SIZE] for i in range(0, len(content), CHUNK_SIZE)]
             if not chunks:
                 chunks = [content]
 

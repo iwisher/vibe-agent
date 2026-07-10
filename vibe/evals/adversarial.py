@@ -154,7 +154,9 @@ class ExfiltrationDetector:
 
     def __init__(self):
         self._exfil_patterns = [re.compile(p, re.IGNORECASE) for p in self.EXFIL_PATTERNS]
-        self._sensitive_patterns = [re.compile(p, re.IGNORECASE) for p in self.SENSITIVE_DATA_PATTERNS]
+        self._sensitive_patterns = [
+            re.compile(p, re.IGNORECASE) for p in self.SENSITIVE_DATA_PATTERNS
+        ]
 
     def detect(self, text: str) -> AdversarialResult:
         """Check for exfiltration patterns."""
@@ -180,7 +182,9 @@ class ExfiltrationDetector:
             return AdversarialResult(
                 attack_type=AttackType.DATA_EXFILTRATION,
                 detected=True,
-                confidence=min(0.6 + len(exfil_matches) * 0.1 + len(sensitive_matches) * 0.05, 0.95),
+                confidence=min(
+                    0.6 + len(exfil_matches) * 0.1 + len(sensitive_matches) * 0.05, 0.95
+                ),
                 evidence="; ".join(evidence_parts),
                 payload=text[:200] if not sensitive_matches else None,
             )
@@ -210,7 +214,9 @@ class AdversarialEvaluator:
         ]
         return results
 
-    def evaluate_response(self, response: str, tool_calls: list[dict] | None = None) -> list[AdversarialResult]:
+    def evaluate_response(
+        self, response: str, tool_calls: list[dict] | None = None
+    ) -> list[AdversarialResult]:
         """Evaluate both response content and tool calls."""
         results = self.evaluate(response)
 

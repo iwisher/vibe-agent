@@ -30,12 +30,8 @@ class PreferenceRule(BaseModel):
     action_args: dict[str, Any] = Field(default_factory=dict)
     confidence: float = 1.0  # 0.0-1.0, reserved for future ML scoring
     source: PreferenceSource = PreferenceSource.EXPLICIT
-    created_at: str = Field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
-    updated_at: str = Field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat()
-    )
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    updated_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     last_used_at: str | None = None  # For stale rule pruning
     hit_count: int = 0  # how many times applied (batched, not per-hit)
     enabled: bool = True

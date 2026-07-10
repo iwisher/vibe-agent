@@ -1,6 +1,7 @@
 """Tests for the thread-safe ConversationQueue."""
 
 import asyncio
+
 import pytest
 
 from vibe.core.conversation_queue import ConversationQueue, QueuedMessage, SteerCommand

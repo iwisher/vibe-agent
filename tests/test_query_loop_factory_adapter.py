@@ -19,6 +19,7 @@ class TestQueryLoopFactoryAdapter:
         # Verify the adapter was set
         assert llm.adapter is not None
         from vibe.adapters.anthropic import AnthropicAdapter
+
         assert isinstance(llm.adapter, AnthropicAdapter)
 
     def test_create_llm_without_adapter_type_defaults_to_openai(self):
@@ -28,12 +29,15 @@ class TestQueryLoopFactoryAdapter:
         )
         llm = factory.create_llm()
         from vibe.adapters.openai import OpenAIAdapter
+
         assert isinstance(llm.adapter, OpenAIAdapter)
 
     def test_from_profile_resolves_adapter_from_provider_registry(self):
         config = VibeConfig.load(auto_create=False)
         config.providers.register(
-            ProviderProfile(name="kimi", base_url="https://api.kimi.com/coding", adapter_type="anthropic")
+            ProviderProfile(
+                name="kimi", base_url="https://api.kimi.com/coding", adapter_type="anthropic"
+            )
         )
         profile = ModelProfile(
             name="kimi-sonnet",
@@ -45,10 +49,12 @@ class TestQueryLoopFactoryAdapter:
         assert factory.adapter_type == "anthropic"
         llm = factory.create_llm()
         from vibe.adapters.anthropic import AnthropicAdapter
+
         assert isinstance(llm.adapter, AnthropicAdapter)
 
     def test_create_llm_propagates_circuit_breaker_settings(self, tmp_path):
         import yaml
+
         config_data = {
             "fallback": {
                 "circuit_breaker_threshold": 3,
@@ -72,6 +78,7 @@ class TestQueryLoopFactoryAdapter:
 class TestModelRegistryFromConfig:
     def test_from_config_with_models_section(self, tmp_path):
         import yaml
+
         config_data = {
             "providers": {
                 "kimi": {
@@ -117,6 +124,7 @@ class TestModelRegistryFromConfig:
 
     def test_from_config_fallback_to_builtin(self, tmp_path):
         import yaml
+
         config_data = {"llm": {"base_url": "http://localhost:11434"}}
         config_path = tmp_path / "config.yaml"
         config_path.write_text(yaml.dump(config_data), encoding="utf-8")

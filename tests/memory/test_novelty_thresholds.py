@@ -1,8 +1,6 @@
 """Tests for per-tag novelty thresholds."""
 
-import pytest
-
-from vibe.memory.novelty_thresholds import NoveltyThresholdRegistry, TagThreshold
+from vibe.memory.novelty_thresholds import NoveltyThresholdRegistry
 
 
 class TestNoveltyThresholdRegistry:

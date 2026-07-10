@@ -166,23 +166,29 @@ class SwarmOrchestrator:
         dag = TaskDAG()
 
         # Simple decomposition: research → code → critique
-        dag.add_node(TaskNode(
-            node_id="research",
-            description=f"Research requirements for: {task}",
-            role=SubAgentRole.RESEARCH,
-        ))
-        dag.add_node(TaskNode(
-            node_id="coding",
-            description=f"Implement solution for: {task}",
-            role=SubAgentRole.CODING,
-            prerequisites=["research"],
-        ))
-        dag.add_node(TaskNode(
-            node_id="critique",
-            description=f"Review implementation for: {task}",
-            role=SubAgentRole.CRITIC,
-            prerequisites=["coding"],
-        ))
+        dag.add_node(
+            TaskNode(
+                node_id="research",
+                description=f"Research requirements for: {task}",
+                role=SubAgentRole.RESEARCH,
+            )
+        )
+        dag.add_node(
+            TaskNode(
+                node_id="coding",
+                description=f"Implement solution for: {task}",
+                role=SubAgentRole.CODING,
+                prerequisites=["research"],
+            )
+        )
+        dag.add_node(
+            TaskNode(
+                node_id="critique",
+                description=f"Review implementation for: {task}",
+                role=SubAgentRole.CRITIC,
+                prerequisites=["coding"],
+            )
+        )
 
         return dag
 

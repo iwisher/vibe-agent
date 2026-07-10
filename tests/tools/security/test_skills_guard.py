@@ -1,6 +1,5 @@
 """Tests for SkillsGuard."""
 
-
 import pytest
 
 from vibe.tools.security.skills_guard import (
@@ -50,7 +49,7 @@ class TestSkillsGuard:
         dangerous_code = [
             "os.system('rm -rf /')",
             "subprocess.call(['sudo', 'ls'])",
-            "eval('__import__(\"os\").system(\"ls\")')",
+            'eval(\'__import__("os").system("ls")\')',
             "exec('print(1)')",
         ]
 

@@ -49,9 +49,7 @@ class HookPipeline:
     """Ordered pipeline of constraint hooks."""
 
     def __init__(self):
-        self._stages: dict[HookStage, list[ConstraintHook]] = {
-            stage: [] for stage in HookStage
-        }
+        self._stages: dict[HookStage, list[ConstraintHook]] = {stage: [] for stage in HookStage}
 
     def add_hook(self, stage: HookStage, hook: ConstraintHook) -> None:
         self._stages[stage].append(hook)
@@ -149,6 +147,7 @@ class HookPipeline:
 
 # Built-in hooks
 
+
 def permission_gate_hook(
     destructive_tools: list[str] | None = None,
 ) -> ConstraintHook:
@@ -234,6 +233,7 @@ def policy_hook(
 
 
 # Security integration hooks
+
 
 def path_traversal_hook(allowed_paths: list[str] | None = None) -> ConstraintHook:
     """Blocks path traversal attempts in file operations.

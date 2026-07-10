@@ -44,9 +44,7 @@ class RLMThresholdAnalyzer:
             window = getattr(self.config, "trigger_window_sessions", 50)
             min_sessions = getattr(self.config, "min_sessions_before_trigger", 10)
             threshold_chars = getattr(self.config, "trigger_threshold_chars", 100_000)
-            threshold_compaction_pct = getattr(
-                self.config, "trigger_threshold_compaction_pct", 0.3
-            )
+            threshold_compaction_pct = getattr(self.config, "trigger_threshold_compaction_pct", 0.3)
 
             # Query telemetry for recent session stats
             stats = await self._query_session_stats(window)
@@ -65,11 +63,12 @@ class RLMThresholdAnalyzer:
 
             reasons: list[str] = []
             if chars_violations > 0:
-                reasons.append(
-                    f"{chars_violations} sessions exceeded {threshold_chars} chars"
-                )
+                reasons.append(f"{chars_violations} sessions exceeded {threshold_chars} chars")
             if compaction_pct >= threshold_compaction_pct:
-                reasons.append(f"{compaction_pct:.1%} sessions had compaction (>= {threshold_compaction_pct:.0%})")
+                reasons.append(
+                    f"{compaction_pct:.1%} sessions had compaction "
+                    f"(>= {threshold_compaction_pct:.0%})"
+                )
 
             if reasons:
                 return RLMTriggerDecision(
@@ -92,11 +91,7 @@ class RLMThresholdAnalyzer:
             )
 
     async def analyze_and_train(
-        self,
-        wiki: Any,
-        trace_store: Any,
-        rlm_trainer: Any,
-        rlm_config: Any
+        self, wiki: Any, trace_store: Any, rlm_trainer: Any, rlm_config: Any
     ) -> RLMTriggerDecision:
         """Analyze telemetry and optionally trigger training in the background.
 
@@ -137,13 +132,17 @@ class RLMThresholdAnalyzer:
                         await rlm_trainer.train(train_config)
 
                     import asyncio
+
                     # Store task reference to avoid unawaited coroutine warnings
                     self._training_task = asyncio.create_task(_background_train())
 
                 except Exception as e:
                     logger.error(f"Failed to launch RLM training: {e}")
             else:
-                logger.info(f"RLM Training triggered (log only, auto_train=False). Reason: {decision.reason}")
+                logger.info(
+                    "RLM Training triggered (log only, auto_train=False). "
+                    f"Reason: {decision.reason}"
+                )
 
         return decision
 
@@ -205,9 +204,7 @@ class RLMThresholdAnalyzer:
             stats["sessions_above_char_threshold"] = sum(
                 1 for c in total_chars_list if c >= threshold_chars
             )
-            stats["avg_duration_seconds"] = (
-                total_duration / len(rows) if rows else 0.0
-            )
+            stats["avg_duration_seconds"] = total_duration / len(rows) if rows else 0.0
 
             # Query compaction events for the same sessions
             if session_ids:

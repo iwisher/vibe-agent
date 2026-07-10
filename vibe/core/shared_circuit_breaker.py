@@ -54,11 +54,7 @@ def patch_flash_client_with_shared_cb(
         flash_client: FlashLLMClient instance
         shared_cb: SharedCircuitBreaker or CircuitBreaker instance
     """
-    cb = (
-        shared_cb.circuit_breaker
-        if isinstance(shared_cb, SharedCircuitBreaker)
-        else shared_cb
-    )
+    cb = shared_cb.circuit_breaker if isinstance(shared_cb, SharedCircuitBreaker) else shared_cb
 
     # Store reference and patch methods
     flash_client._circuit_breaker = cb
@@ -69,9 +65,7 @@ def patch_flash_client_with_shared_cb(
         if cb.is_open(model):
             from vibe.memory.flash_client import FlashLLMResponse
 
-            return FlashLLMResponse(
-                content="", success=False, error="circuit_breaker_open"
-            )
+            return FlashLLMResponse(content="", success=False, error="circuit_breaker_open")
 
         try:
             result = await flash_client._original_complete(*args, **kwargs)

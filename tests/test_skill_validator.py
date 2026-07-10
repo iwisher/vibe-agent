@@ -1,4 +1,5 @@
 """Test skill validator."""
+
 import tempfile
 from pathlib import Path
 
@@ -120,5 +121,6 @@ def test_script_scanning_detects_malicious_script():
 def test_regex_precompiled():
     """Verify patterns are compiled at module load, not per-call."""
     from vibe.harness.skills.validator import _FS_DANGEROUS_PATTERNS
+
     for pattern, _ in _FS_DANGEROUS_PATTERNS:
         assert hasattr(pattern, "search")  # compiled regex

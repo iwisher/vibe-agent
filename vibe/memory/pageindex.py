@@ -191,7 +191,8 @@ class PageIndex:
     async def _llm_route(self, query: str, root: IndexNode) -> list[IndexNode]:
         """Use LLM to reason over index and select relevant nodes."""
         index_text = self._index_as_text(root)
-        prompt = f"""You are a knowledge routing system. Given a user query and a knowledge base index,
+        prompt = f"""You are a knowledge routing system. Given a user query and a knowledge \
+base index,
 select the most relevant nodes that likely contain information to answer the query.
 
 User Query: {query}
@@ -288,6 +289,7 @@ Only return the JSON, no other text."""
             asyncio.get_running_loop()
             # We're inside an async context — use run_in_executor for sync
             import concurrent.futures
+
             with concurrent.futures.ThreadPoolExecutor() as pool:
                 future = pool.submit(asyncio.run, wiki.list_pages())
                 pages = future.result(timeout=30)
@@ -337,9 +339,7 @@ Only return the JSON, no other text."""
         if node_count <= self.max_nodes_per_index and token_count <= self.token_threshold:
             return
 
-        logger.info(
-            "Partitioning PageIndex: %d nodes, %d tokens", node_count, token_count
-        )
+        logger.info("Partitioning PageIndex: %d nodes, %d tokens", node_count, token_count)
         self._do_tag_partition(root)
 
     def _do_tag_partition(self, root: IndexNode) -> None:

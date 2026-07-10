@@ -18,6 +18,7 @@ from typing import Optional
 
 class CheckpointType(Enum):
     """Types of checkpoints."""
+
     FILE_OPERATION = "file_operation"
     ENV_CHANGE = "env_change"
     DIRECTORY_CHANGE = "directory_change"
@@ -27,6 +28,7 @@ class CheckpointType(Enum):
 @dataclass
 class FileState:
     """Captured state of a file."""
+
     path: str
     exists: bool
     content: Optional[str] = None
@@ -37,6 +39,7 @@ class FileState:
 @dataclass
 class EnvState:
     """Captured state of environment variables."""
+
     added: dict[str, str]  # vars that were added
     modified: dict[str, tuple[str, str]]  # var -> (old, new)
     removed: list[str]  # vars that were removed
@@ -45,6 +48,7 @@ class EnvState:
 @dataclass
 class Checkpoint:
     """A single checkpoint."""
+
     id: str
     timestamp: str
     type: str
@@ -145,7 +149,9 @@ class CheckpointManager:
 
         if path.is_file():
             shutil.copy2(path, backup_path)
-            content = path.read_text() if path.stat().st_size < 1024 * 1024 else None  # Only capture small files
+            content = (
+                path.read_text() if path.stat().st_size < 1024 * 1024 else None
+            )  # Only capture small files
         else:
             content = None
             if path.is_dir():
@@ -313,9 +319,7 @@ class CheckpointManager:
                     if path.is_file():
                         total_size += path.stat().st_size
                     elif path.is_dir():
-                        total_size += sum(
-                            f.stat().st_size for f in path.rglob("*") if f.is_file()
-                        )
+                        total_size += sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
 
         return {
             "count": len(self._checkpoints),

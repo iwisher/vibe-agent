@@ -162,6 +162,7 @@ def test_observability_export():
 
     # Verify metrics content
     import json
+
     with open(metrics_path) as f:
         metrics_data = json.load(f)
     assert metrics_data["counters"]["test_counter{case=a}"] == 2.0

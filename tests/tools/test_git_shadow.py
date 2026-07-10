@@ -2,11 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from vibe.tools.git_shadow import (
     NoOpShadowManager,
-    ShadowBranch,
     ShadowBranchManager,
     _sanitize_session_id,
 )
@@ -172,7 +169,8 @@ class TestRestoreShadow:
 
         with patch("vibe.tools.git_shadow.subprocess.run", side_effect=mock_run):
             assert mgr.restore_shadow("sess-1") is True
-            # Should have checked branch, read config, stashed, checked out shadow, checked out main, reset
+            # Should have checked branch, read config, stashed, checked out shadow,
+            # checked out main, reset
             assert any("checkout" in c for c in calls)
             assert any("reset" in c for c in calls)
 

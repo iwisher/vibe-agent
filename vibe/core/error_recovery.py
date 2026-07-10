@@ -7,9 +7,11 @@ import httpx
 
 T = TypeVar("T")
 
+
 @dataclass
 class RetryPolicy:
     """Policy for retrying failed operations."""
+
     max_retries: int = 3
     initial_delay: float = 1.0
     max_delay: float = 60.0
@@ -26,6 +28,7 @@ class RetryPolicy:
         KeyboardInterrupt,
         SystemExit,
     )
+
 
 class ErrorRecovery:
     """Handles error recovery and retries with exponential backoff."""

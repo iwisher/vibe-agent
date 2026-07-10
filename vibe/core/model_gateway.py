@@ -214,7 +214,8 @@ class LLMClient:
                 ErrorType.SERVER_ERROR,
                 ErrorType.HTTP_ERROR,
                 ErrorType.MODEL_UNAVAILABLE,
-                ErrorType.AUTHENTICATION_ERROR,  # 401/403 may indicate model-specific unavailability
+                # 401/403 may indicate model-specific unavailability
+                ErrorType.AUTHENTICATION_ERROR,
                 ErrorType.NETWORK_ERROR,
                 ErrorType.TIMEOUT_ERROR,
             ):
@@ -385,7 +386,7 @@ class LLMClient:
             detail = f"[TIMEOUT] {e}"
             if self.debug:
                 print(
-                    f"[vibe-debug] ERROR model={model} error_type=TIMEOUT " f"detail={detail}",
+                    f"[vibe-debug] ERROR model={model} error_type=TIMEOUT detail={detail}",
                     file=sys.stderr,
                 )
             result = LLMResponse(
@@ -401,7 +402,7 @@ class LLMClient:
             detail = f"[NETWORK] {e}"
             if self.debug:
                 print(
-                    f"[vibe-debug] ERROR model={model} error_type=NETWORK " f"detail={detail}",
+                    f"[vibe-debug] ERROR model={model} error_type=NETWORK detail={detail}",
                     file=sys.stderr,
                 )
             result = LLMResponse(
@@ -417,7 +418,7 @@ class LLMClient:
             detail = f"[{type(e).__name__}] {e}"
             if self.debug:
                 print(
-                    f"[vibe-debug] ERROR model={model} error_type=UNKNOWN " f"detail={detail}",
+                    f"[vibe-debug] ERROR model={model} error_type=UNKNOWN detail={detail}",
                     file=sys.stderr,
                 )
             result = LLMResponse(
@@ -463,7 +464,8 @@ class LLMClient:
 
         if response.is_error:
             raise RuntimeError(
-                f"LLM failed to provide structured output: {response.error}. Hint: {response.actionable_hint}"
+                f"LLM failed to provide structured output: {response.error}. "
+                f"Hint: {response.actionable_hint}"
             )
 
         # Basic cleanup of markdown markers if the LLM ignores instructions

@@ -34,6 +34,7 @@ DEFAULT_TIER_ORDER = ["free", "budget", "standard", "premium", "ultra"]
 # Data classes
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ComplexityScore:
     """Score for a single prompt complexity dimension."""
@@ -85,6 +86,7 @@ class RoutingDecision:
 # ComplexityScorer
 # ---------------------------------------------------------------------------
 
+
 class ComplexityScorer:
     """Estimate prompt complexity from token count, tool use, and content patterns."""
 
@@ -99,7 +101,9 @@ class ComplexityScorer:
     # Complexity thresholds (in estimated tokens)
     TOKEN_TIERS = [500, 2000, 8000, 32000]  # free, budget, standard, premium boundaries
 
-    def score(self, messages: list[dict[str, Any]], available_tools: list[dict] | None = None) -> ComplexityResult:
+    def score(
+        self, messages: list[dict[str, Any]], available_tools: list[dict] | None = None
+    ) -> ComplexityResult:
         """Score prompt complexity.
 
         Args:
@@ -123,9 +127,9 @@ class ComplexityScorer:
 
         # Weighted aggregate
         overall = (
-            token_score * self.TOKEN_WEIGHT +
-            tool_score * self.TOOL_WEIGHT +
-            pattern_score * self.PATTERN_WEIGHT
+            token_score * self.TOKEN_WEIGHT
+            + tool_score * self.TOOL_WEIGHT
+            + pattern_score * self.PATTERN_WEIGHT
         )
 
         return ComplexityResult(
@@ -170,8 +174,15 @@ class ComplexityScorer:
 
         # Reasoning / planning markers
         reasoning_markers = [
-            "step by step", "plan", "design", "architecture",
-            "compare", "evaluate", "analyze", "debug", "refactor",
+            "step by step",
+            "plan",
+            "design",
+            "architecture",
+            "compare",
+            "evaluate",
+            "analyze",
+            "debug",
+            "refactor",
         ]
         if any(m in all_text for m in reasoning_markers):
             score += 0.25
@@ -192,6 +203,7 @@ class ComplexityScorer:
 # ---------------------------------------------------------------------------
 # CostRouter
 # ---------------------------------------------------------------------------
+
 
 class CostRouter:
     """Route LLM requests to the cheapest capable provider/model pair."""
@@ -250,7 +262,9 @@ class CostRouter:
                             model_id=model_id,
                             tier=target_tier,
                             estimated_cost=cost,
-                            reason=f"user preference: {pref.reason} (confidence={pref.confidence:.2f})",
+                            reason=(
+                                f"user preference: {pref.reason} (confidence={pref.confidence:.2f})"
+                            ),
                         )
             except Exception:
                 pass  # Fall through to normal routing
@@ -293,7 +307,10 @@ class CostRouter:
             model_id=model_id,
             tier=target_tier,
             estimated_cost=cost,
-            reason=f"complexity={complexity.overall:.2f}, tier={target_tier}, tokens≈{complexity.estimated_tokens}",
+            reason=(
+                f"complexity={complexity.overall:.2f}, tier={target_tier}, "
+                f"tokens≈{complexity.estimated_tokens}"
+            ),
         )
 
     def _candidates_for_tier(self, tier: str) -> list[ProviderProfile]:
@@ -346,6 +363,7 @@ class CostRouter:
 # ---------------------------------------------------------------------------
 # SpendTracker
 # ---------------------------------------------------------------------------
+
 
 class SpendTracker:
     """Track cumulative LLM spend per session in SQLite.
@@ -405,7 +423,8 @@ class SpendTracker:
                 ON CONFLICT(session_id) DO UPDATE SET
                     total_cost = total_cost + excluded.total_cost,
                     total_prompt_tokens = total_prompt_tokens + excluded.total_prompt_tokens,
-                    total_completion_tokens = total_completion_tokens + excluded.total_completion_tokens,
+                    total_completion_tokens = total_completion_tokens
+                    + excluded.total_completion_tokens,
                     model_calls = model_calls + excluded.model_calls,
                     updated_at = excluded.updated_at
                 """,
@@ -453,6 +472,7 @@ class SpendTracker:
 # ---------------------------------------------------------------------------
 # Config helper
 # ---------------------------------------------------------------------------
+
 
 class CostRouterConfig:
     """Lightweight config container for CostRouter (no pydantic dependency)."""

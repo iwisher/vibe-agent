@@ -14,15 +14,15 @@ from typing import Any
 
 
 class MessageType(Enum):
-    TASK = auto()       # Orchestrator assigns task to agent
-    RESULT = auto()     # Agent reports task completion
-    QUESTION = auto()   # Agent asks for clarification
-    ANSWER = auto()     # Response to question
-    CRITIQUE = auto()   # Critic agent feedback
+    TASK = auto()  # Orchestrator assigns task to agent
+    RESULT = auto()  # Agent reports task completion
+    QUESTION = auto()  # Agent asks for clarification
+    ANSWER = auto()  # Response to question
+    CRITIQUE = auto()  # Critic agent feedback
     UPDATE_WIKI = auto()  # Request wiki update (orchestrator-owned)
     BROADCAST = auto()  # Global announcement
-    DONE = auto()       # Agent signals completion
-    ERROR = auto()      # Agent reports failure
+    DONE = auto()  # Agent signals completion
+    ERROR = auto()  # Agent reports failure
     HEARTBEAT = auto()  # Keep-alive ping
 
 
@@ -31,10 +31,10 @@ class AgentMessage:
     """Immutable message passed between agents via the message bus."""
 
     msg_type: MessageType
-    sender: str           # Agent ID or "orchestrator"
+    sender: str  # Agent ID or "orchestrator"
     recipient: str | None  # None = broadcast
     content: str
-    correlation_id: str   # Links related messages
+    correlation_id: str  # Links related messages
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -111,10 +111,12 @@ class EventBroker:
                         delivered_queues.add(queue)
                         delivered += 1
                     except asyncio.QueueFull:
-                        await self._dlq.put(DeadLetterEntry(
-                            message=message,
-                            error=f"Queue full for topic {topic}",
-                        ))
+                        await self._dlq.put(
+                            DeadLetterEntry(
+                                message=message,
+                                error=f"Queue full for topic {topic}",
+                            )
+                        )
         return delivered
 
     async def get_dlq(self) -> list[DeadLetterEntry]:
@@ -138,13 +140,15 @@ class EventBroker:
         async with self._lock:
             for queues in self._subscribers.values():
                 for queue in queues:
-                    queue.put_nowait(AgentMessage(
-                        msg_type=MessageType.DONE,
-                        sender="broker",
-                        recipient=None,
-                        content="shutdown",
-                        correlation_id="system",
-                    ))
+                    queue.put_nowait(
+                        AgentMessage(
+                            msg_type=MessageType.DONE,
+                            sender="broker",
+                            recipient=None,
+                            content="shutdown",
+                            correlation_id="system",
+                        )
+                    )
 
 
 class MessageBus:

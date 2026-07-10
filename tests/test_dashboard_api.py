@@ -3,19 +3,16 @@
 import json
 import os
 import sqlite3
-import tempfile
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from vibe.dashboard.server import app, DashboardState
+from vibe.dashboard.server import app
 
 
 @pytest.fixture
 def client(tmp_path):
     """Create a test client with a temporary project root."""
-    from fastapi.testclient import TestClient
 
     # Override the project root for testing
     original_cwd = os.getcwd()
@@ -37,7 +34,6 @@ def client(tmp_path):
         os.environ["VIBE_MEMORY_DIR"] = original_memory_dir
     else:
         os.environ.pop("VIBE_MEMORY_DIR", None)
-
 
 
 @pytest.fixture
@@ -91,7 +87,6 @@ def session_db(tmp_path):
     conn.commit()
     conn.close()
     return db_path
-
 
 
 class TestDashboardAPI:
@@ -152,9 +147,13 @@ class TestDashboardAPI:
         """)
         messages = [
             {"role": "user", "content": "Call a tool"},
-            {"role": "assistant", "content": "", "tool_calls": [
-                {"id": "tc-1", "function": {"name": "test_tool", "arguments": '{"x": 1}'}}
-            ]},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {"id": "tc-1", "function": {"name": "test_tool", "arguments": '{"x": 1}'}}
+                ],
+            },
             {"role": "tool", "content": "result", "tool_call_id": "tc-1"},
         ]
         conn.execute(
@@ -203,7 +202,8 @@ class TestDashboardAPI:
         assert response.json() == []
 
     def test_session_messages_fallback_to_tracestore(self, client, tmp_path):
-        """Verify we can query messages of a completed session from the persistent messages table in traces.db."""
+        """Verify we can query messages of a completed session from the persistent
+        messages table in traces.db."""
         db_path = tmp_path / ".vibe" / "traces.db"
         conn = sqlite3.connect(db_path)
         conn.executescript("""
@@ -226,11 +226,12 @@ class TestDashboardAPI:
         """)
         conn.execute(
             "INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?)",
-            ("sess-completed-001", "2026-05-01T10:00:00", "2026-05-01T10:05:00", 1, "gpt-4", None)
+            ("sess-completed-001", "2026-05-01T10:00:00", "2026-05-01T10:05:00", 1, "gpt-4", None),
         )
         conn.execute(
-            "INSERT INTO messages (session_id, role, content, tool_calls, timestamp) VALUES (?, ?, ?, ?, ?)",
-            ("sess-completed-001", "user", "Durable Hello", None, "2026-05-01T10:00:00")
+            "INSERT INTO messages (session_id, role, content, tool_calls, timestamp) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("sess-completed-001", "user", "Durable Hello", None, "2026-05-01T10:00:00"),
         )
         conn.commit()
         conn.close()
@@ -278,16 +279,27 @@ class TestDashboardAPI:
         # Insert 1 active checkpoint
         conn.execute(
             "INSERT INTO session_checkpoints VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            ("sess-active", "PLANNING", "[]", "null", 1, 0, "gpt-4", "2026-05-01T12:00:00", "2026-05-01T12:01:00")
+            (
+                "sess-active",
+                "PLANNING",
+                "[]",
+                "null",
+                1,
+                0,
+                "gpt-4",
+                "2026-05-01T12:00:00",
+                "2026-05-01T12:01:00",
+            ),
         )
         # Insert 1 completed session
         conn.execute(
             "INSERT INTO sessions VALUES (?, ?, ?, ?, ?, ?)",
-            ("sess-completed", "2026-05-01T10:00:00", "2026-05-01T10:05:00", 1, "gpt-4", None)
+            ("sess-completed", "2026-05-01T10:00:00", "2026-05-01T10:05:00", 1, "gpt-4", None),
         )
         conn.execute(
-            "INSERT INTO messages (session_id, role, content, tool_calls, timestamp) VALUES (?, ?, ?, ?, ?)",
-            ("sess-completed", "user", "hi", None, "2026-05-01T10:00:00")
+            "INSERT INTO messages (session_id, role, content, tool_calls, timestamp) "
+            "VALUES (?, ?, ?, ?, ?)",
+            ("sess-completed", "user", "hi", None, "2026-05-01T10:00:00"),
         )
         conn.commit()
         conn.close()
@@ -322,13 +334,24 @@ class TestDashboardAPI:
         """)
         conn.execute(
             "INSERT INTO session_checkpoints VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            ("sess-legacy", "PLANNING", "[]", "null", 1, 0, "gpt-4", "2026-05-01T12:00:00", "2026-05-01T12:01:00")
+            (
+                "sess-legacy",
+                "PLANNING",
+                "[]",
+                "null",
+                1,
+                0,
+                "gpt-4",
+                "2026-05-01T12:00:00",
+                "2026-05-01T12:01:00",
+            ),
         )
         conn.commit()
         conn.close()
 
         # Run migration helper
         from vibe.dashboard.server import _migrate_legacy_database_sync
+
         target_db = tmp_path / ".vibe" / "traces.db"
         _migrate_legacy_database_sync(tmp_path, str(target_db))
 
@@ -345,7 +368,6 @@ class TestDashboardAPI:
         # Assert legacy file was renamed to backup
         assert not legacy_db.exists()
         assert (tmp_path / ".vibe" / "sessions.db.backup").exists()
-
 
     def test_list_wiki_empty(self, client):
         """Wiki endpoint returns empty when no wiki directory."""
@@ -461,7 +483,17 @@ This is a test wiki page with some content.
         """)
         conn.execute(
             "INSERT INTO session_checkpoints VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            ("sess-legacy", "PLANNING", "[]", "null", 1, 0, "gpt-4", "2026-05-01T12:00:00", "2026-05-01T12:01:00")
+            (
+                "sess-legacy",
+                "PLANNING",
+                "[]",
+                "null",
+                1,
+                0,
+                "gpt-4",
+                "2026-05-01T12:00:00",
+                "2026-05-01T12:01:00",
+            ),
         )
         conn.commit()
         conn.close()
@@ -475,6 +507,7 @@ This is a test wiki page with some content.
         existing_backup_1.write_text("older backup")
 
         from vibe.dashboard.server import _migrate_legacy_database_sync
+
         target_db = tmp_path / ".vibe" / "traces.db"
         _migrate_legacy_database_sync(tmp_path, str(target_db))
 
@@ -521,4 +554,3 @@ This is a test wiki page with some content.
         response = client.get("/api/research/papers/unknown")
         assert response.status_code == 404
         assert "error" in response.json()
-

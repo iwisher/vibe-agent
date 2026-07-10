@@ -23,7 +23,7 @@ class MockWiki:
                 last_updated="2023-01-01",
                 citations=[],
                 ttl_days=30,
-                path=Path("/tmp/wiki/123.md")
+                path=Path("/tmp/wiki/123.md"),
             )
         ]
 
@@ -37,7 +37,7 @@ class MockTraceStore:
             return {
                 "steps": [
                     {"type": "user", "text": "Hello"},
-                    {"type": "assistant", "text": "Hi there!"}
+                    {"type": "assistant", "text": "Hi there!"},
                 ]
             }
         return None
@@ -73,11 +73,12 @@ async def test_train_subprocess_mocked(trainer, tmp_path, monkeypatch):
         output_path=str(tmp_path / "output"),
         dataset_path=str(tmp_path / "dataset.jsonl"),
         hf_model_id="Qwen/Qwen1.5-1.8B-Chat",
-        ollama_register=False
+        ollama_register=False,
     )
 
     class MockProcess:
         returncode = 0
+
         async def communicate(self, input):
             return b"stdout", b"stderr"
 
@@ -88,6 +89,7 @@ async def test_train_subprocess_mocked(trainer, tmp_path, monkeypatch):
         return MockProcess()
 
     import asyncio
+
     monkeypatch.setattr(asyncio, "create_subprocess_exec", mock_create_subprocess_exec)
 
     result = await trainer.train(config)
@@ -103,10 +105,13 @@ async def test_register_with_ollama(trainer, monkeypatch):
     class MockClient:
         def __init__(self, *args, **kwargs):
             pass
+
         async def __aenter__(self):
             return self
+
         async def __aexit__(self, *args):
             pass
+
         async def post(self, url, json):
             assert "api/create" in url
             assert json["name"] == "test-model-rlm"
@@ -114,6 +119,7 @@ async def test_register_with_ollama(trainer, monkeypatch):
             return MockResponse()
 
     import httpx
+
     monkeypatch.setattr(httpx, "AsyncClient", MockClient)
 
     success = await trainer.register_with_ollama("/tmp/adapter", "test-model-rlm")

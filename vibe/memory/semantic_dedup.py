@@ -15,8 +15,7 @@ logger = logging.getLogger(__name__)
 class VectorEmbedder(Protocol):
     """Protocol for text embedding providers."""
 
-    async def embed(self, texts: list[str]) -> list[list[float]]:
-        ...
+    async def embed(self, texts: list[str]) -> list[list[float]]: ...
 
 
 class SemanticDeduplicator:
@@ -72,9 +71,7 @@ class SemanticDeduplicator:
                 for c in candidates:
                     c_title = getattr(c, "title", "")
                     c_content = getattr(c, "content", "")
-                    candidate_texts.append(
-                        c_title if not c_content else f"{c_title}\n{c_content}"
-                    )
+                    candidate_texts.append(c_title if not c_content else f"{c_title}\n{c_content}")
 
                 all_embeddings = await self.embedder.embed([query_text] + candidate_texts)
                 query_vec = all_embeddings[0]
@@ -90,7 +87,8 @@ class SemanticDeduplicator:
 
                 if best_sim >= self.similarity_threshold:
                     logger.debug(
-                        f"Semantic dedup: vector match {best_sim:.3f} >= {self.similarity_threshold}"
+                        f"Semantic dedup: vector match {best_sim:.3f} >= "
+                        f"{self.similarity_threshold}"
                     )
                     return best_candidate
 

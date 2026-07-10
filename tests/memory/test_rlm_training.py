@@ -4,13 +4,12 @@ Tests that RLMThresholdAnalyzer.analyze_and_train() actually triggers
 training when auto_train=True, not just logs.
 """
 
-import asyncio
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from vibe.memory.rlm_analyzer import RLMThresholdAnalyzer, RLMTriggerDecision
+from vibe.memory.rlm_analyzer import RLMThresholdAnalyzer
 from vibe.memory.rlm_trainer import RLMTrainer
 
 
@@ -55,10 +54,13 @@ class FakeTraceStore:
 @pytest.mark.asyncio
 async def test_analyze_and_train_triggers_when_auto_train_enabled():
     """High severity fix: RLM should actually trigger training, not just log."""
-    telemetry = FakeTelemetry(sessions=[], rows=[
-        (json.dumps({"total_chars": 1000, "duration_seconds": 5.0, "session_id": "s1"}),)
-        for _ in range(5)
-    ])
+    telemetry = FakeTelemetry(
+        sessions=[],
+        rows=[
+            (json.dumps({"total_chars": 1000, "duration_seconds": 5.0, "session_id": "s1"}),)
+            for _ in range(5)
+        ],
+    )
     config = FakeConfig()
     analyzer = RLMThresholdAnalyzer(telemetry, config)
 
@@ -89,10 +91,13 @@ async def test_analyze_and_train_triggers_when_auto_train_enabled():
 @pytest.mark.asyncio
 async def test_analyze_and_train_log_only_when_auto_train_disabled():
     """When auto_train=False, only log but don't train."""
-    telemetry = FakeTelemetry(sessions=[], rows=[
-        (json.dumps({"total_chars": 1000, "duration_seconds": 5.0, "session_id": "s1"}),)
-        for _ in range(5)
-    ])
+    telemetry = FakeTelemetry(
+        sessions=[],
+        rows=[
+            (json.dumps({"total_chars": 1000, "duration_seconds": 5.0, "session_id": "s1"}),)
+            for _ in range(5)
+        ],
+    )
     config = FakeConfig()
     config.auto_train = False
     analyzer = RLMThresholdAnalyzer(telemetry, config)
@@ -139,9 +144,7 @@ async def test_rlm_trainer_prepare_dataset_creates_file(tmp_path):
     trainer = RLMTrainer()
 
     wiki = AsyncMock()
-    wiki.list_pages = AsyncMock(return_value=[
-        MagicMock(title="Test", content="Hello world")
-    ])
+    wiki.list_pages = AsyncMock(return_value=[MagicMock(title="Test", content="Hello world")])
 
     trace_store = MagicMock()
     trace_store.get_recent_sessions.return_value = []
@@ -162,6 +165,7 @@ async def test_rlm_trainer_train_subprocess_mock():
     trainer = RLMTrainer()
 
     from vibe.memory.rlm_trainer import RLMTrainingConfig
+
     config = RLMTrainingConfig(
         base_model="test-model",
         output_path="/tmp/adapter",

@@ -1,6 +1,5 @@
 """Tests for multi-provider benchmarking."""
 
-
 from vibe.evals.multi_provider_benchmark import (
     BenchmarkScorecard,
     ModelScore,
@@ -16,7 +15,9 @@ class TestModelScore:
         assert score.pass_rate == 0.8
 
     def test_to_dict(self):
-        score = ModelScore(model_name="test", provider="ollama", passed=5, failed=5, total_tokens=1000)
+        score = ModelScore(
+            model_name="test", provider="ollama", passed=5, failed=5, total_tokens=1000
+        )
         d = score.to_dict()
         assert d["model"] == "test"
         assert d["provider"] == "ollama"

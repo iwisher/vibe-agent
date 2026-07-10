@@ -19,7 +19,5 @@ def get_adapter(name: str) -> Type[BaseLLMAdapter]:
         KeyError: If the adapter name is not registered.
     """
     if name not in ADAPTER_REGISTRY:
-        raise KeyError(
-            f"Unknown adapter '{name}'. Available: {list(ADAPTER_REGISTRY.keys())}"
-        )
+        raise KeyError(f"Unknown adapter '{name}'. Available: {list(ADAPTER_REGISTRY.keys())}")
     return ADAPTER_REGISTRY[name]

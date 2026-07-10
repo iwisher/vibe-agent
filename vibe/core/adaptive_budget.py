@@ -20,10 +20,10 @@ class BudgetSignal(Enum):
 
     CONTINUE = auto()
     COMPLETION_DETECTED = auto()  # LLM emitted a completion phrase
-    STAGNATION = auto()           # No progress for N iterations
-    TOKEN_BURN_HIGH = auto()      # Approaching context limit
-    TOOL_CHAIN_LONG = auto()      # Excessive tool chaining
-    USER_STOP = auto()            # External stop signal
+    STAGNATION = auto()  # No progress for N iterations
+    TOKEN_BURN_HIGH = auto()  # Approaching context limit
+    TOOL_CHAIN_LONG = auto()  # Excessive tool chaining
+    USER_STOP = auto()  # External stop signal
 
 
 @dataclass
@@ -31,27 +31,34 @@ class BudgetConfig:
     """Configuration for adaptive budgeting."""
 
     # Base allocation
-    min_iterations: int = 3           # Absolute minimum (simple queries)
-    max_iterations: int = 50          # Absolute safety cap
-    default_budget: int = 15          # Starting point for most queries
+    min_iterations: int = 3  # Absolute minimum (simple queries)
+    max_iterations: int = 50  # Absolute safety cap
+    default_budget: int = 15  # Starting point for most queries
 
     # Complexity multipliers
-    multi_step_multiplier: float = 2.0    # Budget ×2 for multi-step queries
-    tool_heavy_multiplier: float = 1.5    # Budget ×1.5 for tool-heavy queries
-    reasoning_multiplier: float = 1.8     # Budget ×1.8 for reasoning tasks
+    multi_step_multiplier: float = 2.0  # Budget ×2 for multi-step queries
+    tool_heavy_multiplier: float = 1.5  # Budget ×1.5 for tool-heavy queries
+    reasoning_multiplier: float = 1.8  # Budget ×1.8 for reasoning tasks
 
     # Early-exit thresholds
-    stagnation_window: int = 4        # Iterations without progress to trigger stagnation
-    completion_phrases: list[str] = field(default_factory=lambda: [
-        "task complete", "done", "finished", "completed successfully",
-        "that's all", "no further action", "all done",
-    ])
+    stagnation_window: int = 4  # Iterations without progress to trigger stagnation
+    completion_phrases: list[str] = field(
+        default_factory=lambda: [
+            "task complete",
+            "done",
+            "finished",
+            "completed successfully",
+            "that's all",
+            "no further action",
+            "all done",
+        ]
+    )
 
     # Token burn awareness
-    token_budget_ratio: float = 0.8   # Reduce iterations when context is 80% full
+    token_budget_ratio: float = 0.8  # Reduce iterations when context is 80% full
 
     # Tool chain limits
-    max_consecutive_tools: int = 8    # Max tool calls in a row before forced synthesis
+    max_consecutive_tools: int = 8  # Max tool calls in a row before forced synthesis
 
     @classmethod
     def from_config(cls, config: Any | None) -> "BudgetConfig":
@@ -99,8 +106,7 @@ class IterationBudget:
     def should_exit(self) -> bool:
         """True if any exit signal has been triggered."""
         return any(
-            s in (BudgetSignal.COMPLETION_DETECTED, BudgetSignal.USER_STOP)
-            for s in self.signals
+            s in (BudgetSignal.COMPLETION_DETECTED, BudgetSignal.USER_STOP) for s in self.signals
         )
 
     def consume(self, n: int = 1) -> None:
@@ -125,8 +131,16 @@ class IterationBudget:
     def check_completion_phrase(self, text: str) -> BudgetSignal:
         """Detect completion phrases in LLM output."""
         text_lower = text.lower()
-        for phrase in ["task complete", "done", "finished", "completed successfully",
-                       "that's all", "no further action", "all done", "complete"]:
+        for phrase in [
+            "task complete",
+            "done",
+            "finished",
+            "completed successfully",
+            "that's all",
+            "no further action",
+            "all done",
+            "complete",
+        ]:
             if phrase in text_lower:
                 return BudgetSignal.COMPLETION_DETECTED
         return BudgetSignal.CONTINUE
@@ -173,10 +187,25 @@ class AdaptiveBudgetAllocator:
 
         # Multi-step detection
         multi_step_markers = [
-            "step by step", "plan", "design", "architecture",
-            "compare", "evaluate", "analyze", "debug", "refactor",
-            "implement", "create", "build", "setup", "configure",
-            "first", "then", "next", "after", "finally",
+            "step by step",
+            "plan",
+            "design",
+            "architecture",
+            "compare",
+            "evaluate",
+            "analyze",
+            "debug",
+            "refactor",
+            "implement",
+            "create",
+            "build",
+            "setup",
+            "configure",
+            "first",
+            "then",
+            "next",
+            "after",
+            "finally",
         ]
         if any(m in query_lower for m in multi_step_markers):
             budget = int(budget * self.config.multi_step_multiplier)
@@ -188,8 +217,14 @@ class AdaptiveBudgetAllocator:
 
         # Reasoning detection
         reasoning_markers = [
-            "explain", "why", "how does", "what if", "reason",
-            "think through", "walk me through", "deep dive",
+            "explain",
+            "why",
+            "how does",
+            "what if",
+            "reason",
+            "think through",
+            "walk me through",
+            "deep dive",
         ]
         if any(m in query_lower for m in reasoning_markers):
             budget = int(budget * self.config.reasoning_multiplier)

@@ -155,6 +155,7 @@ class HumanApprover:
             try:
                 # Use select for non-blocking input with timeout support
                 import select
+
                 if termios and tty and sys.stdin.isatty():
                     old_settings = termios.tcgetattr(sys.stdin)
                     try:
@@ -162,7 +163,7 @@ class HumanApprover:
                         while not stop_event.is_set():
                             if select.select([sys.stdin], [], [], 0.1)[0]:
                                 char = sys.stdin.read(1)
-                                if char == '\n' or char == '\r':
+                                if char == "\n" or char == "\r":
                                     break
                                 result.append(char)
                     finally:

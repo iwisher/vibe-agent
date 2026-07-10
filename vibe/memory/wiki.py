@@ -117,8 +117,8 @@ class LLMWiki:
         self._index_lock_path = self.base_path / ".index.lock"
 
         # In-memory indices (loaded lazily)
-        self._slug_to_id: dict[str, str] = {}    # slug -> UUID
-        self._id_to_slug: dict[str, str] = {}    # UUID -> slug
+        self._slug_to_id: dict[str, str] = {}  # slug -> UUID
+        self._id_to_slug: dict[str, str] = {}  # UUID -> slug
         # Reverse backlink index: slug -> set[page_id] (pages that link TO that slug)
         self._backlinks: dict[str, set[str]] = {}
 
@@ -137,10 +137,12 @@ class LLMWiki:
         """Get an AsyncFileLock, falling back to sync FileLock with warning."""
         try:
             from filelock import AsyncFileLock
+
             return AsyncFileLock(str(path), timeout=10)
         except (ImportError, AttributeError):
             logger.warning("AsyncFileLock not available (filelock<3.8); using sync FileLock")
             from filelock import FileLock
+
             return FileLock(str(path), timeout=10)
 
     async def _load_indices(self) -> None:
@@ -286,7 +288,9 @@ class LLMWiki:
                 backlink_ids_list = list(self._backlinks.get(page.slug, set()))[:3]
                 existing_contents: list[str] = []
                 if backlink_ids_list:
-                    linked_pages = await asyncio.gather(*(self.get_page(lid) for lid in backlink_ids_list))
+                    linked_pages = await asyncio.gather(
+                        *(self.get_page(lid) for lid in backlink_ids_list)
+                    )
                     for linked_page in linked_pages:
                         if linked_page is not None:
                             existing_contents.append(linked_page.content)
@@ -303,11 +307,13 @@ class LLMWiki:
                         )
                         page.status = "draft"
                         # Add contradiction flag to citations metadata
-                        page.citations.append({
-                            "type": "contradiction_flag",
-                            "detected_at": _today_iso(),
-                            "linked_pages": backlink_ids_list,
-                        })
+                        page.citations.append(
+                            {
+                                "type": "contradiction_flag",
+                                "detected_at": _today_iso(),
+                                "linked_pages": backlink_ids_list,
+                            }
+                        )
             except Exception as e:
                 logger.debug("Contradiction detection failed for %s (non-fatal): %s", page_id, e)
 
@@ -391,9 +397,7 @@ class LLMWiki:
         scored.sort(key=lambda x: x[0], reverse=True)
         return [p for _, p in scored[:limit]]
 
-    async def list_pages(
-        self, tag: str | None = None, status: str | None = None
-    ) -> list[WikiPage]:
+    async def list_pages(self, tag: str | None = None, status: str | None = None) -> list[WikiPage]:
         """List all pages, optionally filtered by tag and/or status."""
         await self._load_indices()
 

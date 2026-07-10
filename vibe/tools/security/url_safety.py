@@ -16,24 +16,24 @@ BLOCKED_HOSTNAMES: set[str] = {
 
 # Blocked IPs (from Hermes)
 BLOCKED_IPS: set[str] = {
-    "169.254.169.254",   # AWS/GCP/Azure metadata
-    "169.254.170.2",     # AWS ECS metadata
-    "169.254.169.253",   # AWS DNS
-    "fd00:ec2::254",     # AWS IPv6 metadata
-    "100.100.100.200",   # Alibaba Cloud metadata
+    "169.254.169.254",  # AWS/GCP/Azure metadata
+    "169.254.170.2",  # AWS ECS metadata
+    "169.254.169.253",  # AWS DNS
+    "fd00:ec2::254",  # AWS IPv6 metadata
+    "100.100.100.200",  # Alibaba Cloud metadata
 }
 
 # Blocked networks (CIDR)
 BLOCKED_NETWORKS: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = [
-    ipaddress.ip_network("169.254.0.0/16"),   # Link-local
-    ipaddress.ip_network("100.64.0.0/10"),    # CGNAT
-    ipaddress.ip_network("10.0.0.0/8"),       # Private
-    ipaddress.ip_network("172.16.0.0/12"),    # Private
-    ipaddress.ip_network("192.168.0.0/16"),   # Private
-    ipaddress.ip_network("127.0.0.0/8"),      # Loopback
-    ipaddress.ip_network("fc00::/7"),         # Unique local (IPv6)
-    ipaddress.ip_network("fe80::/10"),        # Link-local (IPv6)
-    ipaddress.ip_network("::1/128"),          # Loopback (IPv6)
+    ipaddress.ip_network("169.254.0.0/16"),  # Link-local
+    ipaddress.ip_network("100.64.0.0/10"),  # CGNAT
+    ipaddress.ip_network("10.0.0.0/8"),  # Private
+    ipaddress.ip_network("172.16.0.0/12"),  # Private
+    ipaddress.ip_network("192.168.0.0/16"),  # Private
+    ipaddress.ip_network("127.0.0.0/8"),  # Loopback
+    ipaddress.ip_network("fc00::/7"),  # Unique local (IPv6)
+    ipaddress.ip_network("fe80::/10"),  # Link-local (IPv6)
+    ipaddress.ip_network("::1/128"),  # Loopback (IPv6)
 ]
 
 
@@ -92,6 +92,7 @@ class URLSafetyChecker:
     def _check_dns(self, hostname: str, url: str) -> None:
         """Check DNS resolution (fail-closed on error)."""
         import socket
+
         try:
             # Try to resolve hostname
             ip = socket.gethostbyname(hostname)

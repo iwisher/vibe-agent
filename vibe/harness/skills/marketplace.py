@@ -59,9 +59,7 @@ class SkillMarketplace:
         local_registry_path: str | Path | None = None,
         remote_url: str | None = None,
     ) -> None:
-        self.local_registry_path = (
-            Path(local_registry_path) if local_registry_path else None
-        )
+        self.local_registry_path = Path(local_registry_path) if local_registry_path else None
         self.remote_url = remote_url
         self._listings: dict[str, SkillListing] = {}
         self._installed: set[str] = set()

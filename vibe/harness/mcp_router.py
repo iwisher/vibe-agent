@@ -18,6 +18,7 @@ from vibe.tools.tool_system import ToolResult
 @dataclass
 class ServerHealth:
     """Health status of an MCP server."""
+
     healthy: bool = True
     last_check: float = 0.0
     consecutive_failures: int = 0
@@ -28,6 +29,7 @@ class ServerHealth:
 @dataclass
 class RoutingRule:
     """Rule for routing a tool call to an MCP server."""
+
     tool_prefix: str  # e.g., "filesystem/", "browser."
     server_name: str
     priority: int = 0  # Higher = preferred
@@ -137,7 +139,9 @@ class MCPRouter:
                     return result
                 except Exception as e2:
                     self._record_failure(fallback.name, str(e2))
-                    return ToolResult(success=False, content=None, error=f"Primary: {e}; Fallback: {e2}")
+                    return ToolResult(
+                        success=False, content=None, error=f"Primary: {e}; Fallback: {e2}"
+                    )
 
             return ToolResult(success=False, content=None, error=str(e))
 
@@ -201,8 +205,7 @@ class MCPRouter:
             if cfg.url:
                 # HTTP-based: try a simple ping
                 result = await self.bridge.execute_tool(
-                    cfg.tools[0].get("name") if cfg.tools else "ping",
-                    **({} if cfg.tools else {})
+                    cfg.tools[0].get("name") if cfg.tools else "ping", **({} if cfg.tools else {})
                 )
                 if result.success:
                     self._record_success(cfg.name, (time.time() - start) * 1000)

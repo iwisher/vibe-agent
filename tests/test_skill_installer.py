@@ -1,4 +1,5 @@
 """Test skill installer."""
+
 import asyncio
 import tarfile
 import tempfile
@@ -76,8 +77,12 @@ def test_install_git_clone_timeout():
     fake_proc = Mock()
     fake_proc.returncode = 1
 
-    with patch("vibe.harness.skills.installer.asyncio.create_subprocess_exec", return_value=fake_proc):
-        with patch("vibe.harness.skills.installer.asyncio.wait_for", side_effect=asyncio.TimeoutError):
+    with patch(
+        "vibe.harness.skills.installer.asyncio.create_subprocess_exec", return_value=fake_proc
+    ):
+        with patch(
+            "vibe.harness.skills.installer.asyncio.wait_for", side_effect=asyncio.TimeoutError
+        ):
             result = asyncio.run(installer.install_from_git("http://192.0.2.1/nonexistent.git"))
 
     assert not result.success
@@ -87,6 +92,7 @@ def test_install_git_clone_timeout():
 def test_install_rejects_malicious_skill_id():
     """Skill IDs with path traversal should be rejected by Pydantic."""
     from vibe.harness.skills.models import Skill, SkillStep, SkillTrigger
+
     with pytest.raises(ValueError):
         Skill(
             vibe_skill_version="2.0.0",
@@ -104,6 +110,7 @@ def test_install_rejects_tarball_with_unsafe_paths():
         tar_path = Path(tmp) / "evil.tar.gz"
         with tarfile.open(tar_path, "w:gz") as tf:
             import io
+
             data = b"evil content"
             info = tarfile.TarInfo(name="../evil.txt")
             info.size = len(data)

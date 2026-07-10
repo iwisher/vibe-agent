@@ -75,8 +75,7 @@ class ApprovalPolicyDB:
                 r
                 for r in self._policy.rules
                 if not (
-                    r.pattern == tool_pattern
-                    and r.action_args.get("path_pattern") == path_pattern
+                    r.pattern == tool_pattern and r.action_args.get("path_pattern") == path_pattern
                 )
             ]
             self._policy.add_rule(rule)
@@ -115,9 +114,7 @@ class ApprovalPolicyDB:
 
         return ApprovalDecision(action="ask", reason="no matching rule")
 
-    def _matches(
-        self, rule: PreferenceRule, tool_name: str, arguments: dict[str, Any]
-    ) -> bool:
+    def _matches(self, rule: PreferenceRule, tool_name: str, arguments: dict[str, Any]) -> bool:
         """Check if a rule matches a tool invocation.
 
         SECURITY: All paths are resolved to absolute form before matching
@@ -131,10 +128,7 @@ class ApprovalPolicyDB:
         if path_pattern:
             # Extract path from arguments (common for file/bash tools)
             raw_path = (
-                arguments.get("path")
-                or arguments.get("file_path")
-                or arguments.get("cwd")
-                or ""
+                arguments.get("path") or arguments.get("file_path") or arguments.get("cwd") or ""
             )
             # SECURITY: Resolve absolute path to prevent traversal bypass
             try:

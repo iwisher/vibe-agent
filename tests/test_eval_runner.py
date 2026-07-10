@@ -27,7 +27,9 @@ async def test_runner_file_exists_pass(tmp_path):
 
     ql = MagicMock()
     ql.clear_history = MagicMock()
-    ql.run = MagicMock(return_value=_async_gen([QueryResult(response="done", state=QueryState.COMPLETED)]))
+    ql.run = MagicMock(
+        return_value=_async_gen([QueryResult(response="done", state=QueryState.COMPLETED)])
+    )
 
     runner = EvalRunner(query_loop=ql)
     case = EvalCase(
@@ -45,7 +47,9 @@ async def test_runner_file_exists_pass(tmp_path):
 async def test_runner_file_exists_fail():
     ql = MagicMock()
     ql.clear_history = MagicMock()
-    ql.run = MagicMock(return_value=_async_gen([QueryResult(response="done", state=QueryState.COMPLETED)]))
+    ql.run = MagicMock(
+        return_value=_async_gen([QueryResult(response="done", state=QueryState.COMPLETED)])
+    )
 
     runner = EvalRunner(query_loop=ql)
     case = EvalCase(
@@ -66,7 +70,9 @@ async def test_runner_contains_text_pass(tmp_path):
 
     ql = MagicMock()
     ql.clear_history = MagicMock()
-    ql.run = MagicMock(return_value=_async_gen([QueryResult(response="done", state=QueryState.COMPLETED)]))
+    ql.run = MagicMock(
+        return_value=_async_gen([QueryResult(response="done", state=QueryState.COMPLETED)])
+    )
 
     runner = EvalRunner(query_loop=ql)
     case = EvalCase(
@@ -86,14 +92,16 @@ async def test_runner_stdout_contains_pass():
     ql = MagicMock()
     ql.clear_history = MagicMock()
     ql.run = MagicMock(
-        return_value=_async_gen([
-            QueryResult(
-                response="",
-                tool_results=[ToolResult(success=True, content="the answer is 42")],
-                state=QueryState.SYNTHESIZING,
-            ),
-            QueryResult(response="done", state=QueryState.COMPLETED),
-        ])
+        return_value=_async_gen(
+            [
+                QueryResult(
+                    response="",
+                    tool_results=[ToolResult(success=True, content="the answer is 42")],
+                    state=QueryState.SYNTHESIZING,
+                ),
+                QueryResult(response="done", state=QueryState.COMPLETED),
+            ]
+        )
     )
 
     runner = EvalRunner(query_loop=ql)
@@ -111,7 +119,11 @@ async def test_runner_stdout_contains_pass():
 async def test_runner_response_contains_pass():
     ql = MagicMock()
     ql.clear_history = MagicMock()
-    ql.run = MagicMock(return_value=_async_gen([QueryResult(response="blocked by policy", state=QueryState.COMPLETED)]))
+    ql.run = MagicMock(
+        return_value=_async_gen(
+            [QueryResult(response="blocked by policy", state=QueryState.COMPLETED)]
+        )
+    )
 
     runner = EvalRunner(query_loop=ql)
     case = EvalCase(
@@ -128,7 +140,9 @@ async def test_runner_response_contains_pass():
 async def test_runner_records_result(temp_eval_store):
     ql = MagicMock()
     ql.clear_history = MagicMock()
-    ql.run = MagicMock(return_value=_async_gen([QueryResult(response="done", state=QueryState.COMPLETED)]))
+    ql.run = MagicMock(
+        return_value=_async_gen([QueryResult(response="done", state=QueryState.COMPLETED)])
+    )
 
     runner = EvalRunner(query_loop=ql, eval_store=temp_eval_store)
     case = EvalCase(
@@ -149,7 +163,9 @@ async def test_runner_run_all():
     ql.clear_history = MagicMock()
     ql.close = AsyncMock()
     ql.copy = MagicMock(return_value=ql)
-    ql.run = MagicMock(return_value=_async_gen([QueryResult(response="done", state=QueryState.COMPLETED)]))
+    ql.run = MagicMock(
+        return_value=_async_gen([QueryResult(response="done", state=QueryState.COMPLETED)])
+    )
 
     runner = EvalRunner(query_loop=ql)
     cases = [

@@ -7,7 +7,6 @@ if TYPE_CHECKING:
     from vibe.core.llm_types import LLMResponse
 
 
-
 class BaseLLMAdapter(ABC):
     """Abstract base for LLM API adapters.
 

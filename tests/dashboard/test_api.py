@@ -6,11 +6,6 @@ from fastapi.testclient import TestClient
 from vibe.dashboard.api import create_app
 from vibe.dashboard.data import (
     DashboardDataSource,
-    DashboardStats,
-    SessionSummary,
-    SkillSummary,
-    TelemetryMetrics,
-    WikiPageSummary,
 )
 
 
@@ -101,35 +96,41 @@ class FakeSummary:
 @pytest.fixture
 def client():
     ds = DashboardDataSource(
-        trace_store=FakeTraceStore([
-            {
-                "session_id": "ses-1",
-                "start_time": "2024-01-01T00:00:00",
-                "model": "gpt-4",
-                "success": True,
-                "messages": "[{},{},{}]",
-                "duration_seconds": 5.5,
-            },
-            {
-                "session_id": "ses-2",
-                "start_time": "2024-01-01T01:00:00",
-                "model": "claude-3",
-                "success": False,
-                "messages": "[{}]",
-                "duration_seconds": 2.0,
-            },
-        ]),
-        wiki=FakeWiki([
-            FakePage("p1", "Python", "python", "verified", ["coding"]),
-            FakePage("p2", "Finance", "finance", "pending", ["finance"]),
-        ]),
+        trace_store=FakeTraceStore(
+            [
+                {
+                    "session_id": "ses-1",
+                    "start_time": "2024-01-01T00:00:00",
+                    "model": "gpt-4",
+                    "success": True,
+                    "messages": "[{},{},{}]",
+                    "duration_seconds": 5.5,
+                },
+                {
+                    "session_id": "ses-2",
+                    "start_time": "2024-01-01T01:00:00",
+                    "model": "claude-3",
+                    "success": False,
+                    "messages": "[{}]",
+                    "duration_seconds": 2.0,
+                },
+            ]
+        ),
+        wiki=FakeWiki(
+            [
+                FakePage("p1", "Python", "python", "verified", ["coding"]),
+                FakePage("p2", "Finance", "finance", "pending", ["finance"]),
+            ]
+        ),
         wiki_graph=FakeWikiGraph(
             nodes=[FakeEntity("e1", "Python", ["py"])],
             edges=[FakeEdge("e1", "e1", "self")],
         ),
-        skill_installer=FakeSkillInstaller({
-            "skill-1": {"name": "Test Skill", "version": "1.0.0", "installed_at": "2024-01-01"},
-        }),
+        skill_installer=FakeSkillInstaller(
+            {
+                "skill-1": {"name": "Test Skill", "version": "1.0.0", "installed_at": "2024-01-01"},
+            }
+        ),
         telemetry=FakeTelemetry(FakeSummary(sessions=10, duration=3.5, compactions=2, errors=1)),
     )
     app = create_app(data_source=ds)

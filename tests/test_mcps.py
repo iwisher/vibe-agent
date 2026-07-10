@@ -8,6 +8,7 @@ from vibe.tools.mcp_bridge import MCPBridge
 
 # ─── mcp_001: Discovery ───
 
+
 @pytest.mark.asyncio
 async def test_mcp_001_discovery_returns_tool_schemas():
     """mcp_001: get_tool_schemas returns list of available MCP tool schemas."""
@@ -61,6 +62,7 @@ async def test_mcp_001_discovery_returns_tool_schemas():
 
 # ─── mcp_002: Execute successfully ───
 
+
 @pytest.mark.asyncio
 async def test_mcp_002_execute_runs_tool_successfully():
     """mcp_002: execute_tool invokes an HTTP MCP tool and returns success."""
@@ -105,6 +107,7 @@ async def test_mcp_002_execute_runs_tool_successfully():
 
 # ─── mcp_003: Invalid tool graceful error ───
 
+
 @pytest.mark.asyncio
 async def test_mcp_003_execute_invalid_tool_graceful_error():
     """mcp_003: execute_tool with unknown tool returns graceful error."""
@@ -132,6 +135,7 @@ async def test_mcp_003_execute_invalid_tool_graceful_error():
 
 
 # ─── Bonus: stdio execution ───
+
 
 @pytest.mark.asyncio
 async def test_mcp_stdio_execution():

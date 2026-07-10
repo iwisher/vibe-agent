@@ -33,7 +33,8 @@ class _MockMessage:
 # Extraction prompt
 # ---------------------------------------------------------------------------
 
-_EXTRACTION_PROMPT_TEMPLATE = """You are a knowledge extraction engine. Analyze the following conversation and extract factual knowledge that should be preserved in a long-term wiki.
+_EXTRACTION_PROMPT_TEMPLATE = """You are a knowledge extraction engine. Analyze the \
+following conversation and extract factual knowledge that should be preserved in a long-term wiki.
 
 Instructions:
 - Extract only concrete, factual information (not opinions, greetings, or small talk)
@@ -53,7 +54,10 @@ Example:
 [
   {{
     "title": "Docker Compose Network Mode",
-    "content": "Docker Compose supports `network_mode: host` to share the host's network namespace. This is useful for services that need to bind to specific ports without port mapping. See [[docker-compose]] for configuration details.",
+    "content": "Docker Compose supports `network_mode: host` to share the host's "
+               "network namespace. This is useful for services that need to bind to "
+               "specific ports without port mapping. See [[docker-compose]] for "
+               "configuration details.",
     "tags": ["docker", "networking", "compose"],
     "citations": [{{"session": "abc123", "message_index": 5}}]
   }}
@@ -95,9 +99,7 @@ class KnowledgeExtractor:
     # Public API
     # ------------------------------------------------------------------
 
-    async def extract_from_session(
-        self, messages: list[Any], session_id: str
-    ) -> list[dict]:
+    async def extract_from_session(self, messages: list[Any], session_id: str) -> list[dict]:
         """Extract knowledge items from a conversation session.
 
         Args:
@@ -112,7 +114,8 @@ class KnowledgeExtractor:
             # Phase P8: Check extraction policy — skip if content matches skip patterns
             if self.extraction_policy is not None:
                 transcript_text = " ".join(
-                    getattr(m, "content", "") for m in messages
+                    getattr(m, "content", "")
+                    for m in messages
                     if getattr(m, "role", "") in ("user", "assistant")
                 )
                 if self.extraction_policy.should_skip(transcript_text):
@@ -167,7 +170,9 @@ class KnowledgeExtractor:
                 try:
                     return await self._score_single_novelty(item)
                 except Exception as e:
-                    logger.debug("Novelty scoring failed for item '%s': %s", item.get("title", ""), e)
+                    logger.debug(
+                        "Novelty scoring failed for item '%s': %s", item.get("title", ""), e
+                    )
                     return 1.0  # Default to "novel" on error
 
         try:

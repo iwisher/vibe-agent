@@ -2,8 +2,6 @@
 
 import time
 
-import pytest
-
 from vibe.core.session_recovery import (
     RecoveryStatus,
     SessionCheckpoint,

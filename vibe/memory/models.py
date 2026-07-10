@@ -14,17 +14,17 @@ from typing import Optional
 class WikiPage:
     """A single page in the LLM Wiki."""
 
-    id: str          # UUID string — never changes
-    slug: str        # human-readable slug derived from title
+    id: str  # UUID string — never changes
+    slug: str  # human-readable slug derived from title
     title: str
-    content: str     # body of the markdown (after frontmatter)
+    content: str  # body of the markdown (after frontmatter)
     tags: list[str]
-    status: str      # draft | verified | expired
+    status: str  # draft | verified | expired
     date_created: str  # ISO date string (YYYY-MM-DD)
     last_updated: str  # ISO date string (YYYY-MM-DD)
     citations: list[dict]
     ttl_days: int
-    path: Path       # absolute path to .md file
+    path: Path  # absolute path to .md file
 
     def to_frontmatter_dict(self) -> dict:
         """Serialize to YAML frontmatter dict."""

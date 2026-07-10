@@ -1,8 +1,6 @@
 """Tests for cost tracking and spend limits."""
 
-import pytest
-
-from vibe.core.cost_tracker import CostBudget, CostSnapshot, CostTracker
+from vibe.core.cost_tracker import CostBudget, CostTracker
 
 
 class TestCostBudget:
@@ -36,8 +34,12 @@ class TestCostTracker:
     def test_record_and_snapshot(self):
         tracker = CostTracker()
         snapshot = tracker.record(
-            provider="openai", model="gpt-4", prompt_tokens=100,
-            completion_tokens=50, estimated_cost=0.01, session_id="sess-1"
+            provider="openai",
+            model="gpt-4",
+            prompt_tokens=100,
+            completion_tokens=50,
+            estimated_cost=0.01,
+            session_id="sess-1",
         )
         assert snapshot.session_cost == 0.01
         assert snapshot.limit_exceeded is False
@@ -49,15 +51,23 @@ class TestCostTracker:
         # Record 4 calls at 0.01 each = 0.04 (under limit)
         for _ in range(4):
             snapshot = tracker.record(
-                provider="openai", model="gpt-4", prompt_tokens=100,
-                completion_tokens=50, estimated_cost=0.01, session_id="sess-1"
+                provider="openai",
+                model="gpt-4",
+                prompt_tokens=100,
+                completion_tokens=50,
+                estimated_cost=0.01,
+                session_id="sess-1",
             )
         assert snapshot.limit_exceeded is False
 
         # 5th call = 0.05 (at limit)
         snapshot = tracker.record(
-            provider="openai", model="gpt-4", prompt_tokens=100,
-            completion_tokens=50, estimated_cost=0.01, session_id="sess-1"
+            provider="openai",
+            model="gpt-4",
+            prompt_tokens=100,
+            completion_tokens=50,
+            estimated_cost=0.01,
+            session_id="sess-1",
         )
         assert snapshot.limit_exceeded is True
 
@@ -68,8 +78,12 @@ class TestCostTracker:
         # Spend up to limit
         for _ in range(5):
             tracker.record(
-                provider="openai", model="gpt-4", prompt_tokens=100,
-                completion_tokens=50, estimated_cost=0.01, session_id="sess-1"
+                provider="openai",
+                model="gpt-4",
+                prompt_tokens=100,
+                completion_tokens=50,
+                estimated_cost=0.01,
+                session_id="sess-1",
             )
 
         # Next call should be blocked
@@ -80,8 +94,12 @@ class TestCostTracker:
         tracker = CostTracker(budget=budget)
 
         tracker.record(
-            provider="openai", model="gpt-4", prompt_tokens=100,
-            completion_tokens=50, estimated_cost=0.01, session_id="sess-1"
+            provider="openai",
+            model="gpt-4",
+            prompt_tokens=100,
+            completion_tokens=50,
+            estimated_cost=0.01,
+            session_id="sess-1",
         )
 
         assert tracker.check_budget("sess-1", estimated_cost=0.01) is True
@@ -93,8 +111,12 @@ class TestCostTracker:
         # Spend 60% of limit
         for _ in range(6):
             snapshot = tracker.record(
-                provider="openai", model="gpt-4", prompt_tokens=100,
-                completion_tokens=50, estimated_cost=0.1, session_id="sess-1"
+                provider="openai",
+                model="gpt-4",
+                prompt_tokens=100,
+                completion_tokens=50,
+                estimated_cost=0.1,
+                session_id="sess-1",
             )
         assert snapshot.warning_triggered is True
         assert snapshot.limit_exceeded is False
@@ -105,8 +127,12 @@ class TestCostTracker:
 
         for _ in range(5):
             snapshot = tracker.record(
-                provider="openai", model="gpt-4", prompt_tokens=100,
-                completion_tokens=50, estimated_cost=0.01, session_id="sess-1"
+                provider="openai",
+                model="gpt-4",
+                prompt_tokens=100,
+                completion_tokens=50,
+                estimated_cost=0.01,
+                session_id="sess-1",
             )
         assert snapshot.limit_exceeded is True
 
@@ -116,20 +142,32 @@ class TestCostTracker:
 
         for _ in range(5):
             snapshot = tracker.record(
-                provider="openai", model="gpt-4", prompt_tokens=100,
-                completion_tokens=50, estimated_cost=0.01, session_id="sess-1"
+                provider="openai",
+                model="gpt-4",
+                prompt_tokens=100,
+                completion_tokens=50,
+                estimated_cost=0.01,
+                session_id="sess-1",
             )
         assert snapshot.limit_exceeded is True
 
     def test_get_stats(self):
         tracker = CostTracker()
         tracker.record(
-            provider="openai", model="gpt-4", prompt_tokens=100,
-            completion_tokens=50, estimated_cost=0.01, session_id="sess-1"
+            provider="openai",
+            model="gpt-4",
+            prompt_tokens=100,
+            completion_tokens=50,
+            estimated_cost=0.01,
+            session_id="sess-1",
         )
         tracker.record(
-            provider="anthropic", model="claude", prompt_tokens=200,
-            completion_tokens=100, estimated_cost=0.02, session_id="sess-1"
+            provider="anthropic",
+            model="claude",
+            prompt_tokens=200,
+            completion_tokens=100,
+            estimated_cost=0.02,
+            session_id="sess-1",
         )
 
         stats = tracker.get_stats()
@@ -142,12 +180,20 @@ class TestCostTracker:
     def test_multiple_sessions(self):
         tracker = CostTracker()
         tracker.record(
-            provider="openai", model="gpt-4", prompt_tokens=100,
-            completion_tokens=50, estimated_cost=0.01, session_id="sess-1"
+            provider="openai",
+            model="gpt-4",
+            prompt_tokens=100,
+            completion_tokens=50,
+            estimated_cost=0.01,
+            session_id="sess-1",
         )
         tracker.record(
-            provider="openai", model="gpt-4", prompt_tokens=100,
-            completion_tokens=50, estimated_cost=0.01, session_id="sess-2"
+            provider="openai",
+            model="gpt-4",
+            prompt_tokens=100,
+            completion_tokens=50,
+            estimated_cost=0.01,
+            session_id="sess-2",
         )
 
         stats = tracker.get_stats()

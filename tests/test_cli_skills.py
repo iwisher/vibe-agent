@@ -1,4 +1,5 @@
 """Test CLI skills commands."""
+
 from typer.testing import CliRunner
 
 from vibe.cli.main import app

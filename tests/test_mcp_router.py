@@ -1,4 +1,5 @@
 """Tests for MCP Router."""
+
 import pytest
 
 from vibe.harness.mcp_router import MCPRouter, ServerHealth
@@ -8,26 +9,28 @@ from vibe.tools.tool_system import ToolResult
 
 @pytest.fixture
 def mock_bridge():
-    return MCPBridge([
-        {
-            "name": "filesystem",
-            "description": "File operations",
-            "url": "http://localhost:8001",
-            "tools": [
-                {"name": "read_file", "description": "Read a file"},
-                {"name": "write_file", "description": "Write a file"},
-            ],
-        },
-        {
-            "name": "browser",
-            "description": "Browser control",
-            "url": "http://localhost:8002",
-            "tools": [
-                {"name": "navigate", "description": "Navigate to URL"},
-                {"name": "click", "description": "Click element"},
-            ],
-        },
-    ])
+    return MCPBridge(
+        [
+            {
+                "name": "filesystem",
+                "description": "File operations",
+                "url": "http://localhost:8001",
+                "tools": [
+                    {"name": "read_file", "description": "Read a file"},
+                    {"name": "write_file", "description": "Write a file"},
+                ],
+            },
+            {
+                "name": "browser",
+                "description": "Browser control",
+                "url": "http://localhost:8002",
+                "tools": [
+                    {"name": "navigate", "description": "Navigate to URL"},
+                    {"name": "click", "description": "Click element"},
+                ],
+            },
+        ]
+    )
 
 
 @pytest.fixture

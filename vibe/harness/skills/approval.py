@@ -1,4 +1,5 @@
 """Approval gate protocol for skill installation security prompts."""
+
 from typing import Protocol
 
 
