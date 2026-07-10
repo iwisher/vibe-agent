@@ -1,5 +1,6 @@
 """Tests for vibe CLI."""
 
+import re
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from typer.testing import CliRunner
@@ -7,6 +8,11 @@ from typer.testing import CliRunner
 from vibe.cli.main import app
 
 runner = CliRunner()
+
+
+def _strip_ansi(text: str) -> str:
+    """Remove ANSI escape sequences from console output."""
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 
 def test_cli_help():
@@ -27,9 +33,10 @@ def test_cli_main_options():
     """Main command should expose --model, --server, --api-key options."""
     result = runner.invoke(app, ["main", "--help"])
     assert result.exit_code == 0
-    assert "--model" in result.output
-    assert "--server" in result.output
-    assert "--api-key" in result.output
+    output = _strip_ansi(result.output)
+    assert "--model" in output
+    assert "--server" in output
+    assert "--api-key" in output
 
 
 def test_cli_single_query_runs_without_crash():
