@@ -212,6 +212,17 @@ class QueryLoopFactory:
             kwargs["hook_pipeline"] = HookPipeline()
         if self.config is not None:
             kwargs["config"] = self.config
+            # Wire SecurityConfig and CheckpointManager into the 5-layer defense
+            kwargs["security_config"] = self.config.get_security_config()
+            sec_cfg = getattr(self.config, "security", None)
+            if sec_cfg is not None and getattr(sec_cfg, "checkpoint_enabled", False):
+                try:
+                    from vibe.tools.security.checkpoints import CheckpointManager
+
+                    kwargs["checkpoint_manager"] = CheckpointManager()
+                except Exception as e:
+                    if self.logger:
+                        self.logger.warning(f"Failed to initialize CheckpointManager: {e}")
 
         # v4: Wire trace_store FIRST, then tripartite components when enabled
         trace_store = self._create_trace_store()

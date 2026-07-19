@@ -210,12 +210,20 @@ class QueryLoop:
         # Phase 3.2: Session checkpointing for durable suspension/resumption
         self._session_store = session_store
         self._iteration = 0
+        self._last_checkpointed_iteration = -1
+        self._last_checkpointed_state: QueryState | None = None
         # Phase 3.3: Cost-aware dynamic routing
         self.cost_router = cost_router
         # Phase 3.4: DAG-based parallel tool execution
         self.dag_planner = dag_planner
         self.enable_dag_execution = enable_dag_execution
-        self.security_coord = SecurityCoordinator(security_config)
+        # Only pass llm_client to SecurityCoordinator when security is explicitly
+        # configured; default heuristic-only mode avoids extra LLM calls.
+        self.security_coord = SecurityCoordinator(
+            security_config,
+            llm_client=llm_client if security_config is not None else None,
+            checkpoint_manager=checkpoint_manager,
+        )
         self.messages: list[Message] = []
 
     @property
@@ -227,9 +235,25 @@ class QueryLoop:
         self._checkpoint()
 
     def _checkpoint(self) -> None:
-        """Serialize current state to SessionStore. Called on every state transition."""
+        """Serialize current state to SessionStore, debounced to avoid O(n²) writes.
+
+        Only writes when the iteration advances or the state becomes terminal.
+        """
         if self._session_store is None or self._session_id is None:
             return
+
+        terminal_states = {
+            QueryState.COMPLETED,
+            QueryState.INCOMPLETE,
+            QueryState.STOPPED,
+            QueryState.ERROR,
+        }
+        should_checkpoint = (
+            self._state in terminal_states or self._iteration != self._last_checkpointed_iteration
+        )
+        if not should_checkpoint:
+            return
+
         messages_json = [
             {
                 "role": m.role,
@@ -256,6 +280,8 @@ class QueryLoop:
                 feedback_retries=self._feedback_retries,
                 model=self.llm.model if self.llm else None,
             )
+            self._last_checkpointed_iteration = self._iteration
+            self._last_checkpointed_state = self._state
         except Exception as e:
             # Checkpoint failures must not crash the session
             if self.logger:
@@ -808,6 +834,9 @@ class QueryLoop:
             arguments = extract_tool_call_arguments(call)
             check = self.security_coord.evaluate_tool_call(call_name, arguments)
             if check.allowed:
+                if check.modified_args:
+                    arguments.update(check.modified_args)
+                    self._apply_modified_args_to_call(call, arguments)
                 allowed_calls.append(call)
                 allowed_indices.append(i)
             else:
@@ -818,6 +847,21 @@ class QueryLoop:
                 )
 
         return allowed_calls, allowed_indices, results
+
+    def _apply_modified_args_to_call(self, call: Any, arguments: dict[str, Any]) -> None:
+        """Apply security-modified arguments back to the original tool call."""
+        import json
+
+        if isinstance(call, dict):
+            func = call.get("function", {})
+            if isinstance(func.get("arguments"), str):
+                func["arguments"] = json.dumps(arguments)
+            elif "arguments" in call:
+                call["arguments"] = arguments
+            else:
+                func["arguments"] = arguments
+        else:
+            call.arguments = arguments
 
     async def _execute_with_security(self, tool_calls: list) -> list[ToolResult]:
         """Execute tool calls with 5-layer security checks.
@@ -1258,6 +1302,8 @@ class QueryLoop:
         self.messages.clear()
         self._state = QueryState.IDLE
         self._iteration = 0
+        self._last_checkpointed_iteration = -1
+        self._last_checkpointed_state = None
         self._feedback_retries = 0
         self._running = False
         self._plan_result = None
@@ -1273,6 +1319,9 @@ class QueryLoop:
         or concurrent sessions.
         """
         new_loop = copy.copy(self)
+        # Shallow-copy the LLM client so model switches in a copy do not mutate
+        # the parent's client (and vice versa). The httpx client is shared.
+        new_loop.llm = copy.copy(self.llm)
         new_loop.messages = []
         new_loop._running = False
         new_loop._state = QueryState.IDLE
@@ -1284,6 +1333,8 @@ class QueryLoop:
         new_loop._rlm_trigger_task = None
         new_loop._skill_maker_task = None
         new_loop._iteration = 0
+        new_loop._last_checkpointed_iteration = -1
+        new_loop._last_checkpointed_state = None
         # Fresh coordinators to prevent state bleed across copies
         new_loop.feedback_coord = FeedbackCoordinator(
             self.feedback_coord.engine,

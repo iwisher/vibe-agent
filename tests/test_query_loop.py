@@ -517,3 +517,14 @@ def test_copy_creates_fresh_compactor(mock_llm, tool_system):
     assert copied.compactor is not loop.compactor
     assert copied.compaction_coord is not loop.compaction_coord
     assert copied.compaction_coord.compactor is copied.compactor
+
+
+def test_copy_independent_llm_model(mock_llm, tool_system):
+    """copy() must shallow-copy the LLM client so model switches are independent."""
+    loop = QueryLoop(llm_client=mock_llm, tool_system=tool_system)
+    copied = loop.copy()
+
+    assert copied.llm is not loop.llm
+    copied.set_model("copied-model")
+    assert loop.llm.model != "copied-model"
+    assert copied.llm.model == "copied-model"

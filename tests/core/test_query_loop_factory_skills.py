@@ -109,3 +109,59 @@ class TestQueryLoopFactorySkillWiring:
 
         tool_names = [t.name for t in ql.tools._tools.values()]
         assert "skill_install_prompt" in tool_names
+
+
+class TestQueryLoopFactorySecurityWiring:
+    """Test that QueryLoopFactory wires SecurityConfig into SecurityCoordinator."""
+
+    def test_factory_passes_security_config_to_coordinator(self, tmp_path):
+        """SecurityCoordinator should receive the parsed SecurityConfig."""
+        from vibe.core.config import SecurityConfig, VibeConfig
+
+        config = VibeConfig.model_construct(security=SecurityConfig(approval_mode="auto"))
+        factory = QueryLoopFactory(
+            base_url="http://test",
+            model="test-model",
+            working_dir=str(tmp_path),
+            config=config,
+        )
+
+        ql = factory.create()
+
+        assert ql.security_coord is not None
+        assert ql.security_coord.config is not None
+        assert ql.security_coord.config.approval_mode == "auto"
+
+    def test_factory_passes_llm_client_to_coordinator(self, tmp_path):
+        """SecurityCoordinator should receive the LLM client for SmartApprover."""
+        from vibe.core.config import VibeConfig
+
+        factory = QueryLoopFactory(
+            base_url="http://test",
+            model="test-model",
+            working_dir=str(tmp_path),
+            config=VibeConfig.model_construct(),
+        )
+
+        ql = factory.create()
+
+        assert ql.security_coord is not None
+        assert ql.security_coord._smart_approver is not None
+        assert ql.security_coord._smart_approver.llm_client is ql.llm
+
+    def test_factory_passes_checkpoint_manager_when_enabled(self, tmp_path):
+        """SecurityCoordinator should receive CheckpointManager when configured."""
+        from vibe.core.config import SecurityConfig, VibeConfig
+
+        config = VibeConfig.model_construct(security=SecurityConfig(checkpoint_enabled=True))
+        factory = QueryLoopFactory(
+            base_url="http://test",
+            model="test-model",
+            working_dir=str(tmp_path),
+            config=config,
+        )
+
+        ql = factory.create()
+
+        assert ql.security_coord is not None
+        assert ql.security_coord._checkpoint_manager is not None

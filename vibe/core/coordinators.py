@@ -34,6 +34,7 @@ class SecurityCheckResult:
     layer: str | None = None
     checkpoint_id: str | None = None
     risk_level: str | None = None
+    modified_args: dict[str, Any] | None = None
 
 
 class ToolExecutor:
@@ -421,9 +422,8 @@ class SecurityCoordinator:
             cwd=tool_args.get("cwd") or tool_args.get("path"),
         )
         if result.approved:
-            if has_shell:
-                tool_args["use_shell"] = True
-            return SecurityCheckResult(allowed=True)
+            modified_args = {"_approved_shell": True} if has_shell else None
+            return SecurityCheckResult(allowed=True, modified_args=modified_args)
 
         return SecurityCheckResult(
             allowed=False,

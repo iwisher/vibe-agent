@@ -149,12 +149,18 @@ class MetaEvolutionLoop:
         )
         return proxy if proxy != PROGRESS_SCORE_MISSING else raw_score
 
-    def _strategy_score(self, start_score: float, end_score: float, window_size: int) -> float:
-        """J(S) = (s_end - s_start) * log(1 + s_start) / sqrt(W)."""
+    def _strategy_score(
+        self, start_score: float, end_score: float, window_size: int, floor: float = 0.0
+    ) -> float:
+        """J(S) = (s_end - s_start) * log(1 + max(s_start - floor, 0)) / sqrt(W).
+
+        When tasks use negative score ranges, `floor` should be the minimum observed
+        score so that `s_start - floor` stays positive and the log term is informative.
+        """
         delta = end_score - start_score
         if start_score == -math.inf:
             return delta
-        return delta * math.log1p(max(start_score, 0.0)) / math.sqrt(window_size)
+        return delta * math.log1p(max(start_score - floor, 0.0)) / math.sqrt(window_size)
 
     async def _validate_strategy(self, strategy: SearchStrategy) -> bool:
         """Validate that the strategy code compiles and produces valid candidates.
@@ -271,8 +277,9 @@ class MetaEvolutionLoop:
             window_elapsed = self.iteration - window_start_iter
             if window_elapsed >= self.config.window_size:
                 window_end_score = current_best
+                score_floor = min(0.0, min(c.score for c in self.population))
                 score_signal = self._strategy_score(
-                    window_start_score, window_end_score, window_elapsed
+                    window_start_score, window_end_score, window_elapsed, floor=score_floor
                 )
 
                 descriptor = PopulationDescriptor.from_population(

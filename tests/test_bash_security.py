@@ -200,3 +200,17 @@ async def test_bash_017_unbalanced_quotes_rejected():
     tool = BashTool(BashSandbox(allowed_commands=["echo"]))
     result = await tool.execute(command='echo "hello')
     assert not result.success
+
+
+@pytest.mark.asyncio
+async def test_bash_018_use_shell_kwarg_from_model_ignored():
+    """Model-supplied use_shell must be ignored; only _approved_shell may grant shell mode."""
+    tool = BashTool()
+    # Model tries to inject use_shell to bypass metacharacter guard
+    result = await tool.execute(command="echo hello | cat", use_shell=True)
+    assert not result.success
+    assert "Shell metacharacter" in result.error
+
+    # Security-granted _approved_shell should work
+    result = await tool.execute(command="echo hello | cat", _approved_shell=True)
+    assert result.success

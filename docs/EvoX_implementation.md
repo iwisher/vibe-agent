@@ -69,7 +69,7 @@ def select_inspiration(population, parent, rng) -> list[str]: ...
 def select_operator(rng) -> VariationOperator | str: ...
 ```
 
-`EvolvableStrategy` compiles the source with a restricted import allowlist (`random`, `math`) and validates that the required functions exist. `SearchStrategy` is a higher-level wrapper that can synthesize this code from legacy configuration fields or accept code directly. The meta-generator now mutates the Python source itself.
+`EvolvableStrategy` compiles the source with a restricted import allowlist (`random`, `math`) and validates that the required functions exist. **Important:** this is not a security boundary — strategy code is trusted code that runs in-process via `exec`. Classic sandbox escapes need no builtins (e.g., `"".__class__.__base__.__subclasses__()`), and strategy functions receive live objects whose class graphs can reach process-wide state. Only use EvoX with strategy sources you trust. `SearchStrategy` is a higher-level wrapper that can synthesize this code from legacy configuration fields or accept code directly. The meta-generator now mutates the Python source itself.
 
 ### PopulationDescriptor
 `φ(D_t)` summarizes the current state of the solution population:

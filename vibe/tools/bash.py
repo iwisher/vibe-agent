@@ -152,7 +152,12 @@ class BashTool(Tool):
 
         return re.sub(pattern, _repl, text)
 
-    async def execute(self, command: str, use_shell: bool = False, **kwargs) -> ToolResult:
+    async def execute(self, command: str, **kwargs) -> ToolResult:
+        # Model-supplied `use_shell` is ignored; only the security layer may grant
+        # shell execution via the internal `_approved_shell` flag.
+        kwargs.pop("use_shell", None)
+        use_shell = kwargs.pop("_approved_shell", False)
+
         command = self._redirect_path(command)
         matched = self._is_dangerous(command)
         if matched:
