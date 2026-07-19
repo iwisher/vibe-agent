@@ -3,7 +3,7 @@
 Provides a full-screen prompt_toolkit layout with:
 - Top tile: agent thinking / reasoning stream
 - Middle tile: working log / tool results / metrics
-- Bottom tile: user input box
+- Bottom tile: user input box with live status in its title
 """
 
 from __future__ import annotations
@@ -13,10 +13,12 @@ from typing import Any, Callable
 
 from prompt_toolkit.application import Application
 from prompt_toolkit.buffer import Buffer
+from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import HSplit, Layout, Window
 from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
 from prompt_toolkit.layout.dimension import Dimension
+from prompt_toolkit.styles import Style
 from prompt_toolkit.widgets import TextArea
 
 _RICH_MARKUP = re.compile(r"\[/?[a-z][^\]]*\]")
@@ -25,6 +27,16 @@ _RICH_MARKUP = re.compile(r"\[/?[a-z][^\]]*\]")
 def _strip_markup(text: str) -> str:
     """Remove Rich markup tags, leaving plain text."""
     return _RICH_MARKUP.sub("", text)
+
+
+_TUI_STYLE = Style.from_dict(
+    {
+        "header.thinking": "bg:#2d1b4e #e0aaff bold",
+        "header.log": "bg:#1b3a2d #a8dadc bold",
+        "header.input": "bg:#3a2a1b #ffd166 bold",
+        "border": "#555555",
+    }
+)
 
 
 class VibeTUI:
@@ -47,6 +59,9 @@ class VibeTUI:
             wrap_lines=False,
         )
 
+        # Status shown in the input tile header
+        self._status_text = "ready"
+
         # Layout: thinking (40%) / log (40%) / input (20%)
         thinking_window = Window(
             BufferControl(buffer=self.thinking_buffer),
@@ -66,21 +81,23 @@ class VibeTUI:
         self.container = HSplit(
             [
                 Window(
-                    FormattedTextControl("Agent Thinking"),
+                    FormattedTextControl(" Agent Thinking "),
                     height=1,
-                    style="class:header",
+                    style="class:header.thinking",
                 ),
                 thinking_window,
+                self._make_border(),
                 Window(
-                    FormattedTextControl("Working Log"),
+                    FormattedTextControl(" Working Log "),
                     height=1,
-                    style="class:header",
+                    style="class:header.log",
                 ),
                 log_window,
+                self._make_border(),
                 Window(
-                    FormattedTextControl("Input"),
+                    FormattedTextControl(self._get_input_header),
                     height=1,
-                    style="class:header",
+                    style="class:header.input",
                 ),
                 input_window,
             ]
@@ -106,6 +123,23 @@ class VibeTUI:
         self.kb = kb
         self._app: Application | None = None
         self._submit_callback: Callable[[str], None] | None = None
+
+    def _make_border(self) -> Window:
+        """Return a 1-line horizontal border between tiles."""
+        return Window(
+            FormattedTextControl("─" * 200),
+            height=1,
+            style="class:border",
+        )
+
+    def _get_input_header(self) -> HTML:
+        """Dynamic input tile header with live status."""
+        return HTML(f" Input │ {self._status_text} ")
+
+    def set_status(self, text: str) -> None:
+        """Update the status shown in the input tile header."""
+        self._status_text = text
+        self._invalidate()
 
     def _on_submit(self, text: str) -> None:
         """Handle user input submission."""
@@ -157,6 +191,7 @@ class VibeTUI:
             key_bindings=self.kb,
             full_screen=True,
             mouse_support=False,
+            style=_TUI_STYLE,
         )
         return self._app
 

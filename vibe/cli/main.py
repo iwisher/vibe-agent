@@ -522,6 +522,12 @@ async def interactive_mode_tui(controller: SessionController) -> None:
                 )
                 tui.append_log(f"{prefix}{metrics_str}")
 
+                # Update live status in input tile title
+                model = controller.main_loop.llm.model
+                tui.set_status(
+                    f"{model} │ {m.total_tokens} tokens │ {m.tokens_per_second:.1f} tok/s"
+                )
+
     output_task = asyncio.create_task(output_consumer())
     app = tui.create_app()
 

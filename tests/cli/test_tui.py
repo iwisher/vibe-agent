@@ -1,5 +1,7 @@
 """Tests for the VibeTUI tiled terminal UI."""
 
+from prompt_toolkit.layout import Window
+
 from vibe.cli.tui import VibeTUI, _strip_markup
 
 
@@ -56,3 +58,36 @@ def test_vibe_tui_create_app():
     app = tui.create_app()
     assert app is not None
     assert app.layout is tui.layout
+    assert app.style is not None
+
+
+def test_vibe_tui_set_status_updates_input_header():
+    tui = VibeTUI()
+    tui.set_status("model │ 123 tokens │ 45.6 tok/s")
+    header = tui._get_input_header()
+    assert "model" in header.value
+    assert "123 tokens" in header.value
+    assert "45.6 tok/s" in header.value
+
+
+def test_vibe_tui_has_borders():
+    tui = VibeTUI()
+    # Should have 2 border windows between 3 tiles
+    borders = [
+        child
+        for child in tui.container.children
+        if isinstance(child, Window) and child.style == "class:border"
+    ]
+    assert len(borders) == 2
+
+
+def test_vibe_tui_headers_have_styles():
+    tui = VibeTUI()
+    headers = [
+        child
+        for child in tui.container.children
+        if isinstance(child, Window) and child.style.startswith("class:header.")
+    ]
+    assert len(headers) == 3
+    styles = {h.style for h in headers}
+    assert styles == {"class:header.thinking", "class:header.log", "class:header.input"}
