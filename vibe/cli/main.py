@@ -523,9 +523,17 @@ async def interactive_mode_tui(controller: SessionController) -> None:
                 tui.append_log(f"{prefix}{metrics_str}")
 
     output_task = asyncio.create_task(output_consumer())
+    app = tui.create_app()
 
+    async def run_app() -> None:
+        await app.run_async()
+        # Cancel consumer when app exits
+        if not output_task.done():
+            output_task.cancel()
+
+    app_task = asyncio.create_task(run_app())
     try:
-        await tui.run()
+        await app_task
     finally:
         _save_readline_history()
         await controller.shutdown()
@@ -769,7 +777,7 @@ def main(
         True, "--stream/--no-stream", help="Enable/disable streaming responses"
     ),
     tui: bool = typer.Option(
-        False, "--tui", help="Use tiled TUI with separate thinking/log/input windows"
+        True, "--tui/--no-tui", help="Use tiled TUI with separate thinking/log/input windows"
     ),
 ):
     """Run Vibe Agent in interactive or single-query mode."""

@@ -118,21 +118,37 @@ class VibeTUI:
         """Set the callback invoked when user submits input."""
         self._submit_callback = callback
 
+    def _invalidate(self) -> None:
+        """Trigger a UI redraw if the app is running."""
+        if self._app is not None:
+            self._app.invalidate()
+
+    def focus_input(self) -> None:
+        """Ensure the input window has focus."""
+        if self._app is not None:
+            self._app.layout.focus(self.input_area.buffer)
+
     def append_thinking(self, text: str) -> None:
-        """Append text to the thinking tile."""
+        """Append text to the thinking tile and scroll to bottom."""
         self.thinking_buffer.insert_text(_strip_markup(text))
+        self.thinking_buffer.cursor_position = len(self.thinking_buffer.text)
+        self._invalidate()
 
     def append_log(self, text: str) -> None:
-        """Append text to the working log tile."""
+        """Append text to the working log tile and scroll to bottom."""
         self.log_buffer.insert_text(_strip_markup(text) + "\n")
+        self.log_buffer.cursor_position = len(self.log_buffer.text)
+        self._invalidate()
 
     def clear_thinking(self) -> None:
         """Clear the thinking tile."""
         self.thinking_buffer.reset()
+        self._invalidate()
 
     def clear_log(self) -> None:
         """Clear the working log tile."""
         self.log_buffer.reset()
+        self._invalidate()
 
     def create_app(self) -> Application:
         """Build and return the prompt_toolkit Application."""
