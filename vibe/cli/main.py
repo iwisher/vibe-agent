@@ -13,6 +13,7 @@ from rich.table import Table
 
 from vibe.cli.input_buffer import get_patch_stdout, get_prompt_session, prompt_input
 from vibe.cli.skill_commands import app as skill_app
+from vibe.cli.tui import VibeTUI
 from vibe.core.config import VibeConfig
 from vibe.core.logger import setup_session_logger
 from vibe.core.query_loop import QueryLoop
@@ -383,6 +384,167 @@ async def interactive_mode(controller: Any) -> None:
                 output_task.cancel()
 
 
+async def interactive_mode_tui(controller: SessionController) -> None:
+    """Tiled TUI interactive mode with separate thinking/log/input windows."""
+    tui = VibeTUI()
+    controller.prompt_shown = True
+
+    # Handle user input submission
+    def on_submit(text: str) -> None:
+        text = text.strip()
+        if not text:
+            return
+        if text.lower() in ("/exit", "exit", "quit"):
+            if tui._app:
+                tui._app.exit()
+            return
+        if text.lower() == "/clear":
+            controller.main_loop.clear_history()
+            tui.clear_thinking()
+            tui.clear_log()
+            tui.append_log("History cleared.")
+            return
+        if text.lower() == "/verbose":
+            controller.verbose_mode = not getattr(controller, "verbose_mode", False)
+            status = "enabled" if controller.verbose_mode else "disabled"
+            tui.append_log(f"Verbose mode {status}.")
+            return
+        if text.lower() == "/reasoning":
+            controller.show_reasoning = not getattr(controller, "show_reasoning", True)
+            if controller.main_loop.config and hasattr(controller.main_loop.config, "llm"):
+                controller.main_loop.config.llm.show_reasoning = controller.show_reasoning
+            status = "enabled" if controller.show_reasoning else "disabled"
+            tui.append_log(f"Reasoning display {status}.")
+            return
+        if text.lower() == "/resume":
+            from vibe.core.query_loop import QueryLoop
+            from vibe.harness.memory.session_store import SessionStore
+
+            store = SessionStore()
+            incomplete = store.list_incomplete(limit=1)
+            if not incomplete:
+                tui.append_log("No incomplete sessions found.")
+                return
+            session_id = incomplete[0]["session_id"]
+            factory = QueryLoopFactory(
+                base_url=DEFAULT_CONFIG.llm.base_url,
+                model=controller.main_loop.llm.model,
+                api_key=DEFAULT_CONFIG.resolve_api_key(),
+                working_dir=str(Path.cwd()),
+                fallback_chain=DEFAULT_CONFIG.get_fallback_chain(),
+                config=DEFAULT_CONFIG,
+                logger=controller.main_loop.logger,
+            )
+            try:
+                controller.main_loop = asyncio.ensure_future(
+                    QueryLoop.resume(session_id, store, factory)
+                )
+                tui.append_log(f"Resumed session {session_id[:16]}...")
+            except ValueError as e:
+                tui.append_log(f"Failed to resume: {e}")
+            return
+        if text.lower().startswith("/bg "):
+            query = text[4:].strip()
+            if query:
+                asyncio.ensure_future(_bg_wrapper(controller, query, tui))
+            return
+        if text.lower().startswith("/btw "):
+            query = text[5:].strip()
+            if query:
+                asyncio.ensure_future(_btw_wrapper(controller, query, tui))
+            return
+
+        # Normal message — enqueue directly
+        is_queued = text.lower().startswith("/queue ")
+        if is_queued:
+            clean_input = text[7:].strip()
+            asyncio.ensure_future(controller.queue.enqueue(clean_input))
+        else:
+            asyncio.ensure_future(controller.queue.enqueue(text))
+            controller.main_loop.stop()
+
+    tui.set_submit_callback(on_submit)
+
+    # Start controller
+    await controller.start()
+
+    # Consume output events and route to TUI buffers
+    async def output_consumer() -> None:
+        while True:
+            try:
+                event = await controller.output_queue.get()
+            except asyncio.CancelledError:
+                break
+
+            result = event.result
+            source = event.source
+
+            if source.startswith("bg_"):
+                prefix = f"[{source}] "
+            elif source == "btw":
+                prefix = "[btw] "
+            else:
+                prefix = ""
+
+            if result.is_status:
+                if result.status_message:
+                    tui.append_log(f"  → {result.status_message}")
+                continue
+
+            if result.is_stream_chunk:
+                if result.reasoning_content:
+                    tui.append_thinking(result.reasoning_content)
+                if result.response:
+                    tui.append_log(result.response)
+                continue
+
+            if result.error:
+                tui.append_log(f"{prefix}Error: {result.error}")
+                continue
+
+            if result.response:
+                tui.append_log(f"{prefix}{result.response}")
+
+            for tr in result.tool_results:
+                status = "OK" if tr.success else "ERR"
+                content = tr.content if tr.content else (tr.error or "")
+                tui.append_log(f"{prefix}[Tool {status}] {content}")
+
+            if result.metrics:
+                m = result.metrics
+                reasoning_part = ""
+                if getattr(m, "reasoning_tokens", 0) > 0:
+                    reasoning_part = f" ({m.reasoning_tokens} reasoning)"
+                metrics_str = (
+                    f"{m.total_tokens} tokens{reasoning_part} | "
+                    f"{m.elapsed_seconds:.1f}s | "
+                    f"{m.tokens_per_second:.1f} tok/s"
+                )
+                tui.append_log(f"{prefix}{metrics_str}")
+
+    output_task = asyncio.create_task(output_consumer())
+
+    try:
+        await tui.run()
+    finally:
+        _save_readline_history()
+        await controller.shutdown()
+        if not output_task.done():
+            output_task.cancel()
+
+
+async def _bg_wrapper(controller: SessionController, query: str, tui: VibeTUI) -> None:
+    """Start background agent and report to TUI."""
+    agent_id = await controller.send_bg(query)
+    tui.append_log(f"Background agent {agent_id} started...")
+
+
+async def _btw_wrapper(controller: SessionController, query: str, tui: VibeTUI) -> None:
+    """Start side query and report to TUI."""
+    await controller.send_btw(query)
+    tui.append_log("Side query running... result will be injected when done.")
+
+
 async def _output_consumer(controller: SessionController, pt_active: bool = False) -> None:
     """Consume output events and print them with source labels."""
     streamed_sources = set()
@@ -606,6 +768,9 @@ def main(
     stream: bool = typer.Option(
         True, "--stream/--no-stream", help="Enable/disable streaming responses"
     ),
+    tui: bool = typer.Option(
+        False, "--tui", help="Use tiled TUI with separate thinking/log/input windows"
+    ),
 ):
     """Run Vibe Agent in interactive or single-query mode."""
     working_dir = str(Path(working_dir).expanduser().resolve())
@@ -682,7 +847,10 @@ def main(
             )
             controller = SessionController(factory)
             controller.main_loop = loop
-            await interactive_mode(controller)
+            if tui:
+                await interactive_mode_tui(controller)
+            else:
+                await interactive_mode(controller)
 
         asyncio.run(_run_resumed())
     else:
@@ -704,7 +872,10 @@ def main(
             asyncio.run(single_query_mode(query_loop, query))
         else:
             controller = SessionController(factory)
-            asyncio.run(interactive_mode(controller))
+            if tui:
+                asyncio.run(interactive_mode_tui(controller))
+            else:
+                asyncio.run(interactive_mode(controller))
 
 
 @eval_app.command("run")
