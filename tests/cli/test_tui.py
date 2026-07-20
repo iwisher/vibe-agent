@@ -280,3 +280,103 @@ def test_vibe_tui_queue_info_coexists_with_status():
     assert "model" in header.value
     assert "100 tokens" in header.value
     assert "queue:1" in header.value
+
+
+# ---------------------------------------------------------------------------
+# Regression: critique findings
+# ---------------------------------------------------------------------------
+
+
+def test_regression_c2_input_header_escapes_html():
+    """Hostile queue preview content must not crash the HTML header parser."""
+    tui = VibeTUI()
+    tui.set_queue_info(1, "a < b & use <div> tag")
+    header = tui._get_input_header()  # must not raise
+    assert "a &lt; b" in header.value
+    assert "&amp;" in header.value
+
+    tui.set_status("plain & simple")
+    header = tui._get_input_header()  # must not raise
+    assert "&amp;" in header.value
+
+
+def test_regression_c3_append_log_chunk_has_no_newline():
+    """Stream chunks must append without per-chunk newlines."""
+    tui = VibeTUI()
+    for chunk in ["Hello", ", ", "world", "!"]:
+        tui.append_log_chunk(chunk)
+    assert tui.log_area.text == "Hello, world!"
+
+
+def test_regression_h1_buffer_is_capped():
+    """Buffers must not grow unbounded."""
+    from vibe.cli.tui import _MAX_BUFFER_CHARS
+
+    tui = VibeTUI()
+    for i in range(2000):
+        tui.append_log(f"line {i} " + "x" * 80)
+    assert len(tui.log_area.text) <= _MAX_BUFFER_CHARS
+    # Most recent content is preserved
+    assert "line 1999" in tui.log_area.text
+
+
+def test_regression_h2_status_invalidate_only_on_change():
+    """set_status/set_queue_info must not invalidate when value is unchanged."""
+    tui = VibeTUI()
+    calls = []
+    tui._invalidate = lambda: calls.append(1)
+
+    tui.set_status("a")
+    assert len(calls) == 1
+    tui.set_status("a")  # unchanged — no redraw
+    assert len(calls) == 1
+    tui.set_status("b")
+    assert len(calls) == 2
+
+    tui.set_queue_info(1, "msg")
+    assert len(calls) == 3
+    tui.set_queue_info(1, "msg")  # unchanged
+    assert len(calls) == 3
+    tui.set_queue_info(0)  # changed
+    assert len(calls) == 4
+
+
+def test_regression_queue_preview_ellipsis_only_for_long_messages():
+    """Short previews must not get a trailing ellipsis."""
+    tui = VibeTUI()
+    tui.set_queue_info(1, "short")
+    assert "..." not in tui._get_input_header().value
+
+    tui.set_queue_info(1, "x" * 60)
+    assert "..." in tui._get_input_header().value
+
+
+def test_regression_exit_method_calls_app_exit():
+    """Public exit() must delegate to the application."""
+
+    class FakeApp:
+        exited = False
+
+        def exit(self):
+            self.exited = True
+
+    tui = VibeTUI()
+    fake = FakeApp()
+    tui._app = fake
+    tui.exit()
+    assert fake.exited
+
+
+def test_regression_strip_markup_does_not_swallow_across_newlines():
+    """Unmatched '[' must not eat subsequent lines."""
+    text = "first [unclosed tag\nsecond line"
+    result = _strip_markup(text)
+    assert "second line" in result
+
+
+def test_vibe_tui_history_path_wires_file_history(tmp_path):
+    """Passing history_path must give the input area a FileHistory."""
+    from prompt_toolkit.history import FileHistory
+
+    tui = VibeTUI(history_path=str(tmp_path / "history"))
+    assert isinstance(tui.input_area.buffer.history, FileHistory)

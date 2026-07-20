@@ -386,8 +386,7 @@ async def interactive_mode(controller: Any) -> None:
 
 async def interactive_mode_tui(controller: SessionController) -> None:
     """Tiled TUI interactive mode with separate thinking/log/input windows."""
-    tui = VibeTUI()
-    controller.prompt_shown = True
+    tui = VibeTUI(history_path=str(_HISTORY_FILE))
 
     # Handle user input submission
     def on_submit(text: str) -> None:
@@ -395,8 +394,7 @@ async def interactive_mode_tui(controller: SessionController) -> None:
         if not text:
             return
         if text.lower() in ("/exit", "exit", "quit"):
-            if tui._app:
-                tui._app.exit()
+            tui.exit()
             return
         if text.lower() == "/clear":
             controller.main_loop.clear_history()
@@ -417,31 +415,7 @@ async def interactive_mode_tui(controller: SessionController) -> None:
             tui.append_log(f"Reasoning display {status}.")
             return
         if text.lower() == "/resume":
-            from vibe.core.query_loop import QueryLoop
-            from vibe.harness.memory.session_store import SessionStore
-
-            store = SessionStore()
-            incomplete = store.list_incomplete(limit=1)
-            if not incomplete:
-                tui.append_log("No incomplete sessions found.")
-                return
-            session_id = incomplete[0]["session_id"]
-            factory = QueryLoopFactory(
-                base_url=DEFAULT_CONFIG.llm.base_url,
-                model=controller.main_loop.llm.model,
-                api_key=DEFAULT_CONFIG.resolve_api_key(),
-                working_dir=str(Path.cwd()),
-                fallback_chain=DEFAULT_CONFIG.get_fallback_chain(),
-                config=DEFAULT_CONFIG,
-                logger=controller.main_loop.logger,
-            )
-            try:
-                controller.main_loop = asyncio.ensure_future(
-                    QueryLoop.resume(session_id, store, factory)
-                )
-                tui.append_log(f"Resumed session {session_id[:16]}...")
-            except ValueError as e:
-                tui.append_log(f"Failed to resume: {e}")
+            asyncio.ensure_future(_resume_session(controller, tui))
             return
         if text.lower().startswith("/bg "):
             query = text[4:].strip()
@@ -454,14 +428,13 @@ async def interactive_mode_tui(controller: SessionController) -> None:
                 asyncio.ensure_future(_btw_wrapper(controller, query, tui))
             return
 
-        # Normal message — enqueue directly
+        # Normal message — enqueue first, then interrupt the current turn
         is_queued = text.lower().startswith("/queue ")
         if is_queued:
             clean_input = text[7:].strip()
             asyncio.ensure_future(controller.queue.enqueue(clean_input))
         else:
-            asyncio.ensure_future(controller.queue.enqueue(text))
-            controller.main_loop.stop()
+            asyncio.ensure_future(_enqueue_and_stop(controller, text))
 
     tui.set_submit_callback(on_submit)
 
@@ -469,6 +442,8 @@ async def interactive_mode_tui(controller: SessionController) -> None:
     await controller.start()
 
     # Consume output events and route to TUI buffers
+    streamed_sources: set[str] = set()
+
     async def output_consumer() -> None:
         while True:
             try:
@@ -476,57 +451,85 @@ async def interactive_mode_tui(controller: SessionController) -> None:
             except asyncio.CancelledError:
                 break
 
-            result = event.result
-            source = event.source
+            try:
+                result = event.result
+                source = event.source
 
-            if source.startswith("bg_"):
-                prefix = f"[{source}] "
-            elif source == "btw":
-                prefix = "[btw] "
-            else:
-                prefix = ""
+                if source.startswith("bg_"):
+                    prefix = f"[{source}] "
+                elif source == "btw":
+                    prefix = "[btw] "
+                else:
+                    prefix = ""
 
-            if result.is_status:
-                if result.status_message:
-                    tui.append_log(f"  → {result.status_message}")
-                continue
+                if result.is_status:
+                    if result.status_message:
+                        tui.append_log(f"  → {result.status_message}")
+                    continue
 
-            if result.is_stream_chunk:
-                if result.reasoning_content:
-                    tui.append_thinking(result.reasoning_content)
+                if result.is_stream_chunk:
+                    if result.reasoning_content and getattr(controller, "show_reasoning", True):
+                        tui.append_thinking(result.reasoning_content)
+                    if result.response:
+                        # Stream chunks are fragments of one response: append
+                        # without newlines and skip the final duplicate print.
+                        streamed_sources.add(source)
+                        tui.append_log_chunk(result.response)
+                    continue
+
+                if result.error:
+                    if source in streamed_sources:
+                        tui.append_log("")
+                        streamed_sources.discard(source)
+                    error_msg = str(result.error)
+                    if getattr(result, "actionable_hint", None):
+                        error_msg += f"\nHint: {result.actionable_hint}"
+                    tui.append_log(f"{prefix}Error: {error_msg}")
+                    continue
+
                 if result.response:
-                    tui.append_log(result.response)
-                continue
+                    if source in streamed_sources:
+                        # Response was already streamed; just end the line.
+                        streamed_sources.discard(source)
+                        tui.append_log("")
+                    else:
+                        tui.append_log(f"{prefix}{result.response}")
 
-            if result.error:
-                tui.append_log(f"{prefix}Error: {result.error}")
-                continue
+                if result.context_truncated:
+                    tui.append_log("(context compacted)")
 
-            if result.response:
-                tui.append_log(f"{prefix}{result.response}")
+                for tr in result.tool_results:
+                    status = "OK" if tr.success else "ERR"
+                    content = tr.content if tr.content else (tr.error or "")
+                    tui.append_log(f"{prefix}[Tool {status}] {content}")
 
-            for tr in result.tool_results:
-                status = "OK" if tr.success else "ERR"
-                content = tr.content if tr.content else (tr.error or "")
-                tui.append_log(f"{prefix}[Tool {status}] {content}")
+                if result.metrics:
+                    m = result.metrics
+                    reasoning_part = ""
+                    if getattr(m, "reasoning_tokens", 0) > 0:
+                        reasoning_part = f" ({m.reasoning_tokens} reasoning)"
+                    metrics_str = (
+                        f"{m.total_tokens} tokens{reasoning_part} | "
+                        f"{m.elapsed_seconds:.1f}s | "
+                        f"{m.tokens_per_second:.1f} tok/s"
+                    )
+                    model_used = getattr(result, "model_used", None)
+                    if model_used and model_used != controller.main_loop.llm.model:
+                        metrics_str += f" (via fallback model: {model_used})"
+                    tui.append_log(f"{prefix}{metrics_str}")
 
-            if result.metrics:
-                m = result.metrics
-                reasoning_part = ""
-                if getattr(m, "reasoning_tokens", 0) > 0:
-                    reasoning_part = f" ({m.reasoning_tokens} reasoning)"
-                metrics_str = (
-                    f"{m.total_tokens} tokens{reasoning_part} | "
-                    f"{m.elapsed_seconds:.1f}s | "
-                    f"{m.tokens_per_second:.1f} tok/s"
-                )
-                tui.append_log(f"{prefix}{metrics_str}")
+                    # Update live status in input tile title
+                    model = controller.main_loop.llm.model
+                    tui.set_status(
+                        f"{model} │ {m.total_tokens} tokens │ {m.tokens_per_second:.1f} tok/s"
+                    )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # Never let a rendering error kill the output stream silently.
+                import traceback
 
-                # Update live status in input tile title
-                model = controller.main_loop.llm.model
-                tui.set_status(
-                    f"{model} │ {m.total_tokens} tokens │ {m.tokens_per_second:.1f} tok/s"
-                )
+                tui.append_log(f"[output error] {traceback.format_exc(limit=1).strip()}")
 
     # Poll queue state and update input tile header
     async def queue_poller() -> None:
@@ -548,21 +551,60 @@ async def interactive_mode_tui(controller: SessionController) -> None:
     queue_task = asyncio.create_task(queue_poller())
     app = tui.create_app()
 
-    async def run_app() -> None:
+    try:
         await app.run_async()
-        # Cancel consumers when app exits
+    finally:
+        # Always cancel and drain background tasks, on any exit path.
         for task in (output_task, queue_task):
             if not task.done():
                 task.cancel()
-
-    app_task = asyncio.create_task(run_app())
-    try:
-        await app_task
-    finally:
-        _save_readline_history()
+        await asyncio.gather(output_task, queue_task, return_exceptions=True)
         await controller.shutdown()
-        if not output_task.done():
-            output_task.cancel()
+
+
+async def _enqueue_and_stop(controller: SessionController, text: str) -> None:
+    """Enqueue a user message, then interrupt the current turn.
+
+    Awaiting the enqueue first guarantees the message is queued before the
+    loop is told to stop, matching the console-mode ordering.
+    """
+    await controller.queue.enqueue(text)
+    controller.main_loop.stop()
+
+
+async def _resume_session(controller: SessionController, tui: VibeTUI) -> None:
+    """Resume the latest incomplete session inside the TUI."""
+    from vibe.core.query_loop import QueryLoop
+    from vibe.harness.memory.session_store import SessionStore
+
+    try:
+        store = SessionStore()
+        incomplete = await asyncio.to_thread(store.list_incomplete, limit=1)
+        if not incomplete:
+            tui.append_log("No incomplete sessions found.")
+            return
+        session_id = incomplete[0]["session_id"]
+        factory = QueryLoopFactory(
+            base_url=DEFAULT_CONFIG.llm.base_url,
+            model=controller.main_loop.llm.model,
+            api_key=DEFAULT_CONFIG.resolve_api_key(),
+            working_dir=str(Path.cwd()),
+            fallback_chain=DEFAULT_CONFIG.get_fallback_chain(),
+            config=DEFAULT_CONFIG,
+            logger=controller.main_loop.logger,
+        )
+        # Stop the in-flight turn before swapping the loop.
+        controller.main_loop.stop()
+        controller.main_loop = await QueryLoop.resume(session_id, store, factory)
+        tui.append_log(
+            f"Resumed session {session_id[:16]}... "
+            f"(state: {controller.main_loop.state.name}, "
+            f"iteration: {controller.main_loop._iteration})"
+        )
+    except ValueError as e:
+        tui.append_log(f"Failed to resume: {e}")
+    except Exception as e:
+        tui.append_log(f"Resume error: {e}")
 
 
 async def _bg_wrapper(controller: SessionController, query: str, tui: VibeTUI) -> None:
@@ -807,6 +849,11 @@ def main(
     """Run Vibe Agent in interactive or single-query mode."""
     working_dir = str(Path(working_dir).expanduser().resolve())
 
+    # Full-screen TUI requires a real terminal; degrade to line mode otherwise.
+    import sys
+
+    use_tui = tui and sys.stdout.isatty()
+
     # Use semantic model names for the fallback chain so the registry can resolve them
     fallback_chain = DEFAULT_CONFIG.get_fallback_chain()
 
@@ -879,7 +926,7 @@ def main(
             )
             controller = SessionController(factory)
             controller.main_loop = loop
-            if tui:
+            if use_tui:
                 await interactive_mode_tui(controller)
             else:
                 await interactive_mode(controller)
@@ -904,7 +951,7 @@ def main(
             asyncio.run(single_query_mode(query_loop, query))
         else:
             controller = SessionController(factory)
-            if tui:
+            if use_tui:
                 asyncio.run(interactive_mode_tui(controller))
             else:
                 asyncio.run(interactive_mode(controller))
