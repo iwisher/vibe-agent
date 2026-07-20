@@ -1,6 +1,7 @@
 """Tests for the VibeTUI tiled terminal UI."""
 
 from prompt_toolkit.layout import Window
+from prompt_toolkit.widgets import TextArea
 
 from vibe.cli.tui import VibeTUI, _strip_markup
 
@@ -14,24 +15,26 @@ def test_strip_markup_removes_rich_tags():
 
 def test_vibe_tui_initialization():
     tui = VibeTUI()
-    assert tui.thinking_buffer is not None
-    assert tui.log_buffer is not None
-    assert tui.input_area is not None
+    assert isinstance(tui.thinking_area, TextArea)
+    assert isinstance(tui.log_area, TextArea)
+    assert isinstance(tui.input_area, TextArea)
+    assert tui.thinking_area.read_only
+    assert tui.log_area.read_only
     assert tui.layout is not None
 
 
 def test_vibe_tui_append_thinking_strips_markup():
     tui = VibeTUI()
     tui.append_thinking("[dim]reasoning...[/dim]")
-    assert "reasoning..." in tui.thinking_buffer.text
-    assert "[dim]" not in tui.thinking_buffer.text
+    assert "reasoning..." in tui.thinking_area.text
+    assert "[dim]" not in tui.thinking_area.text
 
 
 def test_vibe_tui_append_log_strips_markup_and_adds_newline():
     tui = VibeTUI()
     tui.append_log("[green]done[/green]")
-    assert tui.log_buffer.text.endswith("\n")
-    assert "[green]" not in tui.log_buffer.text
+    assert tui.log_area.text.endswith("\n")
+    assert "[green]" not in tui.log_area.text
 
 
 def test_vibe_tui_clear_buffers():
@@ -40,8 +43,8 @@ def test_vibe_tui_clear_buffers():
     tui.append_log("log")
     tui.clear_thinking()
     tui.clear_log()
-    assert tui.thinking_buffer.text == ""
-    assert tui.log_buffer.text == ""
+    assert tui.thinking_area.text == ""
+    assert tui.log_area.text == ""
 
 
 def test_vibe_tui_submit_callback():
@@ -50,7 +53,7 @@ def test_vibe_tui_submit_callback():
     tui.set_submit_callback(received.append)
     tui._on_submit("hello")
     assert received == ["hello"]
-    assert "❯ hello" in tui.log_buffer.text
+    assert "❯ hello" in tui.log_area.text
 
 
 def test_vibe_tui_create_app():
