@@ -69,6 +69,7 @@ class VibeTUI:
 
         # Status shown in the input tile header
         self._status_text = "ready"
+        self._queue_text = ""
 
         # Layout: thinking (40%) / log (40%) / input (20%)
         self.container = HSplit(
@@ -129,12 +130,24 @@ class VibeTUI:
         )
 
     def _get_input_header(self) -> HTML:
-        """Dynamic input tile header with live status."""
-        return HTML(f" Input │ {self._status_text} ")
+        """Dynamic input tile header with live status and queue info."""
+        parts = [self._status_text]
+        if self._queue_text:
+            parts.append(self._queue_text)
+        return HTML(f" Input │ {' │ '.join(parts)} ")
 
     def set_status(self, text: str) -> None:
         """Update the status shown in the input tile header."""
         self._status_text = text
+        self._invalidate()
+
+    def set_queue_info(self, pending: int, next_msg: str | None = None) -> None:
+        """Update queue pending count and next message preview."""
+        if pending == 0:
+            self._queue_text = ""
+        else:
+            preview = f": {next_msg[:30]}..." if next_msg else ""
+            self._queue_text = f"queue:{pending}{preview}"
         self._invalidate()
 
     def _on_submit(self, text: str) -> None:

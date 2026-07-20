@@ -230,3 +230,53 @@ def test_vibe_tui_input_header_contains_status_placeholder():
     header = tui._get_input_header()
     assert "Input" in header.value
     assert "│" in header.value
+
+
+# ---------------------------------------------------------------------------
+# Queue info in input tile header
+# ---------------------------------------------------------------------------
+
+
+def test_vibe_tui_set_queue_info_empty_queue():
+    """Empty queue must not show queue info."""
+    tui = VibeTUI()
+    tui.set_queue_info(0)
+    header = tui._get_input_header()
+    assert "queue:" not in header.value
+
+
+def test_vibe_tui_set_queue_info_with_pending():
+    """Pending messages must show count and preview."""
+    tui = VibeTUI()
+    tui.set_queue_info(2, "what is the weather today?")
+    header = tui._get_input_header()
+    assert "queue:2" in header.value
+    assert "what is the weather" in header.value
+
+
+def test_vibe_tui_set_queue_info_without_preview():
+    """Pending messages without preview show only count."""
+    tui = VibeTUI()
+    tui.set_queue_info(3)
+    header = tui._get_input_header()
+    assert "queue:3" in header.value
+
+
+def test_vibe_tui_set_queue_info_clears_when_empty():
+    """Queue info must disappear when queue becomes empty."""
+    tui = VibeTUI()
+    tui.set_queue_info(2, "test message")
+    assert "queue:2" in tui._get_input_header().value
+    tui.set_queue_info(0)
+    assert "queue:" not in tui._get_input_header().value
+
+
+def test_vibe_tui_queue_info_coexists_with_status():
+    """Queue info must appear alongside model/token status."""
+    tui = VibeTUI()
+    tui.set_status("model │ 100 tokens │ 50 tok/s")
+    tui.set_queue_info(1, "next msg")
+    header = tui._get_input_header()
+    assert "model" in header.value
+    assert "100 tokens" in header.value
+    assert "queue:1" in header.value

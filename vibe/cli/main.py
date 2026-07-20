@@ -528,14 +528,32 @@ async def interactive_mode_tui(controller: SessionController) -> None:
                     f"{model} │ {m.total_tokens} tokens │ {m.tokens_per_second:.1f} tok/s"
                 )
 
+    # Poll queue state and update input tile header
+    async def queue_poller() -> None:
+        while True:
+            try:
+                pending = controller.queue.pending_count
+                next_msg = None
+                if pending > 0:
+                    peeked = controller.queue.peek()
+                    next_msg = peeked.content if peeked else None
+                tui.set_queue_info(pending, next_msg)
+                await asyncio.sleep(0.1)
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                await asyncio.sleep(0.5)
+
     output_task = asyncio.create_task(output_consumer())
+    queue_task = asyncio.create_task(queue_poller())
     app = tui.create_app()
 
     async def run_app() -> None:
         await app.run_async()
-        # Cancel consumer when app exits
-        if not output_task.done():
-            output_task.cancel()
+        # Cancel consumers when app exits
+        for task in (output_task, queue_task):
+            if not task.done():
+                task.cancel()
 
     app_task = asyncio.create_task(run_app())
     try:
