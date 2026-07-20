@@ -94,3 +94,139 @@ def test_vibe_tui_headers_have_styles():
     assert len(headers) == 3
     styles = {h.style for h in headers}
     assert styles == {"class:header.thinking", "class:header.log", "class:header.input"}
+
+
+# ---------------------------------------------------------------------------
+# Layout structure guardrails
+# ---------------------------------------------------------------------------
+
+
+def test_vibe_tui_layout_order():
+    """Layout must be: header, content, border, header, content, border, header, input."""
+    tui = VibeTUI()
+    children = tui.container.children
+    assert len(children) == 8
+
+    # Headers
+    assert children[0].style == "class:header.thinking"
+    assert children[3].style == "class:header.log"
+    assert children[6].style == "class:header.input"
+
+    # Content areas (HSplit stores each TextArea's internal window)
+    assert children[1].content.buffer is tui.thinking_area.buffer
+    assert children[4].content.buffer is tui.log_area.buffer
+    assert children[7].content.buffer is tui.input_area.buffer
+
+    # Borders
+    assert children[2].style == "class:border"
+    assert children[5].style == "class:border"
+
+
+def test_vibe_tui_input_area_is_focused():
+    """Input area must be the focused element in the layout."""
+    tui = VibeTUI()
+    focused = tui.layout.current_control
+    assert focused.buffer is tui.input_area.buffer
+
+
+def test_vibe_tui_display_areas_are_read_only():
+    """Thinking and log areas must be read-only."""
+    tui = VibeTUI()
+    assert tui.thinking_area.read_only
+    assert tui.log_area.read_only
+    assert not tui.input_area.read_only
+
+
+# ---------------------------------------------------------------------------
+# Multi-round interaction guardrails
+# ---------------------------------------------------------------------------
+
+
+def test_vibe_tui_layout_stable_after_many_appends():
+    """After many rounds of content, headers and borders must stay in place."""
+    tui = VibeTUI()
+    # Simulate 50 rounds of thinking + log output
+    for i in range(50):
+        tui.append_thinking(f"thinking round {i}... ")
+        tui.append_log(f"log round {i}")
+
+    children = tui.container.children
+    assert len(children) == 8
+    assert children[0].style == "class:header.thinking"
+    assert children[3].style == "class:header.log"
+    assert children[6].style == "class:header.input"
+    assert children[2].style == "class:border"
+    assert children[5].style == "class:border"
+
+
+def test_vibe_tui_content_accumulates_in_order():
+    """Content must accumulate in the order appended."""
+    tui = VibeTUI()
+    for i in range(5):
+        tui.append_log(f"line {i}")
+
+    text = tui.log_area.text
+    lines = [line for line in text.split("\n") if line]
+    assert lines == [f"line {i}" for i in range(5)]
+
+
+def test_vibe_tui_thinking_and_log_are_independent():
+    """Thinking and log buffers must not interfere."""
+    tui = VibeTUI()
+    tui.append_thinking("thought")
+    tui.append_log("log entry")
+
+    assert "thought" in tui.thinking_area.text
+    assert "thought" not in tui.log_area.text
+    assert "log entry" in tui.log_area.text
+    assert "log entry" not in tui.thinking_area.text
+
+
+# ---------------------------------------------------------------------------
+# Scrolling and cursor behavior
+# ---------------------------------------------------------------------------
+
+
+def test_vibe_tui_cursor_stays_at_bottom_after_append():
+    """Cursor must be at end of buffer after append so new content is visible."""
+    tui = VibeTUI()
+    tui.append_log("first")
+    assert tui.log_area.buffer.cursor_position == len(tui.log_area.text)
+
+    tui.append_log("second")
+    assert tui.log_area.buffer.cursor_position == len(tui.log_area.text)
+
+
+def test_vibe_tui_clear_resets_cursor_position():
+    """Clearing must reset cursor position to 0."""
+    tui = VibeTUI()
+    tui.append_log("content")
+    tui.clear_log()
+    assert tui.log_area.buffer.cursor_position == 0
+
+
+# ---------------------------------------------------------------------------
+# Style and appearance
+# ---------------------------------------------------------------------------
+
+
+def test_vibe_tui_style_has_header_and_border_classes():
+    """Application style must define header and border classes."""
+    tui = VibeTUI()
+    app = tui.create_app()
+    style = app.style
+
+    # Check that style rules exist for our classes
+    style_dict = {rule[0]: rule[1] for rule in style.style_rules}
+    assert "header.thinking" in style_dict
+    assert "header.log" in style_dict
+    assert "header.input" in style_dict
+    assert "border" in style_dict
+
+
+def test_vibe_tui_input_header_contains_status_placeholder():
+    """Input header must include the status text placeholder."""
+    tui = VibeTUI()
+    header = tui._get_input_header()
+    assert "Input" in header.value
+    assert "│" in header.value
