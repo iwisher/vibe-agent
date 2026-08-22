@@ -14,6 +14,10 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
 
+from rich.console import Console
+from rich.panel import Panel
+from rich.text import Text
+
 try:
     import termios
     import tty
@@ -22,6 +26,10 @@ except ImportError:
     tty = None
 
 from vibe.tools.security.approval_store import ApprovalStore
+
+# Shared console for the approval banner. highlight=False keeps Rich from
+# recoloring numbers/paths inside the flagged command text.
+_console = Console(highlight=False)
 
 
 class ApprovalChoice(Enum):
@@ -134,17 +142,23 @@ class HumanApprover:
         cwd: str,
     ) -> ApprovalResult:
         """Show interactive prompt with timeout."""
-        print(f"\n{'=' * 60}")
-        print("SECURITY WARNING: Flagged command detected")
-        print(f"Severity: {severity.upper()}")
+        severity_style = "bold red" if severity.lower() in ("critical", "high") else "yellow"
+        body = Text()
+        body.append("Severity: ").append(severity.upper(), style=severity_style).append("\n")
         if description:
-            print(f"Reason: {description}")
+            body.append(f"Reason: {description}\n")
         if pattern_id:
-            print(f"Pattern: {pattern_id}")
-        print(f"{'=' * 60}")
-        print(f"Command: {command}")
-        print(f"{'=' * 60}")
-        print("Approve? [o]nce / [s]ession / [a]lways / [d]eny / [v]iew")
+            body.append(f"Pattern: {pattern_id}\n")
+        body.append("\nCommand:\n").append(command, style="bold")
+        _console.print()
+        _console.print(
+            Panel(
+                body,
+                title="[bold red]SECURITY WARNING[/bold red]: Flagged command detected",
+                border_style="red",
+            )
+        )
+        _console.print("Approve? [o]nce / [s]ession / [a]lways / [d]eny / [v]iew", markup=False)
 
         # Simple input with timeout using threading
         result: list[str] = []
@@ -189,7 +203,9 @@ class HumanApprover:
 
         if not result:
             # Timeout - fail closed
-            print(f"\nTimeout ({self.timeout_seconds}s). Denying command.")
+            _console.print(
+                f"\n[yellow]Timeout ({self.timeout_seconds}s). Denying command.[/yellow]"
+            )
             return ApprovalResult(
                 approved=False,
                 choice=ApprovalChoice.DENY,
@@ -228,7 +244,7 @@ class HumanApprover:
                 pattern_id=pattern_id,
             )
         elif choice_str in ("v", "view"):
-            print(f"\nFull command:\n{command}\n")
+            _console.print(f"\nFull command:\n{command}\n", markup=False)
             # Re-prompt
             return self._interactive_prompt(command, pattern_id, description, severity, cwd)
         else:

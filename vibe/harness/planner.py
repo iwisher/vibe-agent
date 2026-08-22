@@ -189,12 +189,60 @@ class HybridPlanner:
             selected_tool_names=[t.get("name", "") for t in request.available_tools],
             selected_skills=request.available_skills,
             selected_mcps=request.available_mcps,
-            system_prompt_append="",
+            system_prompt_append=self._build_memory_hint(request),
             reasoning="Safety fallback: returning all tools (no planner match)",
             planner_tier="fallback",
         )
         self._cache_result(request, fallback_result)
         return fallback_result
+
+    def _build_memory_hint(self, request: PlanRequest) -> str:
+        """Assemble the memory/history block appended on every planner tier.
+
+        Combines (a) a "what worked before" hint from similar *successful*
+        past sessions in the trace store and (b) the wiki hint injected by
+        QueryLoop.run() via PlanRequest.wiki_hint. Never raises — memory must
+        not break planning.
+        """
+        parts: list[str] = []
+        try:
+            if self.trace_store is not None:
+                similar = self.trace_store.get_similar_sessions(request.query, limit=3) or []
+                # Only surface sessions that actually succeeded
+                similar = [s for s in similar if isinstance(s, dict) and s.get("success")][:3]
+                if similar:
+                    lines = ["## Historical Context"]
+                    models = ", ".join(
+                        sorted({s.get("model", "unknown") for s in similar if s.get("model")})
+                    )
+                    if models:
+                        lines.append(
+                            "Previously successful sessions on similar topics used models "
+                            f"such as: {models}."
+                        )
+                    snippets = []
+                    get_snippet = getattr(self.trace_store, "get_session_snippet", None)
+                    if callable(get_snippet):
+                        for s in similar:
+                            try:
+                                snippet = get_snippet(s.get("id"), max_chars=200)
+                            except Exception:
+                                snippet = None
+                            if snippet:
+                                snippets.append(f"- {snippet}")
+                    if snippets:
+                        lines.append("What worked before:")
+                        lines.extend(snippets)
+                    parts.append("\n".join(lines))
+        except Exception:
+            pass  # Trace-store failures must not break planning
+
+        # v4: Wiki hint comes from PlanRequest.wiki_hint (injected by QueryLoop.run())
+        # PageIndex retrieval happens BEFORE planner in async context, NOT here.
+        if request.wiki_hint:
+            parts.append(request.wiki_hint.strip())
+
+        return "\n\n".join(p for p in parts if p)
 
     def _keyword_plan(self, request: PlanRequest) -> Optional[PlanResult]:
         """Tier 1: Keyword-based planning (existing logic)."""
@@ -218,25 +266,10 @@ class HybridPlanner:
             for mcp in selected_mcps:
                 prompt_parts.append(f"- {mcp.get('name', 'unknown')}: {mcp.get('description', '')}")
 
-        # Memory augmentation
-        memory_hint = ""
-        if self.trace_store is not None:
-            similar = self.trace_store.get_similar_sessions(request.query, limit=3)
-            if similar:
-                models = ", ".join({s.get("model", "unknown") for s in similar if s.get("model")})
-                memory_hint = (
-                    "\n\n## Historical Context\n"
-                    "Previously successful sessions on similar topics used models such as: "
-                    f"{models}."
-                )
-
-        # v4: Wiki hint comes from PlanRequest.wiki_hint (injected by QueryLoop.run())
-        # PageIndex retrieval happens BEFORE planner in async context, NOT here.
-        if request.wiki_hint:
-            memory_hint += request.wiki_hint
-
+        # Memory augmentation (trace store history + wiki hint) — shared across tiers
+        memory_hint = self._build_memory_hint(request)
         if memory_hint:
-            prompt_parts.append(memory_hint.strip())
+            prompt_parts.append(memory_hint)
 
         system_prompt_append = "\n\n".join(prompt_parts)
 
@@ -295,7 +328,7 @@ class HybridPlanner:
             selected_tool_names=[t.get("name", "") for t in matched],
             selected_skills=selected_skills,
             selected_mcps=selected_mcps,
-            system_prompt_append="",
+            system_prompt_append=self._build_memory_hint(request),
             reasoning=f"Embedding match (max similarity: {max_similarity:.3f})",
         )
         result._max_similarity = max_similarity  # type: ignore
@@ -341,7 +374,7 @@ Only select tools that are clearly relevant. Return empty array if none match.""
                         selected_tool_names=[t.get("name", "") for t in selected_tools],
                         selected_skills=[],
                         selected_mcps=[],
-                        system_prompt_append="",
+                        system_prompt_append=self._build_memory_hint(request),
                         reasoning="LLM router selected tools",
                     )
         except Exception:

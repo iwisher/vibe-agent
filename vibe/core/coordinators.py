@@ -10,6 +10,7 @@ This separation allows QueryLoop.run() to remain a thin orchestrator
 (< 40 lines) and makes each component independently testable.
 """
 
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
@@ -92,6 +93,8 @@ class ToolExecutor:
 
         results = []
         for call in tool_calls:
+            start = time.monotonic()
+            prev_len = len(results)
             try:
                 if isinstance(call, dict):
                     call_name = extract_tool_call_name(call)
@@ -134,6 +137,14 @@ class ToolExecutor:
                 results.append(result)
             except Exception as e:
                 results.append(ToolResult(success=False, content=None, error=str(e)))
+            finally:
+                # Record per-call duration for CLI rendering. Only stamp the
+                # result appended by this iteration.
+                if len(results) > prev_len:
+                    try:
+                        results[-1].metadata.setdefault("duration_s", time.monotonic() - start)
+                    except AttributeError:
+                        pass
         return results
 
 

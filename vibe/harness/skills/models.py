@@ -16,6 +16,7 @@ class SkillStep(BaseModel):
     id: str
     description: str
     script: str | None = None
+    interpreter: str | None = None
     tool: str
     command: str
     condition: str | None = None
@@ -43,6 +44,9 @@ class Skill(BaseModel):
     examples: list[dict] = Field(default_factory=list)
     variables: list[dict] = Field(default_factory=list)
     metadata: dict = Field(default_factory=dict)
+    # Directory the skill was loaded from (set by the loader, not the parser).
+    # Required to resolve deterministic script steps (scripts/... paths).
+    skill_dir: str | None = None
 
     @model_validator(mode="after")
     def check_unique_step_ids(self):

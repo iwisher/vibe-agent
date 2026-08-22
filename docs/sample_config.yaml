@@ -126,3 +126,23 @@ skill_maker:
     - session
     - telemetry
     - system
+
+# 12. Tripartite Memory (enabled by default; stdlib + SQLite only unless
+# vector_search_enabled is flipped on, which needs the [memory] extra)
+memory:
+  enabled: true
+  wiki:
+    base_path: "~/.vibe/wiki"
+    auto_extract: true                 # Extract knowledge (incl. lessons) after every session
+    novelty_threshold: 0.5
+    confidence_threshold: 0.8
+    default_ttl_days: 30
+  pageindex:
+    index_path: "~/.vibe/memory/index.json"
+    routing_timeout_seconds: 2.0
+    routing_min_confidence: 0.3        # Drop routed nodes below this confidence
+    vector_search_enabled: false
+  reflection:
+    enabled: true                      # Distill reusable lessons after every session
+    max_lessons: 3                     # Max lessons written per session
+    min_transcript_chars: 400          # Skip trivial sessions shorter than this

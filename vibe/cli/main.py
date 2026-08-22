@@ -8,10 +8,20 @@ from typing import Any
 
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
 from vibe.cli.input_buffer import get_patch_stdout, get_prompt_session, prompt_input
+from vibe.cli.rendering import (
+    format_metrics_line,
+    format_tool_result_text,
+    get_session_cost,
+    render_error,
+    render_response,
+    render_tool_result_from_metadata,
+    safe_print_chunk,
+)
 from vibe.cli.skill_commands import app as skill_app
 from vibe.cli.tui import VibeTUI
 from vibe.core.config import VibeConfig
@@ -172,53 +182,42 @@ async def interactive_mode(controller: Any) -> None:
                     if result.is_stream_chunk:
                         streamed_any = True
                         if result.response:
-                            console.print(result.response, end="")
+                            safe_print_chunk(console, result.response)
                         if (verbose_mode or show_reasoning) and result.reasoning_content:
-                            console.print(f"[dim]{result.reasoning_content}[/dim]", end="")
+                            safe_print_chunk(console, result.reasoning_content, style="dim")
                         continue
 
                     if result.error:
-                        error_msg = str(result.error)
-                        if getattr(result, "actionable_hint", None):
-                            error_msg += f"\n\n[bold]Hint:[/bold] {result.actionable_hint}"
-                        if getattr(result, "model_used", None):
-                            error_msg += f"\n\n[bold]Model Used:[/bold] {result.model_used}"
-                        console.print(Panel(error_msg, title="Error", border_style="red"))
+                        render_error(
+                            console,
+                            message=str(result.error),
+                            hint=getattr(result, "actionable_hint", None),
+                            model=getattr(result, "model_used", None),
+                        )
                     elif result.context_truncated:
                         console.print("[dim](context compacted)[/dim]")
                     else:
                         if not streamed_any:
                             if (verbose_mode or show_reasoning) and result.reasoning_content:
-                                console.print(f"[dim]{result.reasoning_content}[/dim]", end="")
-                            console.print(result.response, end="")
+                                safe_print_chunk(console, result.reasoning_content, style="dim")
+                                console.print()
+                            render_response(console, result.response)
                         else:
                             console.print()
 
                     for tr in result.tool_results:
-                        style = "green" if tr.success else "red"
-                        title = "Tool Result" if tr.success else "Tool Error"
-                        panel_content = tr.content if tr.content else (tr.error or "")
-                        console.print(Panel(panel_content, title=title, border_style=style))
+                        render_tool_result_from_metadata(console, tr)
 
                     if result.metrics:
                         m = result.metrics
                         if not streamed_any:
                             console.print()
-
-                        reasoning_part = ""
-                        if getattr(m, "reasoning_tokens", 0) > 0:
-                            reasoning_part = f" ({m.reasoning_tokens} reasoning)"
-
-                        metrics_str = (
-                            f"{m.total_tokens} tokens{reasoning_part} | "
-                            f"{m.elapsed_seconds:.1f}s | "
-                            f"{m.tokens_per_second:.1f} tok/s"
+                        metrics_str = format_metrics_line(
+                            m,
+                            model_used=getattr(result, "model_used", None),
+                            current_model=query_loop.llm.model,
+                            session_cost=get_session_cost(query_loop),
                         )
-                        if (
-                            getattr(result, "model_used", None)
-                            and result.model_used != query_loop.llm.model
-                        ):
-                            metrics_str += f" (via fallback model: {result.model_used})"
                         console.print(f"[dim]{metrics_str}[/dim]")
             finally:
                 if status_spinner is not None:
@@ -499,23 +498,16 @@ async def interactive_mode_tui(controller: SessionController) -> None:
                     tui.append_log("(context compacted)")
 
                 for tr in result.tool_results:
-                    status = "OK" if tr.success else "ERR"
-                    content = tr.content if tr.content else (tr.error or "")
-                    tui.append_log(f"{prefix}[Tool {status}] {content}")
+                    tui.append_log(f"{prefix}{format_tool_result_text(tr)}")
 
                 if result.metrics:
                     m = result.metrics
-                    reasoning_part = ""
-                    if getattr(m, "reasoning_tokens", 0) > 0:
-                        reasoning_part = f" ({m.reasoning_tokens} reasoning)"
-                    metrics_str = (
-                        f"{m.total_tokens} tokens{reasoning_part} | "
-                        f"{m.elapsed_seconds:.1f}s | "
-                        f"{m.tokens_per_second:.1f} tok/s"
+                    metrics_str = format_metrics_line(
+                        m,
+                        model_used=getattr(result, "model_used", None),
+                        current_model=controller.main_loop.llm.model,
+                        session_cost=get_session_cost(controller.main_loop),
                     )
-                    model_used = getattr(result, "model_used", None)
-                    if model_used and model_used != controller.main_loop.llm.model:
-                        metrics_str += f" (via fallback model: {model_used})"
                     tui.append_log(f"{prefix}{metrics_str}")
 
                     # Update live status in input tile title
@@ -622,10 +614,10 @@ async def _btw_wrapper(controller: SessionController, query: str, tui: VibeTUI) 
 async def _output_consumer(controller: SessionController, pt_active: bool = False) -> None:
     """Consume output events and print them with source labels."""
     streamed_sources = set()
-    from rich.panel import Panel
     from rich.rule import Rule
 
     prompt_str = "[bold bright_blue]❯ [/bold bright_blue]"
+    status_spinner = None
 
     while True:
         try:
@@ -644,7 +636,25 @@ async def _output_consumer(controller: SessionController, pt_active: bool = Fals
             prefix = ""
 
         if result.is_status:
-            continue  # Skip status messages for cleaner output
+            # Surface status as a transient line; a spinner mirrors the
+            # legacy branch when no prompt_toolkit prompt is active.
+            status_msg = result.status_message or "Working..."
+            if pt_active:
+                console.print(f"{prefix}[dim]  → {escape(status_msg)}[/dim]")
+            else:
+                if status_spinner is None:
+                    status_spinner = console.status(
+                        f"[dim]{escape(status_msg)}[/dim]", spinner="dots"
+                    )
+                    status_spinner.start()
+                else:
+                    status_spinner.update(f"[dim]{escape(status_msg)}[/dim]")
+            continue
+
+        # Any non-status output replaces the transient status display.
+        if status_spinner is not None:
+            status_spinner.stop()
+            status_spinner = None
 
         # Check if we should print the turn divider and header
         if source not in controller.started_sources:
@@ -675,10 +685,10 @@ async def _output_consumer(controller: SessionController, pt_active: bool = Fals
                 controller.prompt_shown = False
 
             if result.response:
-                console.print(result.response, end="")
+                safe_print_chunk(console, result.response)
                 streamed_sources.add(source)
             if result.reasoning_content:
-                console.print(f"[dim]{result.reasoning_content}[/dim]", end="")
+                safe_print_chunk(console, result.reasoning_content, style="dim")
                 streamed_sources.add(source)
             continue
 
@@ -690,26 +700,36 @@ async def _output_consumer(controller: SessionController, pt_active: bool = Fals
             if source in streamed_sources:
                 console.print()
                 streamed_sources.remove(source)
-            console.print(f"{prefix}[red]Error: {result.error}[/red]")
+            if prefix:
+                console.print(prefix)
+            render_error(
+                console,
+                message=str(result.error),
+                hint=getattr(result, "actionable_hint", None),
+                model=getattr(result, "model_used", None),
+            )
         elif result.response:
             if source in streamed_sources:
+                # Response was already streamed raw; just end the line
+                # rather than re-printing a duplicate copy.
                 console.print()
                 streamed_sources.remove(source)
             else:
                 if controller.prompt_shown and not pt_active:
                     console.print("\r\033[K", end="")
                     controller.prompt_shown = False
-                console.print(f"{prefix}{result.response}")
+                if prefix:
+                    console.print(prefix)
+                render_response(console, result.response)
 
         # Handle tool results
         for tr in result.tool_results:
             if controller.prompt_shown and not pt_active:
                 console.print("\r\033[K", end="")
                 controller.prompt_shown = False
-            style = "green" if tr.success else "red"
-            title = f"{prefix}Tool Result" if tr.success else f"{prefix}Tool Error"
-            panel_content = tr.content if tr.content else (tr.error or "")
-            console.print(Panel(panel_content, title=title, border_style=style))
+            if prefix:
+                console.print(prefix)
+            render_tool_result_from_metadata(console, tr)
 
         # Handle metrics
         if result.metrics:
@@ -717,27 +737,19 @@ async def _output_consumer(controller: SessionController, pt_active: bool = Fals
                 console.print("\r\033[K", end="")
                 controller.prompt_shown = False
             m = result.metrics
-            reasoning_part = ""
-            if getattr(m, "reasoning_tokens", 0) > 0:
-                reasoning_part = f" ({m.reasoning_tokens} reasoning)"
-            metrics_str = (
-                f"{m.total_tokens} tokens{reasoning_part} | "
-                f"{m.elapsed_seconds:.1f}s | "
-                f"{m.tokens_per_second:.1f} tok/s"
-            )
 
-            current_model = None
+            current_loop = None
             if source == "main":
-                current_model = controller.main_loop.llm.model
+                current_loop = controller.main_loop
             elif source.startswith("bg_") and source in controller.bg_agents:
-                current_model = controller.bg_agents[source].main_loop.llm.model
+                current_loop = controller.bg_agents[source].main_loop
 
-            if (
-                getattr(result, "model_used", None)
-                and current_model
-                and result.model_used != current_model
-            ):
-                metrics_str += f" (via fallback model: {result.model_used})"
+            metrics_str = format_metrics_line(
+                m,
+                model_used=getattr(result, "model_used", None),
+                current_model=current_loop.llm.model if current_loop else None,
+                session_cost=get_session_cost(current_loop) if current_loop else None,
+            )
             console.print(f"[dim]{prefix}{metrics_str}[/dim]")
             console.print()  # Spacer line
 
@@ -746,6 +758,9 @@ async def _output_consumer(controller: SessionController, pt_active: bool = Fals
             if not pt_active:
                 console.print(prompt_str, end="")
             controller.prompt_shown = True
+
+    if status_spinner is not None:
+        status_spinner.stop()
 
 
 async def single_query_mode(query_loop: QueryLoop, query: str) -> None:
@@ -774,58 +789,54 @@ async def single_query_mode(query_loop: QueryLoop, query: str) -> None:
             if result.is_stream_chunk:
                 streamed_any = True
                 if result.response:
-                    console.print(result.response, end="")
+                    safe_print_chunk(console, result.response)
                 if show_reasoning and result.reasoning_content:
-                    console.print(f"[dim]{result.reasoning_content}[/dim]", end="")
+                    safe_print_chunk(console, result.reasoning_content, style="dim")
                 continue
 
             if result.error:
-                error_msg = str(result.error)
-                if getattr(result, "actionable_hint", None):
-                    error_msg += f"\n\n[bold]Hint:[/bold] {result.actionable_hint}"
-                if getattr(result, "model_used", None):
-                    error_msg += f"\n\n[bold]Model Used:[/bold] {result.model_used}"
-                console.print(Panel(error_msg, title="Error", border_style="red"))
+                render_error(
+                    console,
+                    message=str(result.error),
+                    hint=getattr(result, "actionable_hint", None),
+                    model=getattr(result, "model_used", None),
+                )
             elif result.context_truncated:
                 console.print("[dim](context compacted)[/dim]")
             else:
                 if not streamed_any:
                     if show_reasoning and result.reasoning_content:
-                        console.print(f"[dim]{result.reasoning_content}[/dim]", end="")
-                    console.print(result.response, end="")
+                        safe_print_chunk(console, result.reasoning_content, style="dim")
+                        console.print()
+                    render_response(console, result.response)
                 else:
                     console.print()
 
             for tr in result.tool_results:
-                style = "green" if tr.success else "red"
-                title = "Tool Result" if tr.success else "Tool Error"
-                panel_content = tr.content if tr.content else (tr.error or "")
-                console.print(Panel(panel_content, title=title, border_style=style))
+                render_tool_result_from_metadata(console, tr)
 
             if result.metrics:
                 m = result.metrics
                 # Ensure metrics start on a new line
                 if not streamed_any:
                     console.print()
-
-                reasoning_part = ""
-                if getattr(m, "reasoning_tokens", 0) > 0:
-                    reasoning_part = f" ({m.reasoning_tokens} reasoning)"
-
-                metrics_str = (
-                    f"{m.total_tokens} tokens{reasoning_part} | "
-                    f"{m.elapsed_seconds:.1f}s | "
-                    f"{m.tokens_per_second:.1f} tok/s"
+                metrics_str = format_metrics_line(
+                    m,
+                    model_used=getattr(result, "model_used", None),
+                    current_model=query_loop.llm.model,
+                    session_cost=get_session_cost(query_loop),
                 )
-                if (
-                    getattr(result, "model_used", None)
-                    and result.model_used != query_loop.llm.model
-                ):
-                    metrics_str += f" (via fallback model: {result.model_used})"
                 console.print(f"[dim]{metrics_str}[/dim]")
     finally:
         if status_spinner is not None:
             status_spinner.stop()
+        # Settle post-session learning tasks (wiki extraction, trajectory
+        # reflection) before exit: close() awaits them with a bounded grace
+        # period instead of letting process exit kill them mid-write.
+        try:
+            await query_loop.close()
+        except Exception:
+            pass
     console.print()
 
 

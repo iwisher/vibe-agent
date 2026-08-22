@@ -188,6 +188,7 @@ def test_cli_single_query_streaming_output():
         )
 
     mock_loop.run = mock_run
+    mock_loop.close = AsyncMock()
 
     call_order = []
 
@@ -244,3 +245,24 @@ def test_cli_single_query_streaming_output():
     assert chunk2_prints, f"Expected print call containing chunk2, got call_order: {call_order}"
     assert stop_idx < chunk1_prints[0]
     assert stop_idx < chunk2_prints[0]
+
+
+def test_cli_single_query_awaits_loop_close():
+    """single_query_mode must await loop.close() so post-session learning tasks
+    (wiki extraction, trajectory reflection) complete before process exit."""
+    mock_loop = MagicMock()
+    mock_loop.config = MagicMock()
+    mock_loop.config.llm.show_reasoning = False
+
+    async def mock_run(*args, **kwargs):
+        yield QueryResult(response="ok")
+
+    mock_loop.run = mock_run
+    mock_loop.close = AsyncMock()
+
+    from vibe.cli.main import console, single_query_mode
+
+    with console.capture():
+        asyncio.run(single_query_mode(mock_loop, "hello"))
+
+    mock_loop.close.assert_awaited_once()

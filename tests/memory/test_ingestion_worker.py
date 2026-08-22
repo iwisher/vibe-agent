@@ -61,7 +61,12 @@ async def test_extract_from_text_happy_path():
 
     fake_pageindex = MagicMock()
     fake_pageindex.route = AsyncMock(return_value=[])
-    fake_pageindex.add_page = AsyncMock()
+    root_node = MagicMock()
+    root_node.node_id = "root"
+    root_node.file_path = None
+    root_node.sub_nodes = []
+    fake_pageindex.load = MagicMock(return_value=root_node)
+    fake_pageindex.add_node = MagicMock()
 
     extractor = KnowledgeExtractor(
         llm_client=fake_llm,
@@ -79,7 +84,14 @@ async def test_extract_from_text_happy_path():
     assert len(pages) == 1
     assert pages[0].title == "Clean Energy"
     fake_wiki.create_page.assert_called_once()
-    fake_pageindex.add_page.assert_called_once_with(created_page)
+    # Accepted pages are indexed via index_wiki_page() → PageIndex.add_node()
+    fake_pageindex.add_node.assert_called_once_with(
+        parent_id="root",
+        title="Clean Energy",
+        description="Wiki page: Clean Energy. Tags: energy, environment",
+        file_path="/tmp/clean-energy.md",
+        tags=["energy", "environment"],
+    )
 
 
 @pytest.mark.asyncio
@@ -120,7 +132,12 @@ async def test_extract_from_text_updates_existing():
 
     fake_pageindex = MagicMock()
     fake_pageindex.route = AsyncMock(return_value=[])
-    fake_pageindex.add_page = AsyncMock()
+    root_node = MagicMock()
+    root_node.node_id = "root"
+    root_node.file_path = None
+    root_node.sub_nodes = []
+    fake_pageindex.load = MagicMock(return_value=root_node)
+    fake_pageindex.add_node = MagicMock()
 
     extractor = KnowledgeExtractor(
         llm_client=fake_llm,

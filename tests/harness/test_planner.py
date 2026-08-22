@@ -282,3 +282,75 @@ class TestHybridPlanner:
 
         assert result.selected_tool_names == ["tool1"]
         assert result.planner_tier == "keyword"
+
+
+class TestMemoryHintAllTiers:
+    """The memory hint (trace-store history + snippets) must appear on every
+    planner tier: keyword, embedding, LLM, and fallback."""
+
+    class MockTraceStore:
+        def get_similar_sessions(self, query, limit=3):
+            return [{"id": "sess-1", "model": "gpt-4", "success": True}]
+
+        def get_session_snippet(self, session_id, max_chars=200):
+            return "Pinned the base image by digest"
+
+    def _assert_hint(self, result):
+        assert result.system_prompt_append
+        assert "Historical Context" in result.system_prompt_append
+        assert "What worked before:" in result.system_prompt_append
+        assert "Pinned the base image by digest" in result.system_prompt_append
+
+    def test_keyword_tier_includes_memory_hint(self):
+        planner = HybridPlanner(trace_store=self.MockTraceStore())
+        tools = [{"name": "read_file", "description": "Read a file from disk"}]
+        result = planner.plan(PlanRequest(query="read the config file", available_tools=tools))
+        assert result.planner_tier == "keyword"
+        self._assert_hint(result)
+
+    def test_embedding_tier_includes_memory_hint(self, monkeypatch):
+        planner = HybridPlanner(trace_store=self.MockTraceStore())
+
+        def fake_embedding(text):
+            # Medium similarity (0.75 < sim < 0.8) → tier "embedding"
+            return [1.0, 0.0] if text.startswith("unusual query") else [0.78, 0.63]
+
+        monkeypatch.setattr(planner, "_get_embedding", fake_embedding)
+        tools = [{"name": "alpha_beta", "description": "gamma delta"}]
+        result = planner.plan(PlanRequest(query="unusual query zzz", available_tools=tools))
+        assert result.planner_tier == "embedding"
+        self._assert_hint(result)
+
+    def test_llm_tier_includes_memory_hint(self, monkeypatch):
+        from unittest.mock import MagicMock
+
+        llm = MagicMock()
+        llm.complete = MagicMock(return_value='{"selected_tools": ["alpha_beta"]}')
+        planner = HybridPlanner(llm_client=llm, trace_store=self.MockTraceStore())
+        # No keyword overlap, embedding tier disabled
+        monkeypatch.setattr(planner, "_get_embedding", lambda text: [])
+        tools = [{"name": "alpha_beta", "description": "gamma delta"}]
+        result = planner.plan(PlanRequest(query="zzz qqq vvv", available_tools=tools))
+        assert result.planner_tier == "llm"
+        self._assert_hint(result)
+
+    def test_fallback_tier_includes_memory_hint(self, monkeypatch):
+        planner = HybridPlanner(trace_store=self.MockTraceStore())
+        monkeypatch.setattr(planner, "_get_embedding", lambda text: [])
+        tools = [{"name": "alpha_beta", "description": "gamma delta"}]
+        result = planner.plan(PlanRequest(query="zzz qqq vvv", available_tools=tools))
+        assert result.planner_tier == "fallback"
+        self._assert_hint(result)
+
+    def test_memory_hint_never_breaks_planning(self):
+        class ExplodingStore:
+            def get_similar_sessions(self, query, limit=3):
+                raise RuntimeError("boom")
+
+            def get_session_snippet(self, session_id, max_chars=200):
+                raise RuntimeError("boom")
+
+        planner = HybridPlanner(trace_store=ExplodingStore())
+        tools = [{"name": "read_file", "description": "Read a file from disk"}]
+        result = planner.plan(PlanRequest(query="read the config file", available_tools=tools))
+        assert result.planner_tier == "keyword"

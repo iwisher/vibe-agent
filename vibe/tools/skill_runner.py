@@ -1,6 +1,9 @@
 """SkillRunnerTool — execute TOML skills via ToolSystem."""
 
+import json
 import re
+import shlex
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -120,14 +123,25 @@ class SkillRunnerTool(Tool):
                     ),
                 )
 
-            command = self._substitute_vars(step.command, variables)
-
-            # Detect if shell mode is needed
-            use_shell = self._needs_shell(command)
+            if getattr(step, "script", None):
+                # Deterministic script step: the runner builds a fully-quoted argv
+                # itself; step.command is only the argument template. The result
+                # contains no unquoted shell metacharacters, so BashTool runs it in
+                # exec mode without requiring shell approval.
+                command, error = self._build_script_argv(skill, step, variables)
+                if error is not None:
+                    return ToolResult(success=False, content=None, error=error)
+                tool_name = "bash"
+                use_shell = False
+            else:
+                command = self._substitute_vars(step.command, variables)
+                tool_name = step.tool
+                # Detect if shell mode is needed
+                use_shell = self._needs_shell(command)
 
             try:
                 result = await self._tool_system.execute_tool(
-                    step.tool,
+                    tool_name,
                     command=command,
                     use_shell=use_shell,
                 )
@@ -166,27 +180,90 @@ class SkillRunnerTool(Tool):
             error=None if all_success else step_results[-1].get("error"),
         )
 
+    def _build_script_argv(
+        self, skill: Any, step: Any, variables: dict[str, Any]
+    ) -> tuple[str | None, str | None]:
+        """Resolve and render a deterministic script step into a safe argv string.
+
+        The script must live under the skill's scripts/ directory. Every substituted
+        variable value is shlex.quote()d, and the interpreter and script path are
+        quoted as well, so the resulting argv contains no unquoted shell
+        metacharacters and runs via BashTool in exec mode.
+
+        Returns (argv_string, None) on success or (None, error_message).
+        """
+        skill_dir = getattr(skill, "skill_dir", None)
+        if not skill_dir:
+            return None, (
+                f"Step '{step.id}' declares script '{step.script}' but skill "
+                f"'{getattr(skill, 'id', '?')}' has no skill_dir; script steps require "
+                "the skill to be loaded from a directory."
+            )
+
+        # Jail: the resolved script path must stay under <skill_dir>/scripts.
+        base = Path(skill_dir).resolve()
+        scripts_root = (base / "scripts").resolve()
+        script_path = (base / step.script).resolve()
+        if script_path == scripts_root or scripts_root not in script_path.parents:
+            return None, (
+                f"Step '{step.id}': script '{step.script}' is outside the skill's "
+                "scripts/ directory (use a relative path under scripts/)."
+            )
+        if not script_path.is_file():
+            return None, f"Step '{step.id}': script not found: {script_path}"
+
+        interpreter = getattr(step, "interpreter", None)
+        if not interpreter:
+            suffix = script_path.suffix.lower()
+            if suffix == ".py":
+                interpreter = sys.executable
+            elif suffix == ".sh":
+                interpreter = "bash"
+            else:
+                return None, (
+                    f"Step '{step.id}': cannot infer interpreter for '{step.script}'; "
+                    'set interpreter = "..." on the step.'
+                )
+
+        try:
+            args = self._substitute_vars(step.command, variables, quote=True).strip()
+        except ValueError as e:
+            return None, f"Step '{step.id}': {e}"
+
+        parts = [shlex.quote(interpreter), shlex.quote(str(script_path))]
+        if args:
+            parts.append(args)
+        return " ".join(parts), None
+
     @staticmethod
-    def _substitute_vars(command: str, variables: dict[str, Any]) -> str:
+    def _substitute_vars(command: str, variables: dict[str, Any], quote: bool = False) -> str:
         """Substitute {{var}} and ${VAR} / ${VAR:-default} patterns.
 
         Only substitutes keys present in the variables dict.
         Unresolved {{var}} placeholders raise ValueError.
+        When quote=True, substituted values are shlex.quote()d so they arrive at the
+        process as single inert argv tokens (used for script-step arguments).
         """
+
+        def render(value: Any) -> str:
+            text = str(value)
+            return shlex.quote(text) if quote else text
+
         result = command
 
         # Jinja2-style {{var}} with optional whitespace (spacing-insensitive)
         for key, value in variables.items():
             pattern = r"\{\{\s*" + re.escape(key) + r"\s*\}\}"
-            result = re.sub(pattern, str(value), result)
+            result = re.sub(pattern, lambda m: render(value), result)
 
         # Shell-style ${VAR} and ${VAR:-default} — only for declared vars
         def replace_env(match: re.Match) -> str:
             var_name = match.group(1)
             default = match.group(2)
             if var_name in variables:
-                return str(variables[var_name])
+                return render(variables[var_name])
             if default is not None:
+                # Template-author-provided default: static content, not quoted.
                 return default
             # Not in variables and no default — leave as-is (may be shell env var)
             return match.group(0)
@@ -243,4 +320,36 @@ class SkillRunnerTool(Tool):
             if not path.exists():
                 return False
 
+        json_keys = getattr(verification, "json_has_keys", None)
+        if json_keys and isinstance(json_keys, (list, tuple)):
+            data = SkillRunnerTool._extract_json_object(str(result.content or ""))
+            if not isinstance(data, dict):
+                return False
+            if any(key not in data for key in json_keys):
+                return False
+
         return True
+
+    @staticmethod
+    def _extract_json_object(text: str) -> Any:
+        """Parse a JSON object from tool output.
+
+        BashTool may append a "[stderr]" section to the content, so if a full
+        parse fails, fall back to decoding from the first '{' in the output.
+        Returns None when no JSON value can be decoded.
+        """
+        text = text.strip()
+        if not text:
+            return None
+        try:
+            return json.loads(text)
+        except ValueError:
+            pass
+        start = text.find("{")
+        if start < 0:
+            return None
+        try:
+            obj, _ = json.JSONDecoder().raw_decode(text[start:])
+            return obj
+        except ValueError:
+            return None

@@ -113,11 +113,65 @@ async def test_extract_from_session_skips_system_and_tool(fake_llm, fake_wiki):
     items = await extractor.extract_from_session(messages, "sess-002")
     # Should still succeed because user message is present
     assert len(items) == 1
-    # Verify that system/tool messages were not included in transcript
+    # Verify that system messages were not included in transcript, while tool
+    # messages are included as compact one-line summaries
     call_args = fake_llm.complete.await_args
     prompt = call_args[0][0]
     assert "You are a helpful assistant" not in prompt
-    assert "'result': 'ok'" not in prompt
+    assert "[1] tool result: {'result': 'ok'}" in prompt
+
+
+@pytest.mark.asyncio
+async def test_extract_from_session_tool_summary_uses_metadata_name(fake_llm, fake_wiki):
+    """Tool summaries pick up metadata.tool_name and truncate long output."""
+
+    @dataclass
+    class ToolMessage:
+        role: str
+        content: str
+        metadata: dict | None = None
+
+    extractor = KnowledgeExtractor(llm_client=fake_llm, wiki=fake_wiki)
+    long_output = "x" * 500
+    messages = [
+        FakeMessage(role="user", content="Search for flights"),
+        ToolMessage(role="tool", content=long_output, metadata={"tool_name": "web_search"}),
+        FakeMessage(role="assistant", content="Found 3 flights."),
+    ]
+    items = await extractor.extract_from_session(messages, "sess-002b")
+    assert len(items) == 1
+    prompt = fake_llm.complete.await_args[0][0]
+    assert "tool web_search:" in prompt
+    # Tool output truncated to the 300-char summary bound (plus ellipsis)
+    assert "x" * 301 not in prompt
+    assert "x" * 299 in prompt
+
+
+@pytest.mark.asyncio
+async def test_extraction_prompt_requests_lessons():
+    """The extraction prompt must ask for LESSON entries tagged 'lesson'."""
+    from vibe.memory.extraction import _EXTRACTION_PROMPT_TEMPLATE
+
+    assert "lesson" in _EXTRACTION_PROMPT_TEMPLATE.lower()
+    assert "LESSON" in _EXTRACTION_PROMPT_TEMPLATE
+    # JSON-array contract and example format preserved
+    assert "Respond with ONLY a JSON array" in _EXTRACTION_PROMPT_TEMPLATE
+    prompt = _EXTRACTION_PROMPT_TEMPLATE.format(transcript="[0] user: hi")
+    assert "[0] user: hi" in prompt
+
+
+@pytest.mark.asyncio
+async def test_extract_from_session_transcript_bounded(fake_llm, fake_wiki):
+    """Total transcript size is bounded regardless of message count."""
+    from vibe.memory.extraction import _EXTRACTION_PROMPT_TEMPLATE, _MAX_TRANSCRIPT_CHARS
+
+    extractor = KnowledgeExtractor(llm_client=fake_llm, wiki=fake_wiki)
+    messages = [FakeMessage(role="user", content=f"message {i} " + "y" * 2000) for i in range(50)]
+    await extractor.extract_from_session(messages, "sess-002c")
+    prompt = fake_llm.complete.await_args[0][0]
+    assert "[transcript truncated]" in prompt
+    # Prompt overhead (template) plus the bounded transcript
+    assert len(prompt) < _MAX_TRANSCRIPT_CHARS + len(_EXTRACTION_PROMPT_TEMPLATE) + 100
 
 
 @pytest.mark.asyncio
@@ -125,10 +179,11 @@ async def test_extract_from_session_empty_transcript(fake_llm, fake_wiki):
     extractor = KnowledgeExtractor(llm_client=fake_llm, wiki=fake_wiki)
     messages = [
         FakeMessage(role="system", content="System prompt"),
-        FakeMessage(role="tool", content="Tool result"),
+        FakeMessage(role="user", content="   "),
     ]
     items = await extractor.extract_from_session(messages, "sess-003")
     assert items == []
+    fake_llm.complete.assert_not_called()
 
 
 @pytest.mark.asyncio

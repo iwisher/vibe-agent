@@ -241,3 +241,143 @@ async def test_close_cancels_pending_rlm_task(fake_llm, fake_tools, fake_config)
     await ql.close()
     if ql._rlm_trigger_task:
         assert ql._rlm_trigger_task.done()
+
+
+# ---------------------------------------------------------------------------
+# _build_wiki_hint: confidence gate, injectable filter, bounded snippets
+# ---------------------------------------------------------------------------
+
+
+class _Node:
+    """Minimal PageIndex node stand-in for _build_wiki_hint tests."""
+
+    def __init__(self, confidence: float, file_path: str):
+        self.confidence = confidence
+        self.file_path = file_path
+
+
+@pytest.fixture
+def real_wiki(tmp_path):
+    from vibe.memory.wiki import LLMWiki
+
+    return LLMWiki(base_path=tmp_path / "wiki")
+
+
+def _hint_loop(fake_llm, fake_tools, nodes):
+    """QueryLoop with a fake pageindex that routes to the given nodes."""
+    idx = MagicMock()
+    idx.route = AsyncMock(return_value=nodes)
+    return QueryLoop(llm_client=fake_llm, tool_system=fake_tools, pageindex=idx, max_iterations=1)
+
+
+@pytest.mark.asyncio
+async def test_wiki_hint_confidence_gate_drops_low_confidence(fake_llm, fake_tools, real_wiki):
+    high = await real_wiki.create_page(
+        title="High Confidence Page", content="Solid fact about python venvs.", tags=["python"]
+    )
+    low = await real_wiki.create_page(
+        title="Low Confidence Page", content="Shaky claim about python venvs.", tags=["python"]
+    )
+    loop = _hint_loop(
+        fake_llm,
+        fake_tools,
+        [_Node(0.9, str(high.path)), _Node(0.1, str(low.path))],
+    )
+    hint = await loop._build_wiki_hint("python venv", min_confidence=0.3)
+    assert "High Confidence Page" in hint
+    assert "Low Confidence Page" not in hint
+    await real_wiki.close()
+
+
+@pytest.mark.asyncio
+async def test_wiki_hint_excludes_contradicted_page(fake_llm, fake_tools, real_wiki):
+    page = await real_wiki.create_page(
+        title="Contradicted Page",
+        content="Conflicting claim.",
+        tags=["x"],
+        citations=[{"type": "contradiction_flag", "session": "s1"}],
+    )
+    ok = await real_wiki.create_page(
+        title="Clean Page", content="Non-conflicting fact.", tags=["x"]
+    )
+    loop = _hint_loop(
+        fake_llm,
+        fake_tools,
+        [_Node(0.9, str(page.path)), _Node(0.9, str(ok.path))],
+    )
+    hint = await loop._build_wiki_hint("x", min_confidence=0.3)
+    assert "Contradicted Page" not in hint
+    assert "Conflicting claim." not in hint
+    assert "Clean Page" in hint
+    await real_wiki.close()
+
+
+@pytest.mark.asyncio
+async def test_wiki_hint_excludes_expired_page(fake_llm, fake_tools, real_wiki):
+    expired = await real_wiki.create_page(
+        title="Expired Page", content="Stale knowledge.", tags=["x"], status="expired"
+    )
+    loop = _hint_loop(fake_llm, fake_tools, [_Node(0.9, str(expired.path))])
+    hint = await loop._build_wiki_hint("x", min_confidence=0.3)
+    assert hint == ""
+    await real_wiki.close()
+
+
+@pytest.mark.asyncio
+async def test_wiki_hint_snippet_content_bounded(fake_llm, fake_tools, real_wiki):
+    long_content = "lorem ipsum " * 200  # ~2400 chars
+    page = await real_wiki.create_page(title="Long Page", content=long_content, tags=["verbose"])
+    loop = _hint_loop(fake_llm, fake_tools, [_Node(0.9, str(page.path))])
+    hint = await loop._build_wiki_hint("lorem", min_confidence=0.3)
+    assert "Long Page" in hint
+    # Snippet capped at 500 chars of content
+    assert long_content not in hint
+    assert len(hint) < 700
+    await real_wiki.close()
+
+
+@pytest.mark.asyncio
+async def test_wiki_hint_never_raises(fake_llm, fake_tools):
+    idx = MagicMock()
+    idx.route = AsyncMock(side_effect=RuntimeError("index exploded"))
+    loop = QueryLoop(llm_client=fake_llm, tool_system=fake_tools, pageindex=idx, max_iterations=1)
+    assert await loop._build_wiki_hint("anything") == ""
+
+
+# ---------------------------------------------------------------------------
+# ERROR-state extraction trigger
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_error_state_triggers_extraction(fake_llm, fake_tools, fake_wiki, fake_config):
+    """ERROR sessions carry the most valuable lessons — extraction must still run."""
+    fake_config.memory.wiki.auto_extract = True
+    fake_config.memory.wiki.novelty_threshold = 0.5
+    fake_config.memory.wiki.confidence_threshold = 0.8
+    fake_config.memory.rlm.enabled = False
+    # Drive the loop into ERROR state
+    fake_llm.complete = AsyncMock(
+        return_value=FakeLLMResponse(content="", is_error=True, error="boom")
+    )
+    idx = MagicMock()
+    idx.route = AsyncMock(return_value=[])
+    ql = QueryLoop(
+        llm_client=fake_llm,
+        tool_system=fake_tools,
+        wiki=fake_wiki,
+        pageindex=idx,
+        config=fake_config,
+        max_iterations=1,
+        stream=False,  # force the non-streaming path so complete() is used
+    )
+    ql.add_user_message("Hello")
+    async for _ in ql.run():
+        pass
+    assert ql._state.name == "ERROR"
+    assert ql._wiki_extract_task is not None
+    if not ql._wiki_extract_task.done():
+        try:
+            await asyncio.wait_for(ql._wiki_extract_task, timeout=2.0)
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            ql._wiki_extract_task.cancel()

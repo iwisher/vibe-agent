@@ -1,9 +1,12 @@
 """Tests for SkillRunnerTool."""
 
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from vibe.harness.skills.models import Skill, SkillStep, SkillVerification
+from vibe.tools.bash import BashSandbox, BashTool
 from vibe.tools.skill_runner import SkillRunnerTool
 from vibe.tools.tool_system import ToolResult, ToolSystem
 
@@ -207,3 +210,266 @@ class TestSkillRunnerTool:
             SkillRunnerTool._verify_step(result, verification, "cmd", {"suffix": "substituted"})
             is True
         )
+
+
+class TestJsonHasKeysVerification:
+    """_verify_step support for SkillVerification.json_has_keys."""
+
+    def _verify(self, content: str, keys: list[str]) -> bool:
+        result = ToolResult(success=True, content=content, metadata={"exit_code": 0})
+        verification = SkillVerification(exit_code=0, json_has_keys=keys)
+        return SkillRunnerTool._verify_step(result, verification, "cmd")
+
+    def test_pass_when_all_keys_present(self):
+        assert self._verify('{"ticker": "QQQ", "sma_20": 120.5}', ["ticker", "sma_20"])
+
+    def test_fail_when_key_missing(self):
+        assert not self._verify('{"ticker": "QQQ"}', ["ticker", "sma_20"])
+
+    def test_fail_on_invalid_json(self):
+        assert not self._verify("not json at all", ["ticker"])
+
+    def test_fail_on_non_dict_json(self):
+        assert not self._verify('["ticker", "sma_20"]', ["ticker"])
+
+    def test_pass_with_stderr_suffix(self):
+        # BashTool appends a "[stderr]" section; the JSON object must still be found.
+        content = '{"ticker": "QQQ"}\n[stderr]\nsome warning'
+        assert self._verify(content, ["ticker"])
+
+
+def _make_script_skill_dir(tmp_path: Path) -> Path:
+    skill_dir = tmp_path / "my-skill"
+    scripts = skill_dir / "scripts"
+    scripts.mkdir(parents=True)
+    (scripts / "collect.py").write_text(
+        "import json, sys\nprint(json.dumps({'argv': sys.argv[1:]}))\n"
+    )
+    (scripts / "hello.sh").write_text("#!/bin/bash\necho shell-ok\n")
+    return skill_dir
+
+
+def _script_skill(
+    skill_dir: Path | None,
+    script: str = "scripts/collect.py",
+    command: str = "{{ ticker }} --days {{ days }}",
+    interpreter: str | None = None,
+    verification: SkillVerification | None = None,
+) -> Skill:
+    return Skill(
+        vibe_skill_version="2.0.0",
+        id="s",
+        name="S",
+        description="d",
+        steps=[
+            SkillStep(
+                id="run",
+                description="run",
+                script=script,
+                interpreter=interpreter,
+                tool="bash",
+                command=command,
+                verification=verification or SkillVerification(exit_code=0),
+            )
+        ],
+        variables=[
+            {"name": "ticker", "type": "string", "required": True},
+            {"name": "days", "type": "integer", "required": False, "default": 30},
+        ],
+        skill_dir=str(skill_dir) if skill_dir else None,
+    )
+
+
+def _real_tool_system(working_dir: Path) -> ToolSystem:
+    tool_system = ToolSystem()
+    tool_system.register_tool(BashTool(sandbox=BashSandbox(working_dir=str(working_dir))))
+    return tool_system
+
+
+class TestScriptSteps:
+    """Deterministic script steps: argv built by the runner, jailed to scripts/."""
+
+    @pytest.mark.asyncio
+    async def test_script_step_happy_path(self, tmp_path):
+        skill_dir = _make_script_skill_dir(tmp_path)
+        tool = SkillRunnerTool({"s": _script_skill(skill_dir)}, _real_tool_system(tmp_path))
+
+        result = await tool.execute(skill_id="s", variables={"ticker": "QQQ"})
+
+        assert result.success, result.error
+        data = SkillRunnerTool._extract_json_object(result.content)
+        # .py inferred sys.executable; days defaulted to 30 by the typed-vars schema
+        assert data["argv"] == ["QQQ", "--days", "30"]
+
+    @pytest.mark.asyncio
+    async def test_script_step_shell_inference(self, tmp_path):
+        skill_dir = _make_script_skill_dir(tmp_path)
+        skill = _script_skill(
+            skill_dir,
+            script="scripts/hello.sh",
+            command="",
+            verification=SkillVerification(exit_code=0, output_contains="shell-ok"),
+        )
+        tool = SkillRunnerTool({"s": skill}, _real_tool_system(tmp_path))
+
+        result = await tool.execute(skill_id="s", variables={"ticker": "QQQ"})
+
+        assert result.success, result.error
+        assert "shell-ok" in result.content
+
+    @pytest.mark.asyncio
+    async def test_script_step_jail_rejects_parent_escape(self, tmp_path):
+        skill_dir = _make_script_skill_dir(tmp_path)
+        (tmp_path / "evil.py").write_text("print('pwned')")
+        tool = SkillRunnerTool(
+            {"s": _script_skill(skill_dir, script="../evil.py")}, _real_tool_system(tmp_path)
+        )
+
+        result = await tool.execute(skill_id="s", variables={"ticker": "QQQ"})
+
+        assert not result.success
+        assert "outside" in (result.error or "")
+
+    @pytest.mark.asyncio
+    async def test_script_step_jail_rejects_absolute_path(self, tmp_path):
+        skill_dir = _make_script_skill_dir(tmp_path)
+        tool = SkillRunnerTool(
+            {"s": _script_skill(skill_dir, script="/etc/hosts")}, _real_tool_system(tmp_path)
+        )
+
+        result = await tool.execute(skill_id="s", variables={"ticker": "QQQ"})
+
+        assert not result.success
+        assert "outside" in (result.error or "")
+
+    @pytest.mark.asyncio
+    async def test_script_step_missing_file(self, tmp_path):
+        skill_dir = _make_script_skill_dir(tmp_path)
+        tool = SkillRunnerTool(
+            {"s": _script_skill(skill_dir, script="scripts/nope.py")},
+            _real_tool_system(tmp_path),
+        )
+
+        result = await tool.execute(skill_id="s", variables={"ticker": "QQQ"})
+
+        assert not result.success
+        assert "script not found" in (result.error or "")
+
+    @pytest.mark.asyncio
+    async def test_script_step_missing_skill_dir(self, tmp_path):
+        tool = SkillRunnerTool({"s": _script_skill(None)}, _real_tool_system(tmp_path))
+
+        result = await tool.execute(skill_id="s", variables={"ticker": "QQQ"})
+
+        assert not result.success
+        assert "no skill_dir" in (result.error or "")
+
+    @pytest.mark.asyncio
+    async def test_script_step_unknown_extension_requires_interpreter(self, tmp_path):
+        skill_dir = _make_script_skill_dir(tmp_path)
+        (skill_dir / "scripts" / "tool.xyz").write_text("print('hi')")
+        tool = SkillRunnerTool(
+            {"s": _script_skill(skill_dir, script="scripts/tool.xyz")},
+            _real_tool_system(tmp_path),
+        )
+
+        result = await tool.execute(skill_id="s", variables={"ticker": "QQQ"})
+
+        assert not result.success
+        assert "cannot infer interpreter" in (result.error or "")
+
+    @pytest.mark.asyncio
+    async def test_script_step_injection_payload_is_inert(self, tmp_path):
+        """A metacharacter-laden variable must arrive as one inert argv token."""
+        skill_dir = _make_script_skill_dir(tmp_path)
+        marker = tmp_path / "pwned"
+        payload = f"ABC; touch {marker}"
+        tool = SkillRunnerTool({"s": _script_skill(skill_dir)}, _real_tool_system(tmp_path))
+
+        result = await tool.execute(skill_id="s", variables={"ticker": payload})
+
+        assert result.success, result.error
+        assert not marker.exists()
+        data = SkillRunnerTool._extract_json_object(result.content)
+        assert data["argv"][0] == payload
+        assert len(data["argv"]) == 3  # payload, --days, 30
+
+    def test_substitute_vars_quote_mode(self):
+        result = SkillRunnerTool._substitute_vars(
+            "run.py {{ name }}", {"name": "a b; c"}, quote=True
+        )
+        assert result == "run.py 'a b; c'"
+        # Default mode remains unquoted (backwards compatible)
+        result_plain = SkillRunnerTool._substitute_vars("run.py {{ name }}", {"name": "a b"})
+        assert result_plain == "run.py a b"
+
+
+class TestStockAnalysisSkillIntegration:
+    """End-to-end: the repo's stock-analysis skill runs its script against a CSV."""
+
+    SKILL_DIR = Path(__file__).resolve().parents[2] / "skills" / "stock-analysis"
+
+    def _write_fixture(self, tmp_path: Path) -> Path:
+        lines = ["Date,Close"] + [f"2026-01-{day:02d},{99 + day}" for day in range(1, 31)]
+        csv_path = tmp_path / "prices.csv"
+        csv_path.write_text("\n".join(lines) + "\n")
+        return csv_path
+
+    def test_skill_parses_and_validates(self):
+        from vibe.harness.skills.parser import SkillParser
+        from vibe.harness.skills.validator import SkillValidator
+
+        skill = SkillParser().parse_file(self.SKILL_DIR / "SKILL.md")
+        assert skill.skill_dir == str(self.SKILL_DIR)
+        assert skill.steps[0].script == "scripts/analyze.py"
+        result = SkillValidator().validate(skill, skill_dir=self.SKILL_DIR)
+        assert result.is_valid, result.risks
+        assert result.warnings == []
+
+    @pytest.mark.asyncio
+    async def test_run_with_csv_fixture(self, tmp_path):
+        from vibe.harness.skills.parser import SkillParser
+
+        csv_path = self._write_fixture(tmp_path)
+        skill = SkillParser().parse_file(self.SKILL_DIR / "SKILL.md")
+        tool = SkillRunnerTool({skill.id: skill}, _real_tool_system(tmp_path))
+
+        result = await tool.execute(
+            skill_id="stock-analysis", variables={"ticker": "TEST", "csv": str(csv_path)}
+        )
+
+        assert result.success, result.error
+        data = SkillRunnerTool._extract_json_object(result.content)
+        assert data["ticker"] == "TEST"
+        assert data["data_points"] == 30
+        assert data["sma_20"] == 119.5  # mean of closes 110..129
+
+    @pytest.mark.asyncio
+    async def test_run_with_missing_csv_fails(self, tmp_path):
+        from vibe.harness.skills.parser import SkillParser
+
+        skill = SkillParser().parse_file(self.SKILL_DIR / "SKILL.md")
+        tool = SkillRunnerTool({skill.id: skill}, _real_tool_system(tmp_path))
+
+        result = await tool.execute(
+            skill_id="stock-analysis",
+            variables={"ticker": "TEST", "csv": str(tmp_path / "nope.csv")},
+        )
+
+        assert not result.success
+
+    @pytest.mark.asyncio
+    async def test_ticker_pattern_rejects_injection(self, tmp_path):
+        from vibe.harness.skills.parser import SkillParser
+
+        csv_path = self._write_fixture(tmp_path)
+        skill = SkillParser().parse_file(self.SKILL_DIR / "SKILL.md")
+        tool = SkillRunnerTool({skill.id: skill}, _real_tool_system(tmp_path))
+
+        result = await tool.execute(
+            skill_id="stock-analysis",
+            variables={"ticker": "Q; rm -rf /", "csv": str(csv_path)},
+        )
+
+        assert not result.success
+        assert "Variable validation failed" in (result.error or "")

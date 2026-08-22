@@ -164,6 +164,17 @@ class SessionController:
                 await self.main_task
             except asyncio.CancelledError:
                 pass
+        # Close the main loop last — close() gives post-session learning tasks
+        # (wiki extraction, trajectory reflection) a bounded grace period to
+        # finish before shutdown completes.
+        close_fn = getattr(self.main_loop, "close", None)
+        if callable(close_fn):
+            try:
+                close_result = close_fn()
+                if asyncio.iscoroutine(close_result):
+                    await close_result
+            except Exception:
+                pass
 
     def list_bg_agents(self) -> list[dict[str, Any]]:
         """List running background agents."""

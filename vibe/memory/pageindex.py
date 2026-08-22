@@ -375,3 +375,55 @@ Only return the JSON, no other text."""
 
         root.sub_nodes = category_nodes + new_category_nodes
         logger.debug("Partitioned into %d categories", len(new_category_nodes))
+
+
+# ---------------------------------------------------------------------------
+# Page indexing helper
+# ---------------------------------------------------------------------------
+
+
+def _find_node_by_file_path(node: IndexNode, file_path: str) -> IndexNode | None:
+    """Find a node in the tree by its file_path."""
+    if node.file_path == file_path:
+        return node
+    for child in node.sub_nodes:
+        found = _find_node_by_file_path(child, file_path)
+        if found is not None:
+            return found
+    return None
+
+
+def index_wiki_page(pageindex: Any, page: Any) -> IndexNode | None:
+    """Index a wiki page into a PageIndex so it becomes routable immediately.
+
+    Mirrors the node shape produced by PageIndex.rebuild() so that a later
+    rebuild yields an equivalent index. Idempotent: re-indexing the same page
+    (matched by file path) updates the existing node instead of duplicating it.
+
+    Never raises — indexing failures are logged and return None.
+    """
+    if pageindex is None or page is None:
+        return None
+    try:
+        title = str(getattr(page, "title", "") or "")
+        tags = list(getattr(page, "tags", None) or [])
+        file_path = str(getattr(page, "path", "") or "") or None
+        description = f"Wiki page: {title}. Tags: {', '.join(tags)}"
+
+        root = pageindex.load()
+        if file_path is not None:
+            existing = _find_node_by_file_path(root, file_path)
+            if existing is not None:
+                return pageindex.update_node(
+                    existing.node_id, title=title, description=description, tags=tags
+                )
+        return pageindex.add_node(
+            parent_id=root.node_id,
+            title=title,
+            description=description,
+            file_path=file_path,
+            tags=tags,
+        )
+    except Exception as e:
+        logger.debug("Failed to index wiki page '%s': %s", getattr(page, "title", "?"), e)
+        return None

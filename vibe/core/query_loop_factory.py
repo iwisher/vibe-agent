@@ -1,5 +1,6 @@
 """Factory for creating wired QueryLoop instances."""
 
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,8 @@ from vibe.tools.skill_install_prompt import PromptSkillInstallTool
 from vibe.tools.skill_manage import SkillManageTool
 from vibe.tools.skill_runner import SkillRunnerTool
 from vibe.tools.tool_system import ToolSystem
+
+logger = logging.getLogger(__name__)
 
 
 class QueryLoopFactory:
@@ -129,6 +132,10 @@ class QueryLoopFactory:
         llm = self.create_llm()
         tools = self.create_tool_system()
 
+        # v4: Create trace store FIRST — both the planner (history hints) and
+        # the QueryLoop (session logging) consume it.
+        trace_store = self._create_trace_store()
+
         # Load skills from ~/.vibe/skills/ and ./skills/
         instruction_set = None
         executable_skills: dict[str, Any] = {}
@@ -146,7 +153,7 @@ class QueryLoopFactory:
             if prompt_skills:
                 planner = HybridPlanner(
                     llm_client=llm,
-                    trace_store=None,
+                    trace_store=trace_store,
                 )
         except Exception as e:
             if self.logger:
@@ -224,8 +231,7 @@ class QueryLoopFactory:
                     if self.logger:
                         self.logger.warning(f"Failed to initialize CheckpointManager: {e}")
 
-        # v4: Wire trace_store FIRST, then tripartite components when enabled
-        trace_store = self._create_trace_store()
+        # v4: trace_store was created at the top of create()
         if trace_store is not None:
             kwargs["trace_store"] = trace_store
 
@@ -378,19 +384,32 @@ class QueryLoopFactory:
             return None
 
     def _create_trace_store(self) -> Any | None:
-        """Create and return a TraceStore if configured."""
+        """Create and return a trace store respecting the configured backend.
+
+        Returns None (with a warning logged) if creation fails — memory must
+        never break query execution.
+        """
         if self.config is None:
             return None
         ts_cfg = getattr(self.config, "trace_store", None)
         if ts_cfg is None or not getattr(ts_cfg, "enabled", True):
             return None
         try:
-            from vibe.harness.memory.trace_store import TraceStore
+            from vibe.harness.memory.trace_store import create_trace_store
 
-            storage_type = getattr(ts_cfg, "storage_type", "sqlite")
-            db_path = getattr(ts_cfg, "db_path", None)
-            return TraceStore(storage_type=storage_type, db_path=db_path)
-        except Exception:
+            return create_trace_store(
+                storage_type=getattr(ts_cfg, "storage_type", "sqlite"),
+                db_path=getattr(ts_cfg, "db_path", None),
+                max_entries=getattr(ts_cfg, "max_entries", 10000),
+                retention_days=getattr(ts_cfg, "retention_days", 30),
+            )
+        except Exception as e:
+            logger.warning(
+                "Failed to create trace store (storage_type=%s): %s. "
+                "Continuing without session tracing.",
+                getattr(ts_cfg, "storage_type", "sqlite"),
+                e,
+            )
             return None
 
     def _create_tripartite(self, mem_cfg: Any) -> tuple[Any, Any, Any]:

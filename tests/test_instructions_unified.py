@@ -80,6 +80,45 @@ command = "echo hello"
         assert len(prompt_skills) == 0
         assert len(executable_skills) == 0
 
+    def test_load_unified_sets_skill_dir(self, tmp_path):
+        """Executable skills must carry their source dir for script-step resolution."""
+        nested = tmp_path / "finance" / "stocky"
+        nested.mkdir(parents=True)
+        (nested / "SKILL.md").write_text("""+++
+vibe_skill_version = "2.0.0"
+id = "stocky"
+name = "Stocky"
+description = "Has a script step"
+
+[[steps]]
+id = "run"
+description = "Run"
+tool = "bash"
+script = "scripts/run.py"
+command = "arg"
++++
+""")
+        # Flat-layout TOML skill: skill_dir should be the base dir itself
+        (tmp_path / "flat-exec.md").write_text("""+++
+vibe_skill_version = "2.0.0"
+id = "flat-exec"
+name = "Flat Exec"
+description = "Flat layout"
+
+[[steps]]
+id = "run"
+description = "Run"
+tool = "bash"
+command = "echo hi"
++++
+""")
+
+        loader = InstructionLoader(skills_dir=str(tmp_path))
+        _, executable_skills = loader.load_unified()
+
+        assert executable_skills["stocky"].skill_dir == str(nested)
+        assert executable_skills["flat-exec"].skill_dir == str(tmp_path)
+
     def test_load_backward_compat(self, tmp_path):
         (tmp_path / "skill.md").write_text("""---
 name: Backward Compat

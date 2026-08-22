@@ -124,3 +124,87 @@ def test_regex_precompiled():
 
     for pattern, _ in _FS_DANGEROUS_PATTERNS:
         assert hasattr(pattern, "search")  # compiled regex
+
+
+SCRIPT_STEP_SKILL = """+++
+vibe_skill_version = "2.0.0"
+id = "script-skill"
+name = "Script Skill"
+description = "Runs a script"
+category = "test"
+
+[[steps]]
+id = "run"
+description = "Run the script"
+tool = "bash"
+script = "{script}"
+command = "arg1"
++++
+
+# Script Skill
+"""
+
+
+def _make_script_skill(tmp: str, script: str, script_content: str | bytes | None = None):
+    """Build a skill dir with a step referencing `script`; optionally create the file."""
+    skill_dir = Path(tmp) / "script-skill"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(SCRIPT_STEP_SKILL.format(script=script))
+    if script_content is not None:
+        target = skill_dir / script
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(script_content, bytes):
+            target.write_bytes(script_content)
+        else:
+            target.write_text(script_content)
+    skill = SkillParser().parse_file(skill_dir / "SKILL.md")
+    return skill, skill_dir
+
+
+def test_step_script_valid_when_present():
+    with tempfile.TemporaryDirectory() as tmp:
+        skill, skill_dir = _make_script_skill(tmp, "scripts/ok.py", "print('ok')")
+        result = SkillValidator().validate(skill, skill_dir=skill_dir)
+        assert result.is_valid
+        assert result.risks == []
+
+
+def test_step_script_missing_file_rejected():
+    with tempfile.TemporaryDirectory() as tmp:
+        skill, skill_dir = _make_script_skill(tmp, "scripts/missing.py")
+        result = SkillValidator().validate(skill, skill_dir=skill_dir)
+        assert not result.is_valid
+        assert any("script not found" in r for r in result.risks)
+
+
+def test_step_script_escape_rejected():
+    with tempfile.TemporaryDirectory() as tmp:
+        skill, skill_dir = _make_script_skill(tmp, "../evil.py")
+        result = SkillValidator().validate(skill, skill_dir=skill_dir)
+        assert not result.is_valid
+        assert any("outside" in r for r in result.risks)
+
+
+def test_step_script_absolute_path_rejected():
+    with tempfile.TemporaryDirectory() as tmp:
+        skill, skill_dir = _make_script_skill(tmp, "/etc/passwd")
+        result = SkillValidator().validate(skill, skill_dir=skill_dir)
+        assert not result.is_valid
+        assert any("outside" in r for r in result.risks)
+
+
+def test_script_hardcoded_credential_warns():
+    with tempfile.TemporaryDirectory() as tmp:
+        skill, skill_dir = _make_script_skill(
+            tmp, "scripts/keys.py", 'api_key = "AKIA1234567890"\nprint("hi")'
+        )
+        result = SkillValidator().validate(skill, skill_dir=skill_dir)
+        assert result.is_valid  # warnings do not block installation
+        assert any("hardcoded credential" in w for w in result.warnings)
+
+
+def test_non_utf8_script_warns():
+    with tempfile.TemporaryDirectory() as tmp:
+        skill, skill_dir = _make_script_skill(tmp, "scripts/blob.py", b"\xff\xfe\x00\x01")
+        result = SkillValidator().validate(skill, skill_dir=skill_dir)
+        assert any("not readable as UTF-8" in w for w in result.warnings)

@@ -10,19 +10,23 @@
 **Vibe Agent** is an open, visual-first interactive CLI agent harness platform. It provides a resilient, secure, and model-agnostic environment for LLM-based autonomous tasks.
 
 Key capabilities:
-- **Multi-Provider Fallback**: Seamlessly switches between OpenAI, Anthropic, Kimi, OpenRouter, and Ollama via an adapter-based gateway with circuit breakers and latency-aware routing.
+- **Multi-Provider Fallback**: Seamlessly switches between OpenAI, Anthropic, Kimi, OpenRouter, and Ollama via an adapter-based gateway with circuit breakers, latency-aware routing, and cost tracking.
+- **Streaming Responses**: Real-time token streaming (`--stream`) with native reasoning/thinking token display.
+- **Interactive CLI + TUI**: Readline-based chat with persistent history, plus a `prompt_toolkit`-based TUI (`vibe/cli/tui.py`).
 - **Secure Tool Execution**: 5-layer security defense (pattern scanning, file safety, human approval, smart approver, checkpoints) with sandboxed Bash and jailed File tools.
-- **Context Management**: Automated compaction with 4 strategies (TRUNCATE, LLM_SUMMARIZE, OFFLOAD, DROP), plus adaptive iteration budgets.
-- **Eval-Driven Development**: 50+ built-in eval cases, adversarial testing, multi-model scorecards, and soak tests with degradation detection.
+- **Context Management**: Automated compaction with 4 strategies (TRUNCATE, LLM_SUMMARIZE, OFFLOAD, DROP), plus adaptive iteration budgets and a DAG-based task planner for parallel sub-tasks.
+- **Session Durability**: `SessionRecoveryManager` with TTL-based checkpoints serializes QueryLoop state to SQLite for suspend/resume (`vibe session resume`).
+- **Eval-Driven Development**: 47 built-in YAML eval cases, adversarial testing, multi-model scorecards, and soak tests with degradation detection.
 - **Skill System v2**: Native skill format with TOML frontmatter, validation, security scanning, atomic installation, typed variables, orchestration, marketplace, and dynamic tool declaration.
 - **Skill-Maker (Self-Improving)**: Auto-detects recurring task patterns from wiki extractions, generates SKILL.md drafts via LLM, validates through sandbox, and proposes installation.
-- **Tripartite Memory System**: Automated async knowledge extraction, FlashLLM contradiction detection, telemetry-triggered RLM analysis, vector search with sentence-transformers, wiki graph database, and per-tag novelty thresholds.
+- **Tripartite Memory System**: Automated async knowledge extraction, FlashLLM contradiction detection, telemetry-triggered RLM analysis (LoRA fine-tuning), vector search with sentence-transformers, wiki graph database, and per-tag novelty thresholds.
+- **EvoX Meta-Evolution (Offline Pipeline)**: Two-level evolution — an inner loop evolves candidate solutions under a search strategy; an outer loop meta-evolves the strategy itself (as executable Python code) when progress stagnates. Multi-objective proxy scoring, UCB parent selection, `vibe evox run` CLI.
 - **Shadow Workspace Rollbacks**: Auto-creates hidden git branch (`vibe/shadow-<session-id>`) before write-heavy operations; one-command restore on failure.
 - **Multi-Agent Swarm**: DAG-based orchestration of specialized sub-agents (Research, Coding, Critic, Planner) with Pub/Sub message bus and shared wiki.
 - **React Trace Dashboard**: Web UI for session observability — timeline, wiki graph, telemetry charts, system stats. Dark theme, real-time WebSocket updates.
 - **Preference Layer**: 8 persistent heuristics converting user feedback into agent behavior.
 
-The project is currently at **Phase 4.2 (Self-Improving Skill-Maker) + Phase 5.2 (Shadow Workspace)**.
+All roadmap milestones through the Shadow Workspace phase are marked complete in `docs/ROADMAP.md`; EvoX was added afterwards as an offline pipeline (see `docs/EvoX_implementation.md`).
 
 ---
 
@@ -32,15 +36,19 @@ The project is currently at **Phase 4.2 (Self-Improving Skill-Maker) + Phase 5.2
 |-------|-----------|
 | Language | Python 3.11+ |
 | Package Manager | `pip` (editable install) or `uv` (lockfile: `uv.lock` present) |
-| CLI Framework | Typer + Rich console |
+| CLI Framework | Typer + Rich console; `prompt_toolkit` for the TUI |
 | Validation | Pydantic v2 + pydantic-settings |
 | HTTP Clients | aiohttp, httpx |
 | Web Dashboard | FastAPI + Uvicorn (optional extra `[api]`) |
 | Frontend | React 18 (CDN-loaded, no build step) + D3.js + Recharts |
-| Embeddings | sentence-transformers (`all-MiniLM-L6-v2`, 384-dim) with fastText fallback |
+| Document Ingestion | docling (memory ingestion pipeline) |
+| Embeddings | sentence-transformers (`all-MiniLM-L6-v2`, 384-dim) with keyword/fastText fallback |
+| Templating | Jinja2 |
 | Testing | pytest + pytest-asyncio |
 | Linting / Formatting | ruff + black + mypy |
 | CI/CD | GitHub Actions (`.github/workflows/ci.yml`) |
+
+Core dependencies (`pyproject.toml`): typer, rich, pydantic, pydantic-settings, aiohttp, httpx, pyyaml, filelock, numpy, jinja2, docling, prompt_toolkit. Note that `pytest`/`pytest-asyncio` are declared as runtime dependencies, not dev-only.
 
 ---
 
@@ -48,25 +56,37 @@ The project is currently at **Phase 4.2 (Self-Improving Skill-Maker) + Phase 5.2
 
 ```
 vibe-agent/
-├── pyproject.toml              # Project config, deps, tool settings
+├── pyproject.toml              # Project config, deps, tool settings (setuptools build)
 ├── uv.lock                     # uv lockfile (optional)
 ├── vibe/                       # Main source package
 │   ├── __main__.py             # Entry point: `python -m vibe`
-│   ├── cli/main.py             # Typer CLI root (`vibe` command)
-│   ├── cli/skill_commands.py   # `vibe skill *` subcommands
+│   ├── cli/
+│   │   ├── main.py             # Typer CLI root (`vibe` command, ~2200 lines; all subcommands)
+│   │   ├── tui.py              # prompt_toolkit TUI (VibeTUI)
+│   │   ├── input_buffer.py     # Interactive input handling
+│   │   └── skill_commands.py   # `vibe skill *` subcommands
 │   ├── core/                   # Query loop, model gateway, config, coordinators
-│   │   ├── query_loop.py       # ~1170-line state machine (IDLE → PLANNING → ... → COMPLETED)
+│   │   ├── query_loop.py       # ~1480-line state machine (IDLE → PLANNING → ... → COMPLETED)
 │   │   ├── model_gateway.py    # Multi-provider LLM gateway with circuit breakers
 │   │   ├── query_loop_factory.py  # Wires all components together
 │   │   ├── config.py           # Hierarchical config (default → ~/.vibe/config.yaml → env)
-│   │   └── coordinators.py     # ToolExecutor, FeedbackCoordinator, SecurityCoordinator, etc.
+│   │   ├── coordinators.py     # ToolExecutor, FeedbackCoordinator, SecurityCoordinator, etc.
+│   │   ├── cost_tracker.py / cost_router.py / latency_tracker.py  # Cost-aware routing
+│   │   ├── provider_registry.py / shared_circuit_breaker.py
+│   │   ├── session_controller.py / session_recovery.py            # Durable sessions
+│   │   ├── adaptive_budget.py / conversation_queue.py / sub_agent.py
+│   │   └── error_recovery.py / health_check.py / logger.py / llm_types.py
 │   ├── adapters/               # LLM provider adapters (openai, anthropic, registry)
 │   ├── harness/                # Harness-level components
 │   │   ├── planner.py          # ContextPlanner (keyword + embedding + LLM routing)
+│   │   ├── dag_planner.py      # DAG-based parallel task planner
 │   │   ├── constraints.py      # Hook pipeline (PRE_VALIDATE → POST_FIX)
 │   │   ├── feedback.py         # FeedbackEngine for quality gating
 │   │   ├── instructions.py     # System prompt assembly
 │   │   ├── embeddings.py       # Unified embedding loader (singleton + LRU cache)
+│   │   ├── mcp_router.py       # MCP tool routing
+│   │   ├── orchestration/      # sync_delegate.py (sub-agent delegation)
+│   │   ├── security/           # redactor.py
 │   │   ├── skills/             # Skill system v2
 │   │   │   ├── parser.py       # TOML frontmatter + markdown parser
 │   │   │   ├── models.py       # Pydantic Skill models
@@ -74,7 +94,8 @@ vibe-agent/
 │   │   │   ├── executor.py     # Step execution with variable substitution
 │   │   │   ├── installer.py    # Atomic install from git/tarball/local
 │   │   │   ├── maker.py        # Self-improving Skill-Maker pipeline
-│   │   │   └── orchestrator.py # Inter-skill await + sub-agent spawn
+│   │   │   ├── orchestrator.py # Inter-skill await + sub-agent spawn
+│   │   │   └── marketplace.py / dynamic_tools.py / typed_vars.py / approval.py
 │   │   └── memory/             # Harness memory layer
 │   │       ├── trace_store.py  # Session persistence (SQLite/JSON/Memory)
 │   │       ├── eval_store.py   # Eval result storage
@@ -82,21 +103,30 @@ vibe-agent/
 │   │       └── session_store.py
 │   ├── memory/                 # Tripartite memory system
 │   │   ├── extraction.py       # Async knowledge extraction
+│   │   ├── reflection.py       # TrajectoryReflector — post-session lesson curation
 │   │   ├── wiki.py             # Wiki page CRUD + FlashLLM contradiction
 │   │   ├── pageindex.py        # Vector-based routing index
 │   │   ├── wiki_graph.py       # Entity-relationship graph
-│   │   ├── vector_index.py     # UpgradedVectorIndex (sentence-transformers)
+│   │   ├── vector_index.py / vector_index_upgrade.py  # sentence-transformers index
 │   │   ├── semantic_dedup.py   # Vector similarity deduplication
-│   │   ├── novelty_thresholds.py
+│   │   ├── novelty_thresholds.py / compiler.py / flash_client.py
 │   │   ├── rlm_analyzer.py     # Telemetry-driven LoRA trigger analysis
-│   │   ├── rlm_trainer.py      # LoRA fine-tuning launcher
-│   │   └── telemetry_collector.py
+│   │   ├── rlm_trainer.py / _rlm_train_worker.py      # LoRA fine-tuning launcher
+│   │   ├── ingestion/          # Document ingestion (chunker, parser, worker)
+│   │   ├── shared_db.py / rate_limiter.py / telemetry.py / telemetry_collector.py
+│   ├── evox/                   # EvoX meta-evolution (offline pipeline)
+│   │   ├── loop.py             # MetaEvolutionLoop (core two-level algorithm)
+│   │   ├── strategy.py / strategy_code.py  # Evolvable strategies as executable code
+│   │   ├── population.py / generators.py / metrics.py / types.py
+│   │   ├── evaluators.py / circle_packing.py / tsp.py  # Benchmarks
+│   │   └── cli.py              # `vibe evox run` command
 │   ├── tools/                  # Tool system + security
 │   │   ├── bash.py             # Sandboxed Bash (subprocess_exec, no shell)
 │   │   ├── file.py             # Jailed File operations
 │   │   ├── tool_system.py      # Tool registry and execution
 │   │   ├── git_shadow.py       # Shadow workspace manager
 │   │   ├── mcp_bridge.py       # MCP protocol bridge
+│   │   ├── skill_install.py / skill_manage.py / skill_runner.py  # Skill tools
 │   │   └── security/           # 5-layer security components
 │   │       ├── patterns.py     # Dangerous command regex scanner
 │   │       ├── file_safety.py  # Path traversal protection
@@ -112,53 +142,35 @@ vibe-agent/
 │   │   └── shared_wiki.py      # Coordinated wiki writes
 │   ├── preferences/            # 8-domain preference layer
 │   │   ├── registry.py         # SQLite WAL-backed persistence
-│   │   ├── tool_prefs.py
-│   │   ├── approval_rules.py
-│   │   ├── style_policy.py
+│   │   ├── tool_prefs.py / approval_rules.py / style_policy.py
 │   │   ├── macro_session.py    # YAML multi-step workflows
-│   │   ├── recovery_rules.py
-│   │   ├── compaction_policy.py
-│   │   ├── provider_prefs.py
-│   │   └── extraction_policy.py
+│   │   ├── recovery_rules.py / compaction_policy.py
+│   │   ├── provider_prefs.py / extraction_policy.py
 │   ├── evals/                  # Evaluation infrastructure
 │   │   ├── runner.py           # EvalRunner (core engine)
 │   │   ├── factory_runner.py   # Fresh QueryLoop per case
 │   │   ├── adversarial.py      # Prompt injection / jailbreak tests
 │   │   ├── soak_test.py        # Long-running stress tests
-│   │   ├── multi_model_runner.py
-│   │   ├── observability.py    # OpenTelemetry-style spans/metrics
-│   │   └── builtin/            # 47+ YAML eval case definitions
+│   │   ├── multi_model_runner.py / multi_provider_benchmark.py / model_registry.py
+│   │   ├── judge.py / regression.py / dashboard.py / observability.py
+│   │   └── builtin/            # 47 YAML eval case definitions
 │   ├── dashboard/              # FastAPI backend + React frontend
 │   │   ├── server.py           # FastAPI server (WebSocket, token auth)
 │   │   ├── api.py              # REST endpoint definitions
-│   │   └── data.py             # Async wrappers around stores
-│   └── api/routes/             # Additional API route modules
-├── tests/                      # 1400+ test functions across 120+ files
-│   ├── adapters/
-│   ├── cli/
-│   ├── core/
-│   ├── dashboard/
-│   ├── evals/
-│   ├── harness/
-│   ├── memory/
-│   ├── preferences/
-│   ├── swarm/
-│   ├── tools/security/
-│   └── tools/
+│   │   ├── data.py             # Async wrappers around stores
+│   │   └── static/             # index.html, app.js, style.css (no build step)
+│   └── api/routes/             # Additional API route modules (currently stubs)
+├── tests/                      # ~1600 test functions across 150 files; mirrors vibe/ layout
 ├── scripts/
 │   ├── ci_eval_report.py       # CI regression check + markdown report
 │   └── validate_eval_tags.py   # Eval YAML schema validator
-├── docs/
-│   ├── ARCHITECTURE.md         # Deep-dive system architecture
-│   ├── CONFIGURATION.md        # Full config reference
-│   ├── EVALUATION.md           # Eval suite docs
-│   ├── ROADMAP.md              # Feature roadmap
-│   ├── CHANGELOG.md
-│   └── sample_config.yaml      # Example ~/.vibe/config.yaml
+├── docs/                       # ARCHITECTURE.md, CONFIGURATION.md, EVALUATION.md,
+│                               # ROADMAP.md, EvoX_implementation.md, MEMORY_DESIGN.md,
+│                               # TRIPARTITE_DESIGN.md, DASHBOARD.md, sample_config.yaml, ...
 ├── skills/                     # Local skill directory (e.g. stock-analysis/)
 ├── wiki/                       # Session wiki pages (markdown)
 ├── logs/                       # Session logs
-└── archive/                    # Reference implementations from earlier phases
+└── archive/                    # Reference implementations from earlier phases (do not modify)
 ```
 
 ---
@@ -167,7 +179,7 @@ vibe-agent/
 
 ### Install (Development)
 ```bash
-# Editable install with all dev dependencies
+# Editable install with dev dependencies
 pip install -e ".[dev]"
 
 # Optional extras
@@ -190,8 +202,16 @@ python -m vibe --model qwen3:8b "Explain async/await in Python"
 # With debug logging
 python -m vibe --debug
 
-# Dashboard
-vibe dashboard start --port 8080 --no-auth   # dev mode
+# Dashboard (dev mode)
+vibe dashboard start --port 8080 --no-auth
+
+# EvoX meta-evolution
+vibe evox run
+
+# Session / shadow / preference / wiki management
+vibe session list | resume | cleanup
+vibe shadow list | create | restore | rollback | clean
+vibe wiki list | search | show | create | edit
 ```
 
 ### Testing
@@ -199,7 +219,7 @@ vibe dashboard start --port 8080 --no-auth   # dev mode
 # Run full test suite (pytest-asyncio auto mode enabled in pyproject.toml)
 pytest -x --tb=short -q
 
-# Run with coverage (project uses .coverage file)
+# Run with coverage
 pytest --cov=vibe --cov-report=term-missing
 
 # Run a specific subsystem
@@ -209,20 +229,15 @@ pytest tests/core/test_query_loop.py -v
 
 ### Linting and Formatting
 ```bash
-# Format code
 black vibe/ tests/
-
-# Lint with ruff
 ruff check vibe/ tests/
 ruff format vibe/ tests/
-
-# Type check
 mypy vibe/
 ```
 
 ### Evaluations
 ```bash
-# Run built-in eval suite (50+ cases)
+# Run built-in eval suite
 vibe eval run
 
 # Filter by subsystem tag
@@ -245,7 +260,7 @@ python -m vibe.cli.main eval run --limit 20
 - **Line length**: 100 characters (`tool.black.line-length = 100`, `tool.ruff.line-length = 100`)
 - **Target Python**: 3.11+ (`tool.black.target-version = ['py311']`)
 - **Import style**: ruff-enforced (`select = ["E", "F", "I", "W"]`)
-- **Type hints**: Use throughout; `mypy` runs in CI with `ignore_missing_imports = true`
+- **Type hints**: Use throughout; `mypy` runs with `ignore_missing_imports = true`
 - **Async-first**: The QueryLoop and most core components are `async`. Use `asyncio` patterns.
 - **Pydantic v2**: All data models use Pydantic v2. Avoid v1 compatibility syntax.
 - **Docstrings**: Use Google-style or descriptive docstrings for public APIs.
@@ -256,8 +271,8 @@ python -m vibe.cli.main eval run --limit 20
 
 ## 6. Testing Strategy
 
-- **Test count**: 1400+ test functions across 120+ files.
-- **Framework**: pytest with `pytest-asyncio` in auto mode.
+- **Test count**: ~1600 test functions across 150 test files (`tests/`), with subdirectories mirroring `vibe/` (`tests/core/`, `tests/memory/`, `tests/evox/`, `tests/tools/security/`, ...).
+- **Framework**: pytest with `pytest-asyncio` in auto mode (`asyncio_mode = "auto"` in `pyproject.toml`) — async test functions need no decorator.
 - **Structure**: Mirror the `vibe/` package under `tests/` (e.g. `vibe/core/config.py` → `tests/core/test_config.py`).
 - **Test types**:
   - **Unit tests**: Per-module, heavy use of `unittest.mock.AsyncMock` and `MagicMock`.
@@ -265,10 +280,10 @@ python -m vibe.cli.main eval run --limit 20
   - **Security tests**: Dedicated `tests/tools/security/` for each security layer.
   - **Eval tests**: Runner, adversarial, factory isolation, soak tests.
 - **Factory-per-case**: For eval isolation, always create a fresh `QueryLoop` via `QueryLoopFactory` rather than reusing instances. This prevents state bleed.
-- **CI**: GitHub Actions runs:
-  1. `ruff check` + `ruff format --check`
-  2. `pytest -x --tb=short -q` on Python 3.11, 3.12, 3.13
-  3. Eval suite (limited) + regression check via `scripts/ci_eval_report.py`
+- **CI** (`.github/workflows/ci.yml`) runs three jobs:
+  1. **lint**: `ruff check` + `ruff format --check` (Python 3.11)
+  2. **unit-test**: `pip install -e ".[dev,api]"` then `pytest -x --tb=short -q` on Python 3.11, 3.12, 3.13
+  3. **eval**: runs only if the configured model endpoint (`VIBE_BASE_URL`) is reachable; executes `python -m vibe.cli.main eval run --limit 20`, then `scripts/ci_eval_report.py`, and posts the markdown report as a PR comment.
 - **Regression gate**: CI fails if eval score drops >5% below `docs/baseline_scorecard.json`.
 
 ---
@@ -283,12 +298,13 @@ This project handles LLM tool execution, file system access, and API keys. Secur
   3. **HumanApprover**: `manual` / `smart` / `auto` approval modes. Configurable via `security.approval_mode`.
   4. **SmartApprover**: LLM-based risk assessment for benign false positives.
   5. **CheckpointManager**: Creates rollback points before destructive ops.
-- **Secret Redaction**: Automatic stripping of API keys and passwords from trace stores, logs, and eval stores. Never persist raw credentials.
+- **Secret Redaction**: Automatic stripping of API keys (OpenAI, AWS, GitHub, etc.) and passwords from trace stores, logs, and eval stores. Never persist raw credentials.
 - **Env Sanitization**: Blocks path overrides, strips shell env, blocks secret-prefix env vars.
 - **Bash Sandbox**: Uses `subprocess_exec` (no shell) with timeout and regex denylist.
 - **Fail Closed**: `security.fail_closed = true` — any security component failure defaults to deny.
 - **Skill Validation**: `SkillValidator` scans for filesystem destruction, pipe-to-shell, eval injection, suspicious URLs, and hardcoded credentials before installation.
 - **Shadow Workspace**: Git shadow branches provide a rollback safety net for write-heavy sessions.
+- **Dashboard**: Binds to 127.0.0.1 by default, token auth, strict CORS, read-only API.
 
 **Agent rule**: Do not weaken security defaults, skip validation, or disable redaction in production code. Any security change must include tests in `tests/tools/security/`.
 
@@ -297,19 +313,23 @@ This project handles LLM tool execution, file system access, and API keys. Secur
 ## 8. Configuration
 
 The agent reads configuration from:
-1. **Built-in defaults** (in code)
+1. **Built-in defaults** (in `vibe/core/config.py`)
 2. **`~/.vibe/config.yaml`** (user config)
 3. **Environment variables** (`VIBE_*`)
 
-Key config sections:
-- `llm` / `providers` / `models` / `fallback` — Model gateway setup
-- `security` — Approval mode, file safety, env sanitization, sandbox backend
-- `compactor` — Token budget and compaction strategy
-- `query_loop` — Iteration limits and feedback thresholds
-- `memory` — Wiki, PageIndex, RLM analyzer settings
+Top-level sections of `VibeConfig` (all Pydantic models in `vibe/core/config.py`):
+- `llm` / `model` — Default model, base URL, API key, temperature, fallback chain, streaming
+- `planner` — Context planner (embeddings, LLM routing, DAG execution)
+- `security` — Approval mode, file safety, env sanitization, sandbox backend, audit
+- `memory` — Tripartite memory (wiki, PageIndex, RLM, FlashModel settings)
 - `trace_store` — Session persistence backend (`sqlite`, `json`, or `memory`)
+- `eval` — Eval runner settings
+- `cost_router` — Cost limits and latency-aware routing
+- `session` — Durable session checkpoints / recovery
+- `preferences` — Preference layer settings
 - `skill_maker` — Self-improving pipeline settings
-- `shadow_workspace` — Git shadow branch settings
+- `shadow_workspace` — Git shadow branch settings (`enabled`, `auto_rollback`)
+- `logging` — Log dir, rotation, retention, level
 
 See `docs/sample_config.yaml` for a complete example and `docs/CONFIGURATION.md` for reference.
 
@@ -320,14 +340,14 @@ See `docs/sample_config.yaml` for a complete example and `docs/CONFIGURATION.md`
 ### Before Making Changes
 1. **Read the relevant module's docstring and comments** — the codebase is heavily commented.
 2. **Check `docs/ARCHITECTURE.md`** for component relationships and design philosophy.
-3. **Check `docs/ROADMAP.md`** to understand current phase priorities.
+3. **Check `docs/ROADMAP.md`** to understand completed phases and priorities.
 4. **Run existing tests** for the module you are touching: `pytest tests/<module>/ -v`
 
 ### When Adding Features
 - **Mirror test structure**: If you add `vibe/new_module.py`, add `tests/test_new_module.py`.
 - **Use Pydantic models** for all new data structures.
 - **Prefer async**: If the feature interacts with the QueryLoop, ModelGateway, or tools, use `async`/`await`.
-- **Add eval cases** if the feature changes agent behavior: create a YAML in `vibe/evals/builtin/`.
+- **Add eval cases** if the feature changes agent behavior: create a YAML in `vibe/evals/builtin/` (validated by `scripts/validate_eval_tags.py`).
 - **Update config schema** in `vibe/core/config.py` if new settings are needed.
 - **Security review**: Any tool or skill change needs a security test.
 
@@ -339,6 +359,7 @@ See `docs/sample_config.yaml` for a complete example and `docs/CONFIGURATION.md`
 ### File Modification Rules
 - Do not modify files outside the working directory unless explicitly instructed.
 - Do not commit or push git changes unless explicitly asked.
+- Do not modify `archive/` — it holds reference implementations from earlier phases.
 - Do not run destructive bash commands without understanding the denylist patterns.
 
 ---
@@ -351,7 +372,10 @@ See `docs/sample_config.yaml` for a complete example and `docs/CONFIGURATION.md`
 | `docs/ARCHITECTURE.md` | System philosophy, component deep-dives, state machine flow |
 | `docs/CONFIGURATION.md` | Full config reference with environment variable overrides |
 | `docs/EVALUATION.md` | Eval case YAML schema, assertion types, running instructions |
-| `docs/ROADMAP.md` | Feature roadmap and current phase priorities |
+| `docs/ROADMAP.md` | Completed milestones and phase history |
+| `docs/EvoX_implementation.md` | EvoX meta-evolution algorithm details |
+| `docs/MEMORY_DESIGN.md` / `docs/TRIPARTITE_DESIGN.md` | Memory system design |
+| `docs/DASHBOARD.md` | Dashboard architecture |
 | `docs/CHANGELOG.md` | Version history |
 | `pyproject.toml` | Dependencies, build config, pytest/black/ruff/mypy settings |
 | `scripts/ci_eval_report.py` | CI regression gate logic |

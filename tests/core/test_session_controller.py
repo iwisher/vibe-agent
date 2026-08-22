@@ -1,7 +1,7 @@
 """Tests for the SessionController."""
 
 import asyncio
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -42,6 +42,22 @@ class TestSessionController:
         mock_loop.add_user_message.assert_called_once_with("Hello main")
 
         await controller.shutdown()
+
+    @pytest.mark.asyncio
+    async def test_shutdown_closes_main_loop(self):
+        """shutdown() must close the main loop so post-session learning tasks
+        (extraction, reflection) get their grace period before exit."""
+        mock_loop = MagicMock()
+        mock_loop.close = AsyncMock()
+
+        mock_factory = MagicMock()
+        mock_factory.create.return_value = mock_loop
+
+        controller = SessionController(mock_factory)
+        await controller.start()
+        await controller.shutdown()
+
+        mock_loop.close.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_handle_steer(self):

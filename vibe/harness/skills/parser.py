@@ -14,7 +14,10 @@ class SkillParser:
 
     def parse_file(self, path: Path) -> Skill:
         content = path.read_text(encoding="utf-8")
-        return self.parse_string(content)
+        skill = self.parse_string(content)
+        # Record the directory so script steps (scripts/...) can be resolved later.
+        skill.skill_dir = str(path.parent)
+        return skill
 
     def parse_string(self, content: str) -> Skill:
         if content.startswith("+++"):
@@ -49,6 +52,7 @@ class SkillParser:
                     id=step_data["id"],
                     description=step_data["description"],
                     script=step_data.get("script"),
+                    interpreter=step_data.get("interpreter"),
                     tool=step_data["tool"],
                     command=step_data["command"],
                     condition=step_data.get("condition"),
@@ -84,6 +88,7 @@ class SkillParser:
             steps=steps,
             pitfalls=pitfalls,
             examples=examples,
+            variables=config.get("variables", []),
             metadata=config.get("metadata", {}),
         )
 

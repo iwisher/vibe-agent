@@ -66,6 +66,9 @@ class Message:
     tool_calls: list | None = None
     tool_call_id: str | None = None
     model_version: str | None = None
+    # Optional annotations; tool Messages carry {"tool_name": ...} so that
+    # extraction/reflection transcripts can label tool outputs by name.
+    metadata: dict | None = None
 
 
 @dataclass
@@ -83,6 +86,14 @@ class QueryResult:
     reasoning_content: str = ""
     is_chunk: bool = False
     is_stream_chunk: bool = False
+
+
+def _coerce_float(value: Any, default: float) -> float:
+    """Best-effort float coercion with a safe default (mock/None-safe)."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 class QueryLoop:
@@ -205,8 +216,17 @@ class QueryLoop:
         self._wiki_extract_task: asyncio.Task | None = None  # Phase 1b: async extraction
         self._rlm_trigger_task: asyncio.Task | None = None  # Phase 2: RLM trigger
         self._skill_maker_task: asyncio.Task | None = None  # Phase A: skill maker
+        self._reflection_task: asyncio.Task | None = None  # Trajectory reflection
+        # Grace period (seconds) that close() gives background learning tasks
+        # to finish before cancelling them — lets one-shot sessions persist
+        # their lessons instead of killing the tasks on exit.
+        self._close_task_grace_seconds: float = 15.0
         self._session_start_time: float = 0.0
-        self._config_memory = getattr(config, "tripartite", None) if config else None
+        self._config_memory = (
+            (getattr(config, "memory", None) or getattr(config, "tripartite", None))
+            if config
+            else None
+        )
         # Phase 3.2: Session checkpointing for durable suspension/resumption
         self._session_store = session_store
         self._iteration = 0
@@ -339,19 +359,23 @@ class QueryLoop:
             wiki_hint = ""
             if initial_query and self.wiki is not None and self.pageindex is not None:
                 try:
-                    routing_timeout = 2.0
-                    if hasattr(self, "_config_memory"):
-                        routing_timeout = getattr(
-                            self._config_memory, "routing_timeout_seconds", 2.0
-                        )
-                    wiki_nodes = await asyncio.wait_for(
-                        self.pageindex.route(initial_query),
+                    mem_cfg = getattr(self, "_config_memory", None)
+                    pi_cfg = getattr(mem_cfg, "pageindex", None)
+                    routing_timeout = _coerce_float(
+                        getattr(
+                            mem_cfg,
+                            "routing_timeout_seconds",
+                            getattr(pi_cfg, "routing_timeout_seconds", 2.0),
+                        ),
+                        2.0,
+                    )
+                    min_confidence = _coerce_float(
+                        getattr(pi_cfg, "routing_min_confidence", 0.3), 0.3
+                    )
+                    wiki_hint = await asyncio.wait_for(
+                        self._build_wiki_hint(initial_query, min_confidence),
                         timeout=routing_timeout,
                     )
-                    if wiki_nodes:
-                        wiki_hint = "\n\n## Relevant Knowledge\n" + "\n".join(
-                            f"- [[{n.node_id}]] {n.title}: {n.description}" for n in wiki_nodes[:3]
-                        )
                 except asyncio.TimeoutError:
                     pass  # Fail gracefully — preserve planner latency
                 except Exception as e:
@@ -383,6 +407,10 @@ class QueryLoop:
                             0,
                             Message(role="system", content=self._plan_result.system_prompt_append),
                         )
+                elif wiki_hint:
+                    # No planner (e.g. no prompt skills loaded) — inject the
+                    # memory hint directly so retrieval still reaches the model.
+                    self.messages.insert(0, Message(role="system", content=wiki_hint.strip()))
 
                 # Phase B: Inject response style preferences into system prompt
                 try:
@@ -697,11 +725,12 @@ class QueryLoop:
                     pass
 
             # Phase 1b: Spawn background wiki extraction (non-blocking)
+            # ERROR sessions included: failed runs carry the most valuable lessons.
             if (
                 self.wiki is not None
                 and self._config_memory is not None
                 and getattr(self._config_memory.wiki, "auto_extract", False)
-                and self._state in (QueryState.COMPLETED, QueryState.INCOMPLETE)
+                and self._state in (QueryState.COMPLETED, QueryState.INCOMPLETE, QueryState.ERROR)
             ):
                 try:
                     # Copy messages to avoid mutation during extraction
@@ -712,6 +741,32 @@ class QueryLoop:
                 except Exception as e:
                     if self.logger:
                         self.logger.debug(f"Wiki extract task spawn failed (non-fatal): {e}")
+
+            # Trajectory reflection: distill reusable lessons post-session
+            # (Reflector→Curator). ERROR sessions included: failures carry the
+            # richest learning signal. Non-blocking, fire-and-forget.
+            reflection_cfg = (
+                getattr(self._config_memory, "reflection", None)
+                if self._config_memory is not None
+                else None
+            )
+            if (
+                self.wiki is not None
+                and self.pageindex is not None
+                and reflection_cfg is not None
+                and getattr(self._config_memory, "enabled", False)
+                and getattr(reflection_cfg, "enabled", False)
+                and self._state in (QueryState.COMPLETED, QueryState.INCOMPLETE, QueryState.ERROR)
+            ):
+                try:
+                    # Copy messages to avoid mutation during reflection
+                    messages_copy = list(self.messages)
+                    self._reflection_task = asyncio.create_task(
+                        self._reflect_on_trajectory(messages_copy, self._session_id, self._state)
+                    )
+                except Exception as e:
+                    if self.logger:
+                        self.logger.debug(f"Reflection task spawn failed (non-fatal): {e}")
 
             # Phase 2: Spawn background RLM trigger analysis (non-blocking, MVP: log only)
             if (
@@ -755,9 +810,11 @@ class QueryLoop:
                         tool_results=tool_results,
                         success=self._state == QueryState.COMPLETED,
                         model=self.llm.model if self.llm else "unknown",
-                        error=str(self._state.name)
-                        if self._state in (QueryState.ERROR, QueryState.INCOMPLETE)
-                        else None,
+                        error=(
+                            str(self._state.name)
+                            if self._state in (QueryState.ERROR, QueryState.INCOMPLETE)
+                            else None
+                        ),
                     )
                 except Exception:
                     # Logging failures must not crash the session
@@ -949,11 +1006,19 @@ class QueryLoop:
                 tool_call_id = call.get("id")
             else:
                 tool_call_id = getattr(call, "id", None)
+            # Expose the tool name/args to CLI renderers via metadata.
+            # setdefault so executors that already set metadata win.
+            try:
+                result.metadata.setdefault("tool_name", extract_tool_call_name(call))
+                result.metadata.setdefault("tool_args", extract_tool_call_arguments(call))
+            except Exception:
+                pass
             self.messages.append(
                 Message(
                     role="tool",
                     content=result.content if result.success else result.error,
                     tool_call_id=tool_call_id,
+                    metadata={"tool_name": extract_tool_call_name(call)},
                 )
             )
         self._set_state(QueryState.SYNTHESIZING)
@@ -1085,6 +1150,48 @@ class QueryLoop:
     # Phase 1b: Wiki auto-extraction
     # ------------------------------------------------------------------
 
+    async def _build_wiki_hint(self, query: str, min_confidence: float = 0.3) -> str:
+        """Build the "## Relevant Knowledge" system-prompt block for a query.
+
+        Routes the query through PageIndex, drops nodes below the confidence
+        threshold, then fetches each surviving wiki page to include a bounded
+        content snippet plus its tags. Pages flagged as contradicted, expired,
+        or otherwise non-injectable are skipped. Never raises.
+        """
+        try:
+            from pathlib import Path
+
+            from vibe.memory.wiki import _parse_page_file, is_page_injectable
+
+            nodes = await self.pageindex.route(query)
+            if not nodes:
+                return ""
+
+            threshold = _coerce_float(min_confidence, 0.3)
+
+            lines: list[str] = []
+            for node in nodes[:3]:
+                try:
+                    if _coerce_float(getattr(node, "confidence", 0.0), 0.0) < threshold:
+                        continue
+                    file_path = getattr(node, "file_path", None)
+                    if not file_path:
+                        continue
+                    page = _parse_page_file(Path(str(file_path)))
+                    if page is None or not is_page_injectable(page):
+                        continue
+                    snippet = page.content.strip()[:500]
+                    tags = ", ".join(page.tags) if page.tags else "none"
+                    lines.append(f"### {page.title} (tags: {tags})\n{snippet}")
+                except Exception:
+                    continue
+
+            if not lines:
+                return ""
+            return "\n\n## Relevant Knowledge\n" + "\n\n".join(lines)
+        except Exception:
+            return ""
+
     async def _extract_to_wiki(self, messages: list[Message], session_id: str | None) -> None:
         """Background task: extract knowledge from session and write to wiki.
 
@@ -1133,14 +1240,14 @@ class QueryLoop:
                     if existing:
                         # Merge content: append new citations
                         new_citations = item.get("citations", [])
-                        await self.wiki.update_page(
+                        page = await self.wiki.update_page(
                             page_id=existing.id,
                             content=item.get("content", ""),
                             citations=new_citations,
                         )
                         updated += 1
                     else:
-                        await self.wiki.create_page(
+                        page = await self.wiki.create_page(
                             title=item.get("title", ""),
                             content=item.get("content", ""),
                             tags=item.get("tags", []),
@@ -1148,6 +1255,11 @@ class QueryLoop:
                             status="draft",
                         )
                         created += 1
+                    # Keep PageIndex in sync so the page is routable immediately
+                    if self.pageindex is not None:
+                        from vibe.memory.pageindex import index_wiki_page
+
+                        index_wiki_page(self.pageindex, page)
                 except Exception as e:
                     if self.logger:
                         self.logger.debug(
@@ -1193,6 +1305,41 @@ class QueryLoop:
             return None
         except Exception:
             return None
+
+    # ------------------------------------------------------------------
+    # Trajectory reflection (Reflector→Curator pipeline)
+    # ------------------------------------------------------------------
+
+    async def _reflect_on_trajectory(
+        self, messages: list[Message], session_id: str | None, state: QueryState
+    ) -> None:
+        """Background task: distill reusable lessons from the finished trajectory.
+
+        Lessons are curated into the wiki (tagged ``lesson``) and indexed into
+        PageIndex so they become routable into future prompts. Never raises —
+        all errors are caught and logged.
+        """
+        if self.wiki is None or self.pageindex is None or session_id is None:
+            return
+
+        try:
+            from vibe.memory.reflection import TrajectoryReflector
+
+            reflector = TrajectoryReflector(
+                wiki=self.wiki,
+                pageindex=self.pageindex,
+                llm_client=self.llm,
+                config=getattr(self._config_memory, "reflection", None),
+            )
+            query = next((m.content for m in messages if m.role == "user" and m.content), "")
+            pages = await reflector.reflect(
+                query=query, messages=messages, state=state, session_id=session_id
+            )
+            if pages and self.logger:
+                self.logger.info(f"Trajectory reflection wrote {len(pages)} lesson page(s)")
+        except Exception as e:
+            if self.logger:
+                self.logger.debug(f"Trajectory reflection task failed (non-fatal): {e}")
 
     # ------------------------------------------------------------------
     # Phase 2: RLM trigger analysis (MVP — log only, no actual training)
@@ -1332,6 +1479,7 @@ class QueryLoop:
         new_loop._wiki_extract_task = None
         new_loop._rlm_trigger_task = None
         new_loop._skill_maker_task = None
+        new_loop._reflection_task = None
         new_loop._iteration = 0
         new_loop._last_checkpointed_iteration = -1
         new_loop._last_checkpointed_state = None
@@ -1436,7 +1584,43 @@ class QueryLoop:
         return loop
 
     async def close(self) -> None:
-        """Close all subsystems via Closable protocol. Cancel pending background tasks."""
+        """Close subsystems and settle background learning tasks.
+
+        Learning tasks (wiki extraction, trajectory reflection, RLM trigger,
+        skill-maker) are first awaited for a bounded grace period
+        (``self._close_task_grace_seconds``) so one-shot sessions persist their
+        lessons before shutdown; anything still running afterwards is
+        cancelled. Never raises.
+        """
+        # Settle background learning tasks FIRST — they write to the wiki, so
+        # they must finish (or be cancelled) before subsystems are closed.
+        for task_attr in (
+            "_wiki_extract_task",
+            "_reflection_task",
+            "_rlm_trigger_task",
+            "_skill_maker_task",
+        ):
+            task = getattr(self, task_attr, None)
+            if task is None or task.done():
+                continue
+            try:
+                await asyncio.wait_for(task, timeout=self._close_task_grace_seconds)
+            except asyncio.CancelledError:
+                if not task.done():
+                    task.cancel()
+                    try:
+                        await task
+                    except asyncio.CancelledError:
+                        pass
+            except Exception:
+                # Timeout (wait_for already cancelled the task) or task failure.
+                if not task.done():
+                    task.cancel()
+                    try:
+                        await task
+                    except (asyncio.CancelledError, Exception):
+                        pass
+
         # v4: Close all closable subsystems via protocol
         for subsystem in [
             self.wiki,
@@ -1449,16 +1633,6 @@ class QueryLoop:
                     if asyncio.iscoroutine(result):
                         await result
                 except Exception:
-                    pass
-
-        # Cancel any pending background tasks (Phase 1b + Phase 2 + Phase A)
-        for task_attr in ("_wiki_extract_task", "_rlm_trigger_task", "_skill_maker_task"):
-            task = getattr(self, task_attr, None)
-            if task is not None and not task.done():
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
                     pass
 
         # Close LLM client and MCP bridge

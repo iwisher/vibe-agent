@@ -108,6 +108,72 @@ def test_parser_reads_steps():
     assert skill.steps[0].verification.exit_code == 0
 
 
+SAMPLE_SKILL_WITH_VARIABLES = """+++
+vibe_skill_version = "2.0.0"
+id = "vars-skill"
+name = "Vars Skill"
+description = "Skill with typed variables"
+
+[[variables]]
+name = "ticker"
+type = "string"
+required = true
+pattern = "^[A-Za-z0-9.-]{1,10}$"
+description = "Ticker symbol"
+
+[[variables]]
+name = "days"
+type = "integer"
+required = false
+default = 30
+minimum = 5
+
+[[steps]]
+id = "run"
+description = "Run it"
+tool = "bash"
+script = "scripts/run.py"
+interpreter = "python3"
+command = "{{ ticker }} --days {{ days }}"
+
+[steps.verification]
+exit_code = 0
+json_has_keys = ["ticker", "sma_20"]
++++
+
+# Vars Skill
+"""
+
+
+def test_parser_reads_variables():
+    """Regression: [[variables]] must reach Skill.variables (typed-vars pipeline)."""
+    parser = SkillParser()
+    skill = parser.parse_string(SAMPLE_SKILL_WITH_VARIABLES)
+    assert len(skill.variables) == 2
+    ticker, days = skill.variables
+    assert ticker["name"] == "ticker"
+    assert ticker["pattern"] == "^[A-Za-z0-9.-]{1,10}$"
+    assert ticker["required"] is True
+    assert days["name"] == "days"
+    assert days["default"] == 30
+    assert days["minimum"] == 5
+
+
+def test_parser_reads_script_and_interpreter():
+    parser = SkillParser()
+    skill = parser.parse_string(SAMPLE_SKILL_WITH_VARIABLES)
+    step = skill.steps[0]
+    assert step.script == "scripts/run.py"
+    assert step.interpreter == "python3"
+    assert step.verification.json_has_keys == ["ticker", "sma_20"]
+
+
+def test_parser_skill_dir_defaults_to_none():
+    parser = SkillParser()
+    skill = parser.parse_string(SAMPLE_SKILL)
+    assert skill.skill_dir is None
+
+
 def test_parser_reads_pitfalls():
     parser = SkillParser()
     skill = parser.parse_string(SAMPLE_SKILL)

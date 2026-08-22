@@ -1,0 +1,415 @@
+"""Unit tests for TrajectoryReflector — post-session Reflector→Curator pipeline.
+
+Covers: lesson page creation (tags/status/citations/routability), ACE-style
+dedup/merge with helpful/harmful counters, ERROR pitfall marking, trivial
+session skip, malformed JSON tolerance, LLM failure safety, tool-name
+threading in transcripts.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from vibe.core.config import ReflectionConfig
+from vibe.memory.pageindex import PageIndex
+from vibe.memory.reflection import TrajectoryReflector
+from vibe.memory.wiki import LLMWiki
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class FakeMessage:
+    role: str
+    content: str
+    metadata: dict | None = None
+
+
+@dataclass
+class FakeLLMResponse:
+    content: str
+
+
+_LESSON_JSON = json.dumps(
+    [
+        {
+            "title": "Pin base image digests",
+            "lesson": "When pulling container base images, pin by digest instead of "
+            "the latest tag, because upstream retagging silently breaks builds.",
+            "applies_when": "A Dockerfile references a floating base image tag",
+            "kind": "procedure",
+        }
+    ]
+)
+
+# A transcript long enough to clear the default skip heuristic
+_LONG_QUERY = "How do I dockerize my Python web application with compose? " * 4
+_LONG_ANSWER = "Use a pinned base image, a multi-stage build, and compose services. " * 4
+
+
+def _make_messages(tool_metadata: dict | None = None) -> list[FakeMessage]:
+    return [
+        FakeMessage(role="user", content=_LONG_QUERY),
+        FakeMessage(role="assistant", content="Let me inspect the project layout first."),
+        FakeMessage(
+            role="tool",
+            content="Dockerfile found at repo root" + " with details" * 30,
+            metadata=tool_metadata,
+        ),
+        FakeMessage(role="assistant", content=_LONG_ANSWER),
+    ]
+
+
+@pytest.fixture
+def wiki(tmp_path):
+    return LLMWiki(base_path=tmp_path / "wiki")
+
+
+@pytest.fixture
+def pageindex(tmp_path):
+    return PageIndex(index_path=tmp_path / "index.json")
+
+
+@pytest.fixture
+def llm():
+    client = MagicMock()
+    client.complete = AsyncMock(return_value=FakeLLMResponse(content=_LESSON_JSON))
+    return client
+
+
+@pytest.fixture
+def reflector(wiki, pageindex, llm):
+    return TrajectoryReflector(
+        wiki=wiki,
+        pageindex=pageindex,
+        llm_client=llm,
+        config=ReflectionConfig(min_transcript_chars=10),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Lesson page creation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_reflect_creates_lesson_page(reflector, wiki, pageindex):
+    pages = await reflector.reflect(
+        query="dockerize my app",
+        messages=_make_messages(tool_metadata={"tool_name": "file_read"}),
+        state="COMPLETED",
+        session_id="sess-001",
+    )
+    assert len(pages) == 1
+    page = pages[0]
+    assert page.title == "Pin base image digests"
+    assert "lesson" in page.tags
+    assert "procedure" in page.tags
+    assert page.status == "draft"
+    assert any(c.get("session") == "sess-001" for c in page.citations)
+    # COMPLETED sessions initialize the helpful counter
+    assert "helpful: 1" in page.content
+    assert "harmful: 0" in page.content
+    assert "**Applies when:**" in page.content
+    assert "**Kind:** procedure" in page.content
+
+
+@pytest.mark.asyncio
+async def test_reflect_lesson_immediately_routable(reflector, pageindex):
+    pages = await reflector.reflect(
+        query="dockerize my app",
+        messages=_make_messages(),
+        state="COMPLETED",
+        session_id="sess-002",
+    )
+    assert len(pages) == 1
+    # PageIndex (keyword routing, no LLM) must find the page right away
+    nodes = await pageindex.route("docker base image digests pinning")
+    routed_paths = {n.file_path for n in nodes}
+    assert str(pages[0].path) in routed_paths
+
+
+@pytest.mark.asyncio
+async def test_reflect_caps_at_max_lessons(wiki, pageindex):
+    many = json.dumps(
+        [
+            {"title": f"Lesson number {i}", "lesson": f"Rule {i} " * 20, "kind": "tip"}
+            for i in range(6)
+        ]
+    )
+    llm = MagicMock()
+    llm.complete = AsyncMock(return_value=FakeLLMResponse(content=many))
+    reflector = TrajectoryReflector(
+        wiki=wiki,
+        pageindex=pageindex,
+        llm_client=llm,
+        config=ReflectionConfig(min_transcript_chars=10, max_lessons=2),
+    )
+    pages = await reflector.reflect(
+        query="q", messages=_make_messages(), state="COMPLETED", session_id="sess-cap"
+    )
+    assert len(pages) == 2
+
+
+# ---------------------------------------------------------------------------
+# Curator: dedup/merge with counters
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_reflect_merges_similar_lesson_and_increments_counter(
+    reflector, wiki, pageindex, llm
+):
+    first = await reflector.reflect(
+        query="dockerize my app",
+        messages=_make_messages(),
+        state="COMPLETED",
+        session_id="sess-010",
+    )
+    assert len(first) == 1
+
+    # A second session surfaces a similar lesson (same title, refined text)
+    llm.complete = AsyncMock(
+        return_value=FakeLLMResponse(
+            content=json.dumps(
+                [
+                    {
+                        "title": "Pin base image digests",
+                        "lesson": "When choosing base images, pin the digest and record "
+                        "it in lockfiles, because floating tags also break rollbacks.",
+                        "applies_when": "Any container build",
+                        "kind": "procedure",
+                    }
+                ]
+            )
+        )
+    )
+    second = await reflector.reflect(
+        query="docker builds broke again",
+        messages=_make_messages(),
+        state="COMPLETED",
+        session_id="sess-011",
+    )
+    assert len(second) == 1
+    # Same page updated — no duplicate created
+    assert second[0].id == first[0].id
+    all_pages = await wiki.list_pages()
+    assert len(all_pages) == 1
+    merged = all_pages[0]
+    assert "helpful: 2" in merged.content
+    assert "harmful: 0" in merged.content
+    # Lesson text merged additively, old text preserved
+    assert "silently breaks builds" in merged.content
+    assert "Refinement:" in merged.content
+    assert "break rollbacks" in merged.content
+    # Both sessions cited
+    sessions = {c.get("session") for c in merged.citations}
+    assert {"sess-010", "sess-011"} <= sessions
+
+
+@pytest.mark.asyncio
+async def test_reflect_merge_error_increments_harmful(reflector, wiki, llm):
+    await reflector.reflect(
+        query="q",
+        messages=_make_messages(),
+        state="COMPLETED",
+        session_id="sess-020",
+    )
+    # Same lesson observed again in a failed session
+    pages = await reflector.reflect(
+        query="q",
+        messages=_make_messages(),
+        state="ERROR",
+        session_id="sess-021",
+    )
+    assert len(pages) == 1
+    assert "helpful: 1" in pages[0].content
+    assert "harmful: 1" in pages[0].content
+
+
+@pytest.mark.asyncio
+async def test_reflect_never_merges_into_non_lesson_page(reflector, wiki, llm):
+    # Pre-existing plain knowledge page with the same title
+    await wiki.create_page(
+        title="Pin base image digests",
+        content="General Docker knowledge.",
+        tags=["docker"],
+    )
+    pages = await reflector.reflect(
+        query="q",
+        messages=_make_messages(),
+        state="COMPLETED",
+        session_id="sess-030",
+    )
+    assert len(pages) == 1
+    assert "lesson" in pages[0].tags
+    # Two distinct pages: the plain one and the new lesson one
+    assert len(await wiki.list_pages()) == 2
+
+
+# ---------------------------------------------------------------------------
+# ERROR trajectories → pitfall/harmful
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_reflect_error_session_marks_pitfall_and_harmful(wiki, pageindex, llm):
+    llm.complete = AsyncMock(
+        return_value=FakeLLMResponse(
+            content=json.dumps(
+                [
+                    {
+                        "title": "Do not force-push shared branches",
+                        "lesson": "When a push is rejected, pull --rebase instead of "
+                        "force-pushing, because force-push destroys teammates' work.",
+                        "applies_when": "git push is rejected as non-fast-forward",
+                        "kind": "pitfall",
+                    }
+                ]
+            )
+        )
+    )
+    reflector = TrajectoryReflector(
+        wiki=wiki,
+        pageindex=pageindex,
+        llm_client=llm,
+        config=ReflectionConfig(min_transcript_chars=10),
+    )
+    pages = await reflector.reflect(
+        query="q", messages=_make_messages(), state="ERROR", session_id="sess-040"
+    )
+    assert len(pages) == 1
+    page = pages[0]
+    assert "pitfall" in page.tags
+    assert "harmful: 1" in page.content
+    assert "helpful: 0" in page.content
+
+
+@pytest.mark.asyncio
+async def test_reflect_error_session_coerces_invalid_kind_to_pitfall(wiki, pageindex, llm):
+    llm.complete = AsyncMock(
+        return_value=FakeLLMResponse(
+            content=json.dumps(
+                [{"title": "Check credentials first", "lesson": "x " * 60, "kind": "bogus"}]
+            )
+        )
+    )
+    reflector = TrajectoryReflector(
+        wiki=wiki,
+        pageindex=pageindex,
+        llm_client=llm,
+        config=ReflectionConfig(min_transcript_chars=10),
+    )
+    pages = await reflector.reflect(
+        query="q", messages=_make_messages(), state="ERROR", session_id="sess-041"
+    )
+    assert len(pages) == 1
+    assert "pitfall" in pages[0].tags
+    assert "**Kind:** pitfall" in pages[0].content
+
+
+# ---------------------------------------------------------------------------
+# Skip heuristic / robustness
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_reflect_skips_trivial_session(wiki, pageindex, llm):
+    reflector = TrajectoryReflector(
+        wiki=wiki,
+        pageindex=pageindex,
+        llm_client=llm,
+        config=ReflectionConfig(),  # default min_transcript_chars=400
+    )
+    pages = await reflector.reflect(
+        query="hi",
+        messages=[
+            FakeMessage(role="user", content="hi"),
+            FakeMessage(role="assistant", content="hello!"),
+        ],
+        state="COMPLETED",
+        session_id="sess-050",
+    )
+    assert pages == []
+    llm.complete.assert_not_called()
+    assert await wiki.list_pages() == []
+
+
+@pytest.mark.asyncio
+async def test_reflect_tolerates_malformed_json(reflector, wiki, llm):
+    llm.complete = AsyncMock(return_value=FakeLLMResponse(content="not json at all"))
+    pages = await reflector.reflect(
+        query="q", messages=_make_messages(), state="COMPLETED", session_id="sess-060"
+    )
+    assert pages == []
+    assert await wiki.list_pages() == []
+
+
+@pytest.mark.asyncio
+async def test_reflect_parses_code_fenced_json_with_prose(reflector, llm):
+    llm.complete = AsyncMock(
+        return_value=FakeLLMResponse(
+            content=f"Here are the lessons:\n```json\n{_LESSON_JSON}\n```\n"
+        )
+    )
+    pages = await reflector.reflect(
+        query="q", messages=_make_messages(), state="COMPLETED", session_id="sess-061"
+    )
+    assert len(pages) == 1
+    assert pages[0].title == "Pin base image digests"
+
+
+@pytest.mark.asyncio
+async def test_reflect_llm_exception_no_write_no_raise(reflector, wiki, llm):
+    llm.complete = AsyncMock(side_effect=RuntimeError("provider down"))
+    pages = await reflector.reflect(
+        query="q", messages=_make_messages(), state="COMPLETED", session_id="sess-070"
+    )
+    assert pages == []
+    assert await wiki.list_pages() == []
+
+
+@pytest.mark.asyncio
+async def test_reflect_wiki_write_failure_swallowed(reflector, wiki, llm, monkeypatch):
+    async def _boom(*args, **kwargs):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(wiki, "create_page", _boom)
+    pages = await reflector.reflect(
+        query="q", messages=_make_messages(), state="COMPLETED", session_id="sess-071"
+    )
+    assert pages == []
+
+
+# ---------------------------------------------------------------------------
+# Transcript building / tool-name threading
+# ---------------------------------------------------------------------------
+
+
+def test_transcript_uses_tool_name_from_metadata(reflector):
+    messages = [
+        FakeMessage(role="user", content="Search for flights"),
+        FakeMessage(role="tool", content="3 results", metadata={"tool_name": "web_search"}),
+        FakeMessage(role="assistant", content="Found 3 flights."),
+    ]
+    transcript = reflector._build_transcript(messages)
+    assert "tool web_search: 3 results" in transcript
+
+
+def test_transcript_falls_back_to_generic_label_without_metadata(reflector):
+    messages = [FakeMessage(role="tool", content="ok")]
+    transcript = reflector._build_transcript(messages)
+    assert "tool result: ok" in transcript
+
+
+def test_transcript_bounded(reflector):
+    messages = [FakeMessage(role="user", content=f"message {i} " + "y" * 2000) for i in range(50)]
+    transcript = reflector._build_transcript(messages)
+    assert len(transcript) <= 12000 + 100  # bound + last line slack
+    assert "[transcript truncated]" in transcript

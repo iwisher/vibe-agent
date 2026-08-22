@@ -41,6 +41,11 @@ Instructions:
 - Each item should be a self-contained knowledge nugget
 - Use [[slug]] syntax to reference related concepts (e.g., [[python]], [[docker]])
 - Include specific details: names, dates, versions, commands, URLs, decisions
+- Tool messages appear as compact `[i] tool <name>: <output>` summaries — use \
+them to learn what the agent actually did
+- Also extract LESSON entries: reusable rules learned from what worked and what \
+failed in this conversation, and why. A lesson must include the tag "lesson" in \
+addition to its topic tags.
 
 For each knowledge item, provide:
 - title: A concise, descriptive title (3-8 words)
@@ -60,12 +65,24 @@ Example:
                "configuration details.",
     "tags": ["docker", "networking", "compose"],
     "citations": [{{"session": "abc123", "message_index": 5}}]
+  }},
+  {{
+    "title": "Lesson: pin base image digests",
+    "content": "Pulling `latest` broke the build when upstream changed. Pinning the "
+               "base image by digest fixed it. Rule: always pin external dependencies "
+               "by digest or exact version.",
+    "tags": ["lesson", "docker", "reproducibility"],
+    "citations": [{{"session": "abc123", "message_index": 7}}]
   }}
 ]
 
 CONVERSATION:
 {transcript}
 """
+
+# Bounds for transcript construction (chars)
+_TOOL_SUMMARY_MAX_CHARS = 300
+_MAX_TRANSCRIPT_CHARS = 20000
 
 # ---------------------------------------------------------------------------
 # KnowledgeExtractor
@@ -257,18 +274,52 @@ class KnowledgeExtractor:
     # ------------------------------------------------------------------
 
     def _build_transcript(self, messages: list[Any], session_id: str) -> str:
-        """Build a formatted transcript from messages for the LLM prompt."""
+        """Build a formatted transcript from messages for the LLM prompt.
+
+        Tool messages are included as compact one-line summaries (tool name from
+        message metadata ``tool_name`` when present, else a generic label) so the
+        extractor can learn from what the agent actually did. The transcript is
+        bounded to ``_MAX_TRANSCRIPT_CHARS``; tool outputs to
+        ``_TOOL_SUMMARY_MAX_CHARS``.
+        """
         lines: list[str] = []
+        total_chars = 0
         for i, msg in enumerate(messages):
             role = getattr(msg, "role", "unknown")
             content = getattr(msg, "content", "")
             if not content or not content.strip():
                 continue
-            # Skip system messages and tool results (too noisy)
-            if role in ("system", "tool"):
+            # Skip system messages (too noisy)
+            if role == "system":
                 continue
-            lines.append(f"[{i}] {role}: {content.strip()}")
+            if role == "tool":
+                tool_text = content.strip()
+                if len(tool_text) > _TOOL_SUMMARY_MAX_CHARS:
+                    tool_text = tool_text[: _TOOL_SUMMARY_MAX_CHARS - 1].rstrip() + "…"
+                line = f"[{i}] tool {self._tool_name_for(msg)}: {tool_text}"
+            else:
+                line = f"[{i}] {role}: {content.strip()}"
+            if total_chars + len(line) > _MAX_TRANSCRIPT_CHARS:
+                lines.append("[transcript truncated]")
+                break
+            lines.append(line)
+            total_chars += len(line)
         return "\n\n".join(lines)
+
+    @staticmethod
+    def _tool_name_for(msg: Any) -> str:
+        """Best-effort tool name for a tool message (metadata.tool_name if present)."""
+        try:
+            metadata = getattr(msg, "metadata", None)
+            if isinstance(metadata, dict):
+                name = metadata.get("tool_name")
+            elif metadata is not None:
+                name = getattr(metadata, "tool_name", None)
+            else:
+                name = getattr(msg, "tool_name", None)
+            return str(name) if name else "result"
+        except Exception:
+            return "result"
 
     async def _call_llm(self, prompt: str) -> str | None:
         """Call the LLM with the extraction prompt. Returns raw response or None."""
@@ -438,12 +489,11 @@ class KnowledgeExtractor:
                             status="draft",
                         )
 
-                    # Update PageIndex if available
-                    if self.pageindex is not None and hasattr(self.pageindex, "add_page"):
-                        try:
-                            await self.pageindex.add_page(page)
-                        except Exception as idx_err:
-                            logger.debug("Failed to index page '%s': %s", title, idx_err)
+                    # Update PageIndex so the page is routable immediately
+                    if self.pageindex is not None:
+                        from vibe.memory.pageindex import index_wiki_page
+
+                        index_wiki_page(self.pageindex, page)
 
                     created_pages.append(page)
                 except Exception as write_err:

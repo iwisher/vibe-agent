@@ -9,16 +9,17 @@ Vibe Agent is an open, visual-first interactive CLI agent harness. It is designe
 - **Secure Tool Execution**: 5-layer security defense (pattern scanning, file safety, human approval, smart approver, checkpoints) with sandboxed Bash and jailed File tools.
 - **Context Management**: Automated compaction with 4 strategies (TRUNCATE, LLM_SUMMARIZE, OFFLOAD, DROP), plus adaptive iteration budgets based on task complexity.
 - **Eval-Driven Development**: 50+ built-in eval cases, adversarial testing, multi-model scorecards, soak tests with degradation detection, and factory-per-case isolation.
-- **Phase 2 Skill System**: Native vibe skill format with TOML frontmatter, validation, security scanning, atomic installation, typed variables, orchestration, marketplace, and dynamic tool declaration.
+- **Phase 2 Skill System**: Native vibe skill format with TOML frontmatter, validation, security scanning, atomic installation, typed variables, orchestration, marketplace, and dynamic tool declaration. **Deterministic script steps** let fixed logic live in bundled `scripts/` executed through the sandboxed Bash tool — the LLM only picks the skill and supplies typed inputs.
 - **Skill-Maker (Self-Improving)**: Automatically detects recurring task patterns from wiki extractions, generates SKILL.md drafts via LLM, validates through sandbox, and proposes installation via approval gate.
-- **Tripartite Memory System**: Automated async knowledge extraction, FlashLLM contradiction detection, telemetry-triggered RLM analysis, vector search with sentence-transformers, wiki graph database, and per-tag novelty thresholds.
+- **Trajectory Reflection (Test-Time Learning)**: Post-session Reflector→Curator distills compact lessons (pitfalls / procedures / tips) from every run — including failures — dedups them into lesson wiki pages with helpful/harmful counters, and retrieves them into future prompts. Enabled by default.
+- **Tripartite Memory System**: Enabled by default. Query-time retrieval injects relevant wiki knowledge (confidence-gated, content snippets, contradiction-aware) plus "what worked before" snippets from similar successful past sessions into every prompt, on all planner tiers. Async knowledge extraction, FlashLLM contradiction detection, telemetry-triggered RLM analysis, vector search with sentence-transformers, wiki graph database, and per-tag novelty thresholds.
 - **EvoX Meta-Evolution (Offline Pipeline)**: Self-improving offline search that jointly evolves candidate solutions and the search strategies used to generate them. Uses AdaEvolve-style multi-objective proxy scoring, UCB parent selection, and a lightweight strategy-code sandbox.
 - **Shadow Workspace Rollbacks**: Auto-creates hidden git branch (`vibe/shadow-<session-id>`) before write-heavy operations. One-command restore if the session fails.
 - **Multi-Agent Swarm**: DAG-based orchestration of specialized sub-agents (Research, Coding, Critic, Planner) with Pub/Sub message bus, broadcast deduplication, and shared wiki.
 - **React Trace Dashboard**: Web UI for session observability — timeline, wiki graph, telemetry charts, system stats. Dark theme, real-time WebSocket updates.
 - **Preference Layer**: 8 persistent heuristics converting user feedback into agent behavior — tool defaults, approval rules, style, macros, recovery, compaction, provider routing, extraction.
 - **Secret Redaction**: Automatic stripping of API keys (OpenAI, AWS, GitHub, etc.) and passwords from trace stores and logs.
-- **Interactive CLI**: Readline support with persistent history, token metrics display, and rich skill/wiki/memory management commands.
+- **Interactive CLI**: Markdown-rendered responses, structured tool-call panels (name, args, duration, truncated output), unified error panels, streaming with native reasoning/thinking display, persistent history, and rich skill/wiki/memory management commands.
 
 ---
 
@@ -48,7 +49,8 @@ Query Loop State Machine (IDLE → PLANNING → TOOL_EXECUTION → SYNTHESIZING 
   ├── Swarm Orchestrator (multi-agent DAG)
   ├── Tripartite Memory System
   │    ├── LLMWiki + PageIndex + SharedDB (SQLite)
-  │    ├── Knowledge Extractor (async background)
+  │    ├── Knowledge Extractor (async background, incl. failed runs)
+  │    ├── Trajectory Reflector (post-session lesson curation)
   │    ├── RLM Threshold Analyzer (telemetry-triggered LoRA training)
   │    └── WikiGraph + Semantic Deduplication
   └── EvoX Meta-Evolution (offline search)
@@ -309,7 +311,7 @@ Skills are defined as markdown files with TOML frontmatter:
 vibe_skill_version = "2.0.0"
 id = "stock-analysis"
 name = "Stock Analysis"
-description = "Fetch and analyze stock technicals using yfinance"
+description = "Analyze stock prices from a local CSV or stooq.com and compute technical indicators"
 category = "finance"
 tags = ["stocks", "analysis", "finance"]
 
@@ -317,14 +319,31 @@ tags = ["stocks", "analysis", "finance"]
 patterns = ["analyze stock", "check price of"]
 required_tools = ["bash"]
 
+[[variables]]
+name = "ticker"
+type = "string"
+required = true
+pattern = "^[A-Za-z0-9.-]{1,10}$"
+description = "Stock ticker symbol, e.g. QQQ"
+
+[[variables]]
+name = "days"
+type = "integer"
+required = false
+default = 30
+minimum = 5
+maximum = 3650
+
 [[steps]]
-id = "fetch"
-description = "Fetch and analyze ticker data"
+id = "analyze"
+description = "Run the deterministic analysis script and emit JSON indicators"
 tool = "bash"
-command = "python qqq_price.py"
+script = "scripts/analyze.py"
+command = "{{ ticker }} --days {{ days }}"
 
 [steps.verification]
 exit_code = 0
+json_has_keys = ["ticker", "sma_20"]
 +++
 
 # Stock Analysis Skill
@@ -332,6 +351,17 @@ exit_code = 0
 ## Overview
 Fetches stock price data and computes basic technical indicators.
 ```
+
+### Deterministic Script Steps
+
+Anything deterministic belongs in a **script**, not in LLM-interpreted prose. A step
+with `script = "scripts/analyze.py"` (relative to the skill directory, jailed under
+`scripts/`) is executed by the runner itself: variable values are typed (string /
+integer / pattern-validated), `shlex`-quoted, and appended to the script's argv, then
+run through the sandboxed Bash tool — no shell, no unquoted metacharacters, no prompt
+injection surface. The LLM only chooses *which* skill to run and *with what inputs*;
+the step logic is fixed, reviewed, and install-time security-scanned code. Optional
+`interpreter = "..."` overrides the default (`.py` → current Python, `.sh` → bash).
 
 ### Skill CLI Commands
 
@@ -395,6 +425,27 @@ vibe memory wiki index rebuild
 
 ---
 
+## 🎓 Trajectory Reflection (Test-Time Learning)
+
+After every run — successful **or failed** — a Reflector→Curator pipeline distills what
+the agent learned into compact, reusable lessons and stores them in the wiki:
+
+- **Reflector**: reads the trajectory (query, tool calls, outcome) and produces up to
+  `memory.reflection.max_lessons` lessons as `{title, lesson, applies_when, kind}`
+  where kind is `pitfall`, `procedure`, or `tip`. Trivial sessions are skipped.
+- **Curator**: deduplicates against existing lesson pages — a repeat lesson *merges*
+  (additive refinement + helpful/harmful counters) instead of creating a duplicate,
+  which keeps the playbook compact and prevents context collapse.
+- **Retrieval**: lesson pages are indexed immediately, so future queries on related
+  tasks retrieve them through the normal memory path (confidence-gated,
+  contradiction-aware, with bounded content snippets) — no separate store needed.
+
+Configured under `memory.reflection` in `~/.vibe/config.yaml` (enabled by default when
+memory is on). Raw trajectories remain in the trace store for the offline RLM path;
+curated lessons live in the wiki where they are actually retrieved.
+
+---
+
 ## 🤖 Swarm Commands
 
 ```bash
@@ -425,6 +476,22 @@ vibe eval update-baseline
 
 ---
 
+## 📖 Research Foundations
+
+The memory, skill, and self-improvement designs follow published, peer-reviewed or
+widely-cited work:
+
+- [CodeAct: Executable Code Actions Elicit Better LLM Agents](https://arxiv.org/abs/2402.01030) (Wang et al., ICML 2024) — executable actions beat interpreted ones; basis for deterministic skill script steps.
+- [Equipping Agents for the Real World with Agent Skills](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills) (Anthropic, 2025) — deterministic logic lives in `scripts/`, not prose; progressive disclosure.
+- [Agent Workflow Memory (AWM)](https://arxiv.org/abs/2409.07429) (Wang et al., ICML 2025) — induce reusable workflows from past trajectories and inject them at inference.
+- [Agentic Context Engineering (ACE)](https://arxiv.org/abs/2510.04618) (Zhang et al., 2025) — context as an evolving playbook; incremental delta lessons with helpful/harmful counters; merge-don't-rewrite curation.
+- [ExpeL: LLM Agents Are Experiential Learners](https://arxiv.org/abs/2308.10144) (Zhao et al., AAAI 2024) — distill cross-task insights from successes *and* failures.
+- [Reflexion: Language Agents with Verbal Reinforcement Learning](https://arxiv.org/abs/2303.11366) (Shinn et al., NeurIPS 2023) — failed trajectories are the richest learning signal.
+- [A-MEM: Agentic Memory for LLM Agents](https://arxiv.org/abs/2502.12110) (Xu et al., NeurIPS 2025) — structured, status-aware memory notes.
+- [Generative Agents: Interactive Simulacra of Human Behavior](https://arxiv.org/abs/2304.03442) (Park et al., 2023) — relevance/recency/importance gating at retrieval time.
+
+---
+
 ## 📚 Documentation Index
 
 - [Architecture](docs/ARCHITECTURE.md)
@@ -435,4 +502,4 @@ vibe eval update-baseline
 
 ---
 
-*Vibe Agent is currently in Phase 4.2 (Self-Improving Skill-Maker) + Phase 5.2 (Shadow Workspace). See the [Roadmap](docs/ROADMAP.md) for what's next. Test suite: **1334 tests passing**.*
+*Vibe Agent is currently in Phase 4.2 (Self-Improving Skill-Maker) + Phase 5.2 (Shadow Workspace). See the [Roadmap](docs/ROADMAP.md) for what's next. Test suite: **1699 tests passing**.*

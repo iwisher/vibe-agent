@@ -118,6 +118,8 @@ class InstructionLoader:
                     try:
                         parser = SkillParser()
                         skill = parser.parse_string(text)
+                        # Record source dir so script steps can resolve scripts/...
+                        skill.skill_dir = str(file_path.parent)
                         executable_skills[skill.id] = skill
                     except Exception:
                         # Skip malformed TOML skills

@@ -26,6 +26,25 @@ except ImportError:
     np = None
 
 
+def _make_snippet(content: Any, max_chars: int = 200) -> str | None:
+    """Collapse whitespace and truncate content to a bounded single-line snippet.
+
+    Returns None when there is no usable text. Never raises.
+    """
+    try:
+        if not content or not isinstance(content, str):
+            return None
+        text = " ".join(content.split())
+        if not text:
+            return None
+        limit = max(1, int(max_chars))
+        if len(text) > limit:
+            text = text[: limit - 1].rstrip() + "…"
+        return text
+    except Exception:
+        return None
+
+
 class BaseTraceStore(ABC):
     """Abstract base class for trace stores."""
 
@@ -53,8 +72,14 @@ class BaseTraceStore(ABC):
         pass
 
     @abstractmethod
-    def get_similar_sessions(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
-        """Get sessions similar to query."""
+    def get_similar_sessions(
+        self, query: str, limit: int = 5, success_only: bool = True
+    ) -> list[dict[str, Any]]:
+        """Get sessions similar to query.
+
+        When ``success_only`` is True (default), only successful sessions are
+        returned — similarity hints describe what *worked* before.
+        """
         pass
 
     @abstractmethod
@@ -107,8 +132,7 @@ class SQLiteTraceStore(BaseTraceStore):
 
     def _init_db(self) -> None:
         with sqlite3.connect(self.db_path) as conn:
-            conn.executescript(
-                """
+            conn.executescript("""
                 CREATE TABLE IF NOT EXISTS sessions (
                     id TEXT PRIMARY KEY,
                     start_time TEXT,
@@ -145,8 +169,7 @@ class SQLiteTraceStore(BaseTraceStore):
                 CREATE INDEX IF NOT EXISTS idx_sessions_time ON sessions(start_time);
                 CREATE INDEX IF NOT EXISTS idx_sessions_success ON sessions(success);
                 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id);
-                """
-            )
+                """)
 
     def _serialize_embedding(self, embedding: Any) -> bytes:
         """Serialize embedding to compact numpy bytes (replaces pickle)."""
@@ -306,7 +329,9 @@ class SQLiteTraceStore(BaseTraceStore):
 
         self._enforce_retention()
 
-    def get_similar_sessions_vector(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
+    def get_similar_sessions_vector(
+        self, query: str, limit: int = 5, success_only: bool = True
+    ) -> list[dict[str, Any]]:
         """Retrieve sessions using vector similarity with keyword pre-filtering."""
         query_emb = self._get_embedding(query)
         if query_emb is None or np is None:
@@ -327,6 +352,7 @@ class SQLiteTraceStore(BaseTraceStore):
                 rows = conn.execute(sql, params).fetchall()
                 prefiltered_ids = {r["session_id"] for r in rows}
 
+        success_clause = " AND s.success = 1" if success_only else ""
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             if prefiltered_ids:
@@ -335,17 +361,16 @@ class SQLiteTraceStore(BaseTraceStore):
                     SELECT se.session_id, se.embedding, s.start_time, s.success, s.model
                     FROM session_embeddings se
                     JOIN sessions s ON se.session_id = s.id
-                    WHERE se.session_id IN ({placeholders})
+                    WHERE se.session_id IN ({placeholders}){success_clause}
                 """
                 rows = conn.execute(sql, list(prefiltered_ids)).fetchall()
             else:
-                rows = conn.execute(
-                    """
+                rows = conn.execute(f"""
                     SELECT se.session_id, se.embedding, s.start_time, s.success, s.model
                     FROM session_embeddings se
                     JOIN sessions s ON se.session_id = s.id
-                    """
-                ).fetchall()
+                    {"WHERE s.success = 1" if success_only else ""}
+                    """).fetchall()
 
             results = []
             for row in rows:
@@ -378,9 +403,14 @@ class SQLiteTraceStore(BaseTraceStore):
             # Use a threshold of 0.3 for similarity relevance
             return [r for r in results if r["score"] > 0.3][:limit]
 
-    def get_similar_sessions(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
-        """Retrieve similar sessions, preferring vector search."""
-        vector_results = self.get_similar_sessions_vector(query, limit)
+    def get_similar_sessions(
+        self, query: str, limit: int = 5, success_only: bool = True
+    ) -> list[dict[str, Any]]:
+        """Retrieve similar sessions, preferring vector search.
+
+        By default only successful sessions are returned (``success_only``).
+        """
+        vector_results = self.get_similar_sessions_vector(query, limit, success_only=success_only)
         if vector_results:
             return [{k: v for k, v in r.items() if k != "score"} for r in vector_results]
 
@@ -391,11 +421,12 @@ class SQLiteTraceStore(BaseTraceStore):
         with sqlite3.connect(self.db_path) as conn:
             conn.row_factory = sqlite3.Row
             placeholders = " OR ".join(["LOWER(m.content) LIKE ?"] * len(keywords))
+            success_clause = "s.success = 1 AND " if success_only else ""
             sql = f"""
                 SELECT s.*, m.content as msg_content
                 FROM sessions s
                 JOIN messages m ON s.id = m.session_id
-                WHERE {placeholders}
+                WHERE {success_clause}({placeholders})
                 ORDER BY s.start_time DESC
                 LIMIT ?
             """
@@ -419,6 +450,31 @@ class SQLiteTraceStore(BaseTraceStore):
 
         sorted_sessions = sorted(scored.values(), key=lambda x: x["score"], reverse=True)
         return [{k: v for k, v in s.items() if k != "score"} for s in sorted_sessions[:limit]]
+
+    def get_session_snippet(self, session_id: str, max_chars: int = 200) -> str | None:
+        """Return a bounded single-line snippet of the session's final assistant message.
+
+        Used by the planner's memory hint ("What worked before"). Never raises —
+        returns None on any problem.
+        """
+        try:
+            if not session_id:
+                return None
+            with sqlite3.connect(self.db_path) as conn:
+                row = conn.execute(
+                    """
+                    SELECT content FROM messages
+                    WHERE session_id = ? AND role = 'assistant'
+                      AND content IS NOT NULL AND TRIM(content) != ''
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    (session_id,),
+                ).fetchone()
+            if not row:
+                return None
+            return _make_snippet(row[0], max_chars)
+        except Exception:
+            return None
 
     def get_recent_sessions(self, limit: int = 20) -> list[dict[str, Any]]:
         """Return recent sessions ordered by start time descending."""
@@ -542,7 +598,9 @@ class JSONTraceStore(BaseTraceStore):
         self._enforce_retention()
         self._save()
 
-    def get_similar_sessions(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
+    def get_similar_sessions(
+        self, query: str, limit: int = 5, success_only: bool = True
+    ) -> list[dict[str, Any]]:
         """Keyword-based similarity for JSON backend."""
         keywords = [w.lower() for w in query.split() if len(w) > 2]
         if not keywords:
@@ -550,6 +608,8 @@ class JSONTraceStore(BaseTraceStore):
 
         scored = []
         for session in self._data:
+            if success_only and not session.get("success"):
+                continue
             score = 0
             text = " ".join([m.get("content", "") for m in session.get("messages", [])]).lower()
             for kw in keywords:
@@ -560,6 +620,23 @@ class JSONTraceStore(BaseTraceStore):
 
         scored.sort(key=lambda x: x[0], reverse=True)
         return [s for _, s in scored[:limit]]
+
+    def get_session_snippet(self, session_id: str, max_chars: int = 200) -> str | None:
+        """Return a bounded snippet of the session's final assistant message.
+
+        Never raises — returns None on any problem.
+        """
+        try:
+            for session in self._data:
+                if session.get("id") != session_id:
+                    continue
+                for msg in reversed(session.get("messages", [])):
+                    if msg.get("role") == "assistant":
+                        return _make_snippet(msg.get("content"), max_chars)
+                return None
+            return None
+        except Exception:
+            return None
 
     def get_recent_sessions(self, limit: int = 20) -> list[dict[str, Any]]:
         return self.get_sessions(limit=limit)
@@ -645,13 +722,17 @@ class MemoryTraceStore(BaseTraceStore):
         self._data.append(session)
         self._enforce_retention()
 
-    def get_similar_sessions(self, query: str, limit: int = 5) -> list[dict[str, Any]]:
+    def get_similar_sessions(
+        self, query: str, limit: int = 5, success_only: bool = True
+    ) -> list[dict[str, Any]]:
         keywords = [w.lower() for w in query.split() if len(w) > 2]
         if not keywords:
             return []
 
         scored = []
         for session in self._data:
+            if success_only and not session.get("success"):
+                continue
             score = 0
             text = " ".join([m.get("content", "") for m in session.get("messages", [])]).lower()
             for kw in keywords:
@@ -662,6 +743,23 @@ class MemoryTraceStore(BaseTraceStore):
 
         scored.sort(key=lambda x: x[0], reverse=True)
         return [s for _, s in scored[:limit]]
+
+    def get_session_snippet(self, session_id: str, max_chars: int = 200) -> str | None:
+        """Return a bounded snippet of the session's final assistant message.
+
+        Never raises — returns None on any problem.
+        """
+        try:
+            for session in self._data:
+                if session.get("id") != session_id:
+                    continue
+                for msg in reversed(session.get("messages", [])):
+                    if msg.get("role") == "assistant":
+                        return _make_snippet(msg.get("content"), max_chars)
+                return None
+            return None
+        except Exception:
+            return None
 
     def get_recent_sessions(self, limit: int = 20) -> list[dict[str, Any]]:
         return self.get_sessions(limit=limit)

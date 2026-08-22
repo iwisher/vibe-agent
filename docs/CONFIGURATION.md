@@ -21,7 +21,7 @@ For a quick start, run `python -m vibe` once — it will auto-create `~/.vibe/co
 | `compactor` | `max_tokens` | `VIBE_COMPACTOR_MAX_TOKENS` |
 | `query_loop` | `max_iterations`, `max_context_tokens` | `VIBE_MAX_ITERATIONS` |
 | `security` | `approval_mode` | `VIBE_APPROVAL_MODE` |
-| `memory` | `enabled`, `wiki.*`, `rlm.*` | — |
+| `memory` | `enabled`, `wiki.*`, `pageindex.*`, `reflection.*`, `rlm.*` | — |
 
 ---
 
@@ -284,9 +284,11 @@ The Tripartite Memory System automatically extracts structured knowledge from ev
 ### Step-by-step Setup
 
 **Step 1: Enable the system**
+
+Memory is enabled by default (`memory.enabled: true`) and works out of the box with stdlib + SQLite only — no optional extras required. To disable it:
 ```yaml
 memory:
-  enabled: true
+  enabled: false
 ```
 
 **Step 2: Configure the Wiki storage**
@@ -294,7 +296,7 @@ memory:
 memory:
   wiki:
     base_path: "~/.vibe/wiki"      # Where .md pages are stored
-    auto_extract: true             # Automatically extract knowledge after every session
+    auto_extract: true             # Automatically extract knowledge after every session (default: true)
     novelty_threshold: 0.5        # 0.0–1.0: skip items too similar to existing pages
     confidence_threshold: 0.8     # 0.0–1.0: skip low-confidence items
     default_ttl_days: 30          # Draft pages auto-expire after this many days
@@ -328,9 +330,24 @@ memory:
     max_nodes_per_index: 100       # Split index nodes beyond this size
     token_threshold: 4000          # BM25 token threshold for splitting
     routing_timeout_seconds: 2.0   # Fail-safe: don't block user if index is slow
+    routing_min_confidence: 0.3    # Drop routed nodes below this confidence (0.0–1.0)
 ```
 
-**Step 5: Configure RLM (Recursive Language Model) analysis**
+**Step 5: Configure trajectory reflection**
+
+After every session (including failed ones), the reflector distills up to `max_lessons` reusable lessons from the trajectory and curates them into the wiki as `lesson`-tagged pages with `helpful`/`harmful` counters. Similar lessons merge into existing pages instead of creating duplicates, and lessons become routable into future prompts immediately.
+
+```yaml
+memory:
+  reflection:
+    enabled: true               # Post-session Reflector→Curator pipeline (default: true)
+    max_lessons: 3              # Max lessons distilled per session (1–10)
+    min_transcript_chars: 400   # Trivial sessions shorter than this are skipped
+    max_transcript_chars: 12000 # Trajectory transcript bound sent to the LLM
+    merge_title_overlap: 0.7    # Title word-overlap threshold for lesson dedup (0.0–1.0)
+```
+
+**Step 6: Configure RLM (Recursive Language Model) analysis**
 
 The RLM analyzer monitors session telemetry and logs a recommendation when your conversations become large/complex enough to warrant local model fine-tuning.
 
@@ -368,6 +385,14 @@ memory:
     max_nodes_per_index: 100
     token_threshold: 4000
     routing_timeout_seconds: 2.0
+    routing_min_confidence: 0.3
+
+  reflection:
+    enabled: true
+    max_lessons: 3
+    min_transcript_chars: 400
+    max_transcript_chars: 12000
+    merge_title_overlap: 0.7
 
   rlm:
     enabled: true

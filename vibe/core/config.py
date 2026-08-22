@@ -444,7 +444,7 @@ class FlashModelConfig(BaseModel):
 class WikiConfig(BaseModel):
     """LLM Wiki storage configuration."""
 
-    auto_extract: bool = False
+    auto_extract: bool = True
     base_path: str = "~/.vibe/wiki"
     extraction_prompt: Optional[str] = None
     novelty_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
@@ -464,6 +464,7 @@ class PageIndexConfig(BaseModel):
     max_nodes_per_index: int = Field(default=100, ge=10)
     token_threshold: int = Field(default=4000, ge=100)
     routing_timeout_seconds: float = Field(default=2.0, ge=0.1, le=30.0)
+    routing_min_confidence: float = Field(default=0.3, ge=0.0, le=1.0)
     vector_search_enabled: bool = False
     embedding_model: str = "all-MiniLM-L6-v2"
 
@@ -486,13 +487,34 @@ class RLMConfig(BaseModel):
     ollama_register: bool = True
 
 
+class ReflectionConfig(BaseModel):
+    """Trajectory reflection config — post-session Reflector→Curator pipeline.
+
+    After a session ends (COMPLETED/INCOMPLETE/ERROR), the reflector distills a
+    few reusable lessons from the trajectory and curates them into the wiki as
+    lesson pages with helpful/harmful counters (ACE-style delta items).
+    """
+
+    enabled: bool = True
+    max_lessons: int = Field(default=3, ge=1, le=10)
+    # Skip heuristic: sessions whose transcript is shorter than
+    # min_transcript_chars are trivial (quick Q&A, greetings, no meaningful tool
+    # usage) and carry no reusable signal — they are skipped.
+    min_transcript_chars: int = Field(default=400, ge=0)
+    max_transcript_chars: int = Field(default=12000, ge=1000)
+    # Curator dedup: a new lesson merges into an existing lesson page when their
+    # titles match exactly or share at least this fraction of words.
+    merge_title_overlap: float = Field(default=0.7, ge=0.0, le=1.0)
+
+
 class TripartiteMemoryConfig(BaseModel):
     """Tripartite Memory System configuration."""
 
-    enabled: bool = False
+    enabled: bool = True
     wiki: WikiConfig = Field(default_factory=WikiConfig)
     pageindex: PageIndexConfig = Field(default_factory=PageIndexConfig)
     rlm: RLMConfig = Field(default_factory=RLMConfig)
+    reflection: ReflectionConfig = Field(default_factory=ReflectionConfig)
 
 
 # ---------------------------------------------------------------------------

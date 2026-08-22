@@ -76,11 +76,33 @@ class SkillValidator:
         for step in skill.steps:
             self._check_command_security(step, result)
 
-        # Scan scripts directory recursively
         if skill_dir:
+            # Verify step-referenced scripts exist and stay inside scripts/
+            for step in skill.steps:
+                self._check_step_script(step, skill_dir, result)
+            # Scan scripts directory recursively
             self._scan_scripts(skill_dir, result)
 
         return result
+
+    def _check_step_script(self, step, skill_dir: Path, result: ValidationResult) -> None:
+        """Validate that a step's script path exists and stays under scripts/."""
+        script = getattr(step, "script", None)
+        if not script:
+            return
+
+        base = skill_dir.resolve()
+        scripts_root = (base / "scripts").resolve()
+        script_path = (base / script).resolve()
+
+        if script_path == scripts_root or scripts_root not in script_path.parents:
+            result.add_risk(
+                f"Step '{step.id}': script '{script}' is outside the skill's "
+                "scripts/ directory (use a relative path under scripts/)"
+            )
+            return
+        if not script_path.is_file():
+            result.add_risk(f"Step '{step.id}': script not found: '{script}'")
 
     def _check_command_security(self, step, result: ValidationResult) -> None:
         command = step.command or ""
@@ -115,7 +137,11 @@ class SkillValidator:
                 continue
             try:
                 content = script_file.read_text(encoding="utf-8")
-            except (UnicodeDecodeError, OSError):
+            except (UnicodeDecodeError, OSError) as e:
+                result.add_warning(
+                    f"Script '{script_file.name}': not readable as UTF-8 text "
+                    f"({type(e).__name__}); content scan skipped"
+                )
                 continue
 
             # Scan with same patterns
@@ -130,3 +156,9 @@ class SkillValidator:
             for pattern in _SUSPICIOUS_URLS:
                 if pattern.search(content):
                     result.add_risk(f"Script '{script_file.name}': suspicious URL detected")
+
+            for pattern in _SUSPICIOUS_APIS:
+                if pattern.search(content):
+                    result.add_warning(
+                        f"Script '{script_file.name}': potential hardcoded credential"
+                    )

@@ -94,6 +94,28 @@ def _extract_outgoing_links(content: str) -> set[str]:
     return set(WIKI_LINK_RE.findall(content))
 
 
+# Statuses whose content may be injected into prompts at retrieval time.
+_INJECTABLE_STATUSES = frozenset({"draft", "verified"})
+
+
+def is_page_injectable(page: Any) -> bool:
+    """Return True if a wiki page is safe to inject into a prompt.
+
+    Excludes expired pages and pages flagged as contradicted (a
+    ``{"type": "contradiction_flag"}`` citation entry, added by
+    LLMWiki.update_page when FlashLLM detects a contradiction).
+    """
+    try:
+        if getattr(page, "status", None) not in _INJECTABLE_STATUSES:
+            return False
+        for citation in getattr(page, "citations", None) or []:
+            if isinstance(citation, dict) and citation.get("type") == "contradiction_flag":
+                return False
+        return True
+    except Exception:
+        return False
+
+
 def _content_hash(content: str) -> str:
     """Compute a short SHA256 hash of content for change detection."""
     return hashlib.sha256(content.encode()).hexdigest()[:16]

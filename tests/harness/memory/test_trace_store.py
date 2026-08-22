@@ -281,3 +281,169 @@ class TestFactory:
         """Should raise error for invalid type."""
         with pytest.raises(ValueError):
             create_trace_store("invalid")
+
+
+class TestSimilarSessionsSuccessFilter:
+    """get_similar_sessions must return successful sessions only by default."""
+
+    @pytest.fixture
+    def store(self):
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            path = f.name
+        store = SQLiteTraceStore(db_path=path, max_entries=100, retention_days=30)
+        yield store
+        os.unlink(path)
+
+    def _log_pair(self, store):
+        store.log_session(
+            session_id="ok-python",
+            messages=[{"role": "user", "content": "write python code"}],
+            tool_results=[],
+            success=True,
+            model="gpt-4",
+        )
+        store.log_session(
+            session_id="fail-python",
+            messages=[{"role": "user", "content": "write python code"}],
+            tool_results=[],
+            success=False,
+            model="gpt-4",
+            error="boom",
+        )
+
+    def test_keyword_path_filters_failures(self, store):
+        """Keyword fallback must not surface failed sessions."""
+        self._log_pair(store)
+        results = store.get_similar_sessions("python code", limit=5)
+        ids = [r["id"] for r in results]
+        assert "ok-python" in ids
+        assert "fail-python" not in ids
+
+    def test_keyword_path_success_only_false_includes_failures(self, store):
+        self._log_pair(store)
+        results = store.get_similar_sessions("python code", limit=5, success_only=False)
+        ids = [r["id"] for r in results]
+        assert "ok-python" in ids
+        assert "fail-python" in ids
+
+    def test_vector_path_filters_failures(self, store, monkeypatch):
+        """Vector path must filter failures at the SQL level."""
+        self._log_pair(store)
+
+        # Force the vector path with a deterministic embedding function
+        def fake_embedding(text):
+            return [1.0, 0.0, 0.0, 0.0]
+
+        monkeypatch.setattr(store, "_get_embedding", fake_embedding)
+        # Re-log so embeddings exist for both sessions
+        self._log_pair(store)
+
+        results = store.get_similar_sessions_vector("python code", limit=5)
+        ids = [r["id"] for r in results]
+        assert "fail-python" not in ids
+        assert "ok-python" in ids
+
+        results_all = store.get_similar_sessions_vector("python code", limit=5, success_only=False)
+        ids_all = [r["id"] for r in results_all]
+        assert "fail-python" in ids_all
+
+    def test_memory_store_filters_failures(self):
+        mem = MemoryTraceStore()
+        mem.log_session(
+            "ok-1",
+            [{"role": "user", "content": "deploy kubernetes cluster"}],
+            [],
+            True,
+            "m",
+        )
+        mem.log_session(
+            "bad-1",
+            [{"role": "user", "content": "deploy kubernetes cluster"}],
+            [],
+            False,
+            "m",
+        )
+        ids = [s["id"] for s in mem.get_similar_sessions("deploy kubernetes")]
+        assert "ok-1" in ids
+        assert "bad-1" not in ids
+        ids_all = [
+            s["id"] for s in mem.get_similar_sessions("deploy kubernetes", success_only=False)
+        ]
+        assert "bad-1" in ids_all
+
+
+class TestGetSessionSnippet:
+    """get_session_snippet returns the final non-empty assistant message, bounded."""
+
+    @pytest.fixture
+    def store(self):
+        with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+            path = f.name
+        store = SQLiteTraceStore(db_path=path, max_entries=100, retention_days=30)
+        yield store
+        os.unlink(path)
+
+    def test_returns_final_assistant_message(self, store):
+        store.log_session(
+            session_id="s1",
+            messages=[
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "first answer"},
+                {"role": "assistant", "content": "final   answer\nwith whitespace"},
+                {"role": "assistant", "content": "   "},
+            ],
+            tool_results=[],
+            success=True,
+            model="gpt-4",
+        )
+        snippet = store.get_session_snippet("s1")
+        # Final non-empty assistant message, whitespace collapsed to one line
+        assert snippet == "final answer with whitespace"
+
+    def test_truncates_with_ellipsis(self, store):
+        store.log_session(
+            session_id="s2",
+            messages=[{"role": "assistant", "content": "word " * 100}],
+            tool_results=[],
+            success=True,
+            model="gpt-4",
+        )
+        snippet = store.get_session_snippet("s2", max_chars=50)
+        assert snippet is not None
+        assert len(snippet) <= 50
+        assert snippet.endswith("…")
+
+    def test_default_max_chars_200(self, store):
+        store.log_session(
+            session_id="s3",
+            messages=[{"role": "assistant", "content": "z" * 1000}],
+            tool_results=[],
+            success=True,
+            model="gpt-4",
+        )
+        snippet = store.get_session_snippet("s3")
+        assert snippet is not None
+        assert len(snippet) <= 200
+
+    def test_never_raises(self, store):
+        assert store.get_session_snippet("nonexistent") is None
+        assert store.get_session_snippet(None) is None
+        assert store.get_session_snippet("") is None
+
+    def test_json_and_memory_backends(self, tmp_path):
+        for backend in (
+            MemoryTraceStore(),
+            JSONTraceStore(file_path=str(tmp_path / "traces.json")),
+        ):
+            backend.log_session(
+                "s1",
+                [
+                    {"role": "assistant", "content": "older"},
+                    {"role": "assistant", "content": "final answer"},
+                ],
+                [],
+                True,
+                "m",
+            )
+            assert backend.get_session_snippet("s1") == "final answer"
+            assert backend.get_session_snippet("missing") is None

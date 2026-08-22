@@ -146,6 +146,10 @@ async def test_query_loop_close_cancels_wiki_task():
         wiki=wiki_mock,
     )
 
+    # close() now gives learning tasks a grace period before cancelling —
+    # shrink it so this cancellation test stays fast.
+    loop._close_task_grace_seconds = 0.05
+
     # Simulate a pending wiki extract task
     async def _fake_extract():
         await asyncio.sleep(100)
@@ -173,6 +177,8 @@ def test_factory_wires_trace_store_before_tripartite(tmp_path):
     config = VibeConfig()
     # Enable tripartite memory
     config = config.model_copy(update={"memory": TripartiteMemoryConfig(enabled=True)})
+    config.trace_store.storage_type = "sqlite"
+    config.trace_store.db_path = str(tmp_path / "traces.db")
 
     factory = QueryLoopFactory(
         base_url="http://localhost:11434/v1",
@@ -180,11 +186,33 @@ def test_factory_wires_trace_store_before_tripartite(tmp_path):
         config=config,
     )
 
-    # _create_trace_store should return None when trace_store not fully configured
-    factory._create_trace_store()
-    # May or may not return a store depending on env — either is fine
-    # The important thing is the method exists and doesn't crash
-    assert True  # Just checking no exception
+    # sqlite config must produce a real trace store, not None
+    from vibe.harness.memory.trace_store import SQLiteTraceStore
+
+    store = factory._create_trace_store()
+    assert isinstance(store, SQLiteTraceStore)
+
+
+def test_factory_trace_store_failure_warns_and_returns_none(tmp_path, caplog):
+    """A failing trace-store backend must log a warning and return None."""
+    from vibe.core.config import VibeConfig
+    from vibe.core.query_loop_factory import QueryLoopFactory
+
+    config = VibeConfig()
+    config.trace_store.storage_type = "sqlite"
+    # Unwritable path: a directory used as the db file
+    config.trace_store.db_path = str(tmp_path)
+
+    factory = QueryLoopFactory(
+        base_url="http://localhost:11434/v1",
+        model="test",
+        config=config,
+    )
+
+    with caplog.at_level("WARNING"):
+        store = factory._create_trace_store()
+    assert store is None
+    assert any("trace store" in r.message.lower() for r in caplog.records)
 
 
 def test_factory_tripartite_enabled_creates_wiki(tmp_path):
@@ -237,10 +265,14 @@ def test_config_memory_defaults():
     from vibe.core.config import VibeConfig
 
     config = VibeConfig()
-    assert config.memory.enabled is False
-    assert config.memory.wiki.auto_extract is False
+    # Memory + auto-extraction are on by default (wiki/pageindex degrade
+    # gracefully to stdlib-only when optional extras are missing)
+    assert config.memory.enabled is True
+    assert config.memory.wiki.auto_extract is True
     assert config.memory.rlm.enabled is False
     assert config.memory.pageindex.routing_timeout_seconds == 2.0
+    assert config.memory.pageindex.routing_min_confidence == 0.3
+    assert config.memory.pageindex.vector_search_enabled is False
     assert config.memory.wiki.default_ttl_days == 30
 
 
@@ -252,3 +284,57 @@ def test_config_memory_env_override(monkeypatch):
 
     config = VibeConfig()
     assert config.memory.enabled is True
+
+
+# ---------------------------------------------------------------------------
+# Extraction → PageIndex regression
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_extraction_indexes_page_for_immediate_routing(tmp_path):
+    """Regression: pages accepted by extraction must be routable via PageIndex
+    immediately (the old path silently skipped indexing)."""
+    import json
+
+    from vibe.memory.extraction import KnowledgeExtractor
+
+    class _Resp:
+        def __init__(self, content: str) -> None:
+            self.content = content
+
+    fake_llm = MagicMock()
+    fake_llm.complete = AsyncMock(
+        return_value=_Resp(
+            json.dumps(
+                [
+                    {
+                        "title": "Keyword Routing Notes",
+                        "content": "PageIndex routes queries to wiki pages via keywords.",
+                        "tags": ["pageindex", "routing"],
+                        "citations": [],
+                    }
+                ]
+            )
+        )
+    )
+
+    db = SharedMemoryDB(db_path=tmp_path / "mem.db")
+    wiki = LLMWiki(base_path=tmp_path / "wiki", db=db)
+    idx = PageIndex(index_path=tmp_path / "index.json", llm_client=None)
+
+    extractor = KnowledgeExtractor(llm_client=fake_llm, wiki=wiki, pageindex=idx, config=None)
+    pages = await extractor.extract_from_text(
+        text="PageIndex routes queries to wiki pages via keywords.",
+        source="test-doc",
+    )
+    assert len(pages) == 1
+
+    # The new page must be findable via route() without a manual rebuild
+    nodes = await idx.route("keyword routing")
+    titles = [getattr(n, "title", "") for n in nodes]
+    found = any("Keyword Routing Notes" in t for t in titles)
+    assert found, f"extracted page not routable; got {titles}"
+
+    db.close()
+    await wiki.close()
