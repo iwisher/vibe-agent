@@ -22,6 +22,7 @@ For a quick start, run `python -m vibe` once — it will auto-create `~/.vibe/co
 | `query_loop` | `max_iterations`, `max_context_tokens` | `VIBE_MAX_ITERATIONS` |
 | `security` | `approval_mode` | `VIBE_APPROVAL_MODE` |
 | `memory` | `enabled`, `wiki.*`, `pageindex.*`, `reflection.*`, `rlm.*` | — |
+| `error_recovery` | `pivotal_retry_enabled`, `max_pivotal_retries` | — |
 
 ---
 
@@ -345,6 +346,22 @@ memory:
     min_transcript_chars: 400   # Trivial sessions shorter than this are skipped
     max_transcript_chars: 12000 # Trajectory transcript bound sent to the LLM
     merge_title_overlap: 0.7    # Title word-overlap threshold for lesson dedup (0.0–1.0)
+    min_generality: 3           # Drop lessons the LLM self-scores below this generality
+                              # (1 = instance-specific, 5 = reusable principle; missing
+                              # scores are accepted — fail-open)
+```
+
+**Error recovery: pivotal retry**
+
+When the same tool call fails twice with identical arguments, the loop marks the pivotal
+turn and issues one bounded, guided retry of just that call — the correct prefix is
+reused, no re-planning. Security denials are never retried; failures inside the retry
+machinery fall back to prior behavior.
+
+```yaml
+error_recovery:
+  pivotal_retry_enabled: true   # One guided retry per failing call signature (default: true)
+  max_pivotal_retries: 1        # Hard bound per call signature per run (default: 1)
 ```
 
 **Step 6: Configure RLM (Recursive Language Model) analysis**
@@ -393,6 +410,7 @@ memory:
     min_transcript_chars: 400
     max_transcript_chars: 12000
     merge_title_overlap: 0.7
+    min_generality: 3
 
   rlm:
     enabled: true

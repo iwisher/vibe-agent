@@ -2,6 +2,7 @@
 
 import asyncio
 import copy
+import json
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -217,6 +218,20 @@ class QueryLoop:
         self._rlm_trigger_task: asyncio.Task | None = None  # Phase 2: RLM trigger
         self._skill_maker_task: asyncio.Task | None = None  # Phase A: skill maker
         self._reflection_task: asyncio.Task | None = None  # Trajectory reflection
+        # Stable ids (WikiPage.id) of lesson-tagged pages actually injected into
+        # this run's prompt by _build_wiki_hint — consumed by usage feedback.
+        self._injected_lesson_ids: list[str] = []
+        # Workstream C: Pivotal local retry (PivoARL). Per-run state tracking
+        # repeated identical tool-call failures by call signature; when the same
+        # failing call repeats, its iteration index is the pivotal turn and the
+        # loop performs at most one guided retry of that call (never security
+        # denials) instead of drifting into ERROR/INCOMPLETE.
+        er_cfg = getattr(config, "error_recovery", None) if config is not None else None
+        self._pivotal_retry_enabled: bool = bool(getattr(er_cfg, "pivotal_retry_enabled", True))
+        self._max_pivotal_retries: int = int(getattr(er_cfg, "max_pivotal_retries", 1))
+        self._pivotal_turn: int | None = None
+        self._pivotal_failure_counts: dict[tuple[str, str], int] = {}
+        self._pivotal_retry_counts: dict[tuple[str, str], int] = {}
         # Grace period (seconds) that close() gives background learning tasks
         # to finish before cancelling them — lets one-shot sessions persist
         # their lessons instead of killing the tasks on exit.
@@ -345,6 +360,13 @@ class QueryLoop:
             return
         self._running = True
         self._set_state(QueryState.PLANNING)
+        # Per-run usage-feedback attribution starts empty
+        self._injected_lesson_ids = []
+        # Per-run pivotal retry bookkeeping starts empty (Workstream C).
+        # _pivotal_turn itself is intentionally NOT reset here: it is a sticky
+        # annotation consumed by post-run reflection, and may be set externally.
+        self._pivotal_failure_counts = {}
+        self._pivotal_retry_counts = {}
         if self._session_id is None:
             self._session_id = str(uuid.uuid4())
             self._session_start_time = time.time()
@@ -901,6 +923,12 @@ class QueryLoop:
                     success=False,
                     content=None,
                     error=f"Security blocked: {check.reason}",
+                    # Stamp denials so pivotal retry (Workstream C) can reliably
+                    # recognize them as final and never retry them.
+                    metadata={
+                        "security_denial": True,
+                        "security_layer": check.layer or "unknown",
+                    },
                 )
 
         return allowed_calls, allowed_indices, results
@@ -1022,6 +1050,10 @@ class QueryLoop:
                 )
             )
         self._set_state(QueryState.SYNTHESIZING)
+        # Workstream C: detect repeated identical tool failures and, before the
+        # loop drifts into ERROR/INCOMPLETE, run at most one guided retry of the
+        # pivotal call. Never raises; security denials are excluded.
+        await self._maybe_guided_pivotal_retry(response.tool_calls, tool_results)
         return QueryResult(
             response=response.content or "",
             reasoning_content=getattr(response, "reasoning_content", None) or "",
@@ -1029,6 +1061,189 @@ class QueryLoop:
             metrics=metrics,
             state=self._state,
         )
+
+    # ------------------------------------------------------------------
+    # Workstream C: Pivotal local retry (PivoARL)
+    # ------------------------------------------------------------------
+
+    # Error prefixes that mark a failure as a security/policy denial even when
+    # the metadata stamp is absent (e.g. tool-internal pattern denylists).
+    _SECURITY_DENIAL_PREFIXES = ("Security blocked:", "Command blocked by safety policy")
+
+    def _tool_call_signature(self, call: Any) -> tuple[str, str] | None:
+        """Normalize a tool call to a (name, canonical-args) signature.
+
+        Arguments are canonicalized as sorted-key JSON so semantically identical
+        calls compare equal regardless of dict ordering or str/dict encoding.
+        Returns None when the call cannot be normalized. Never raises.
+        """
+        try:
+            name = extract_tool_call_name(call)
+            if not name:
+                return None
+            args = extract_tool_call_arguments(call)
+            normalized = json.dumps(args, sort_keys=True, default=str)
+            return (name, normalized)
+        except Exception:
+            return None
+
+    def _is_security_denial(self, result: ToolResult) -> bool:
+        """True if the failure is a security/policy denial (final, never retried).
+
+        Fail-closed: if we cannot tell, treat it as a denial.
+        """
+        try:
+            metadata = getattr(result, "metadata", None)
+            if isinstance(metadata, dict) and metadata.get("security_denial"):
+                return True
+            error = getattr(result, "error", None) or ""
+            if isinstance(error, str) and error.startswith(self._SECURITY_DENIAL_PREFIXES):
+                return True
+            return False
+        except Exception:
+            return True
+
+    def _pivotal_budget_remaining(self) -> bool:
+        """True while at least one organic loop iteration remains."""
+        max_iterations = (
+            self._iteration_budget.allocated
+            if self.adaptive_budget and self._iteration_budget
+            else int(self.max_iterations)
+            if self.max_iterations is not None
+            else 50
+        )
+        return self._iteration < max_iterations
+
+    async def _maybe_guided_pivotal_retry(
+        self, tool_calls: list, tool_results: list[ToolResult]
+    ) -> None:
+        """Detect repeated identical tool failures and run one guided retry.
+
+        Tracks failures by call signature within a run. When the same failing
+        call repeats (the organic next-iteration retry already failed once), the
+        current iteration is marked as the pivotal turn and — if enabled, not a
+        security denial, retries remain for the signature, and iteration budget
+        remains — exactly one guided retry of the pivotal call is performed.
+        Never raises: any internal failure falls back to current behavior.
+        """
+        try:
+            if not self._pivotal_retry_enabled:
+                return
+            if not tool_calls or not tool_results:
+                return
+            for call, result in zip(tool_calls, tool_results):
+                if result is None or getattr(result, "success", False):
+                    continue
+                if self._is_security_denial(result):
+                    continue
+                signature = self._tool_call_signature(call)
+                if signature is None:
+                    continue
+                count = self._pivotal_failure_counts.get(signature, 0) + 1
+                self._pivotal_failure_counts[signature] = count
+                if count < 2:
+                    continue
+                # Repeated identical failure: this iteration is the pivotal turn.
+                if self._pivotal_turn is None:
+                    self._pivotal_turn = self._iteration
+                if self._pivotal_retry_counts.get(signature, 0) >= self._max_pivotal_retries:
+                    continue
+                if not self._pivotal_budget_remaining():
+                    continue
+                # Count the retry before attempting it so it fires at most once
+                # per signature per run, regardless of outcome.
+                self._pivotal_retry_counts[signature] = (
+                    self._pivotal_retry_counts.get(signature, 0) + 1
+                )
+                if self.logger:
+                    self.logger.info(
+                        f"Pivotal retry: guided retry of '{signature[0]}' "
+                        f"after {count} identical failures (turn {self._iteration})"
+                    )
+                await self._guided_pivotal_retry(call, result)
+        except Exception as e:
+            if self.logger:
+                try:
+                    self.logger.debug(f"Pivotal retry detection failed (non-fatal): {e}")
+                except Exception:
+                    pass
+
+    async def _guided_pivotal_retry(self, call: Any, result: ToolResult) -> None:
+        """Perform one reflection-guided retry of a pivotal failing tool call.
+
+        Appends a bounded, structured guidance message naming the failed tool
+        and its error, asks the model for a corrected call, then executes the
+        corrected call through the normal security path and appends results to
+        the transcript. The correct message prefix is reused as-is (no
+        re-planning, no message reset). Never raises.
+        """
+        try:
+            tool_name = extract_tool_call_name(call) or "unknown"
+            signature = self._tool_call_signature(call)
+            args_json = signature[1] if signature else "{}"
+            error_text = str(getattr(result, "error", None) or "unknown error")
+            guidance = (
+                "PIVOTAL RETRY — repeated tool failure detected.\n"
+                f"Failed tool: {tool_name}\n"
+                f"Failed arguments: {args_json[:500]}\n"
+                f"Error: {error_text[:500]}\n"
+                "This exact call has failed multiple times. Analyze the error and "
+                "respond with a CORRECTED call to this tool (fixed or different "
+                "arguments), or explain why the task cannot proceed. "
+                "Do not repeat the identical failing call."
+            )
+            self.messages.append(Message(role="system", content=guidance))
+
+            llm_msgs = self._build_llm_messages()
+            response = await self.error_recovery.execute_with_retry(
+                lambda: self.llm.complete(llm_msgs, tools=self._select_tools_for_llm())
+            )
+            if response is None or getattr(response, "is_error", False):
+                return
+
+            tool_calls = getattr(response, "tool_calls", None)
+            if not tool_calls:
+                # Model answered with content instead of a corrected call; keep
+                # the reply in the transcript so the loop continues from it.
+                content = getattr(response, "content", None)
+                if content:
+                    self.messages.append(
+                        Message(role="assistant", content=content, model_version=self.llm.model)
+                    )
+                return
+
+            self.messages.append(
+                Message(
+                    role="assistant",
+                    content=getattr(response, "content", None) or "",
+                    tool_calls=tool_calls,
+                    model_version=self.llm.model,
+                )
+            )
+            retry_results = await self._execute_with_security(tool_calls)
+            for retry_call, retry_result in zip(tool_calls, retry_results):
+                if isinstance(retry_call, dict):
+                    tool_call_id = retry_call.get("id")
+                else:
+                    tool_call_id = getattr(retry_call, "id", None)
+                self.messages.append(
+                    Message(
+                        role="tool",
+                        content=(
+                            retry_result.content if retry_result.success else retry_result.error
+                        ),
+                        tool_call_id=tool_call_id,
+                        metadata={"tool_name": extract_tool_call_name(retry_call)},
+                    )
+                )
+        except Exception as e:
+            # Guided-retry failures must not add new failure modes to the loop;
+            # fall back to normal degradation.
+            if self.logger:
+                try:
+                    self.logger.debug(f"Guided pivotal retry failed (non-fatal): {e}")
+                except Exception:
+                    pass
 
     async def _process_content_response(
         self, response: LLMResponse, metrics: Metrics
@@ -1183,6 +1398,8 @@ class QueryLoop:
                     snippet = page.content.strip()[:500]
                     tags = ", ".join(page.tags) if page.tags else "none"
                     lines.append(f"### {page.title} (tags: {tags})\n{snippet}")
+                    # Usage feedback: remember lesson pages actually injected
+                    self._track_injected_lesson(page)
                 except Exception:
                     continue
 
@@ -1191,6 +1408,18 @@ class QueryLoop:
             return "\n\n## Relevant Knowledge\n" + "\n\n".join(lines)
         except Exception:
             return ""
+
+    def _track_injected_lesson(self, page: Any) -> None:
+        """Record the stable id of a lesson-tagged page injected into the prompt.
+
+        Never raises — tracking must never break hint building.
+        """
+        try:
+            page_id = getattr(page, "id", None)
+            if page_id and "lesson" in (getattr(page, "tags", None) or []):
+                self._injected_lesson_ids.append(page_id)
+        except Exception:
+            pass
 
     async def _extract_to_wiki(self, messages: list[Message], session_id: str | None) -> None:
         """Background task: extract knowledge from session and write to wiki.
@@ -1315,9 +1544,11 @@ class QueryLoop:
     ) -> None:
         """Background task: distill reusable lessons from the finished trajectory.
 
-        Lessons are curated into the wiki (tagged ``lesson``) and indexed into
-        PageIndex so they become routable into future prompts. Never raises —
-        all errors are caught and logged.
+        First applies usage feedback (no LLM) to the lesson pages this run
+        injected, then reflects on the current trajectory (LLM). Lessons are
+        curated into the wiki (tagged ``lesson``) and indexed into PageIndex
+        so they become routable into future prompts. Never raises — all
+        errors are caught and logged.
         """
         if self.wiki is None or self.pageindex is None or session_id is None:
             return
@@ -1331,9 +1562,18 @@ class QueryLoop:
                 llm_client=self.llm,
                 config=getattr(self._config_memory, "reflection", None),
             )
+            # Usage feedback FIRST (no LLM): attribute this session's outcome
+            # to the lesson pages injected by _build_wiki_hint, then reflect.
+            await reflector.record_usage(
+                list(getattr(self, "_injected_lesson_ids", None) or []), state
+            )
             query = next((m.content for m in messages if m.role == "user" and m.content), "")
             pages = await reflector.reflect(
-                query=query, messages=messages, state=state, session_id=session_id
+                query=query,
+                messages=messages,
+                state=state,
+                session_id=session_id,
+                pivotal_turn=getattr(self, "_pivotal_turn", None),
             )
             if pages and self.logger:
                 self.logger.info(f"Trajectory reflection wrote {len(pages)} lesson page(s)")
@@ -1456,6 +1696,9 @@ class QueryLoop:
         self._plan_result = None
         self._session_id = None
         self._session_start_time = 0.0
+        self._pivotal_turn = None
+        self._pivotal_failure_counts = {}
+        self._pivotal_retry_counts = {}
         self.feedback_coord.reset()
 
     def copy(self) -> "QueryLoop":
@@ -1480,6 +1723,10 @@ class QueryLoop:
         new_loop._rlm_trigger_task = None
         new_loop._skill_maker_task = None
         new_loop._reflection_task = None
+        new_loop._injected_lesson_ids = []
+        new_loop._pivotal_turn = None
+        new_loop._pivotal_failure_counts = {}
+        new_loop._pivotal_retry_counts = {}
         new_loop._iteration = 0
         new_loop._last_checkpointed_iteration = -1
         new_loop._last_checkpointed_state = None

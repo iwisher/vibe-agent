@@ -11,7 +11,8 @@ Vibe Agent is an open, visual-first interactive CLI agent harness. It is designe
 - **Eval-Driven Development**: 50+ built-in eval cases, adversarial testing, multi-model scorecards, soak tests with degradation detection, and factory-per-case isolation.
 - **Phase 2 Skill System**: Native vibe skill format with TOML frontmatter, validation, security scanning, atomic installation, typed variables, orchestration, marketplace, and dynamic tool declaration. **Deterministic script steps** let fixed logic live in bundled `scripts/` executed through the sandboxed Bash tool — the LLM only picks the skill and supplies typed inputs.
 - **Skill-Maker (Self-Improving)**: Automatically detects recurring task patterns from wiki extractions, generates SKILL.md drafts via LLM, validates through sandbox, and proposes installation via approval gate.
-- **Trajectory Reflection (Test-Time Learning)**: Post-session Reflector→Curator distills compact lessons (pitfalls / procedures / tips) from every run — including failures — dedups them into lesson wiki pages with helpful/harmful counters, and retrieves them into future prompts. Enabled by default.
+- **Trajectory Reflection (Test-Time Learning)**: Post-session Reflector→Curator distills compact lessons (pitfalls / procedures / tips) from every run — including failures — gated by an LLM generality self-score, dedups them into lesson wiki pages with helpful/harmful counters that are updated by actual usage outcomes, and retrieves them into future prompts. Enabled by default.
+- **Pivotal Error Retry**: When the same tool call fails repeatedly, the loop marks the pivotal turn and issues one bounded, reflection-guided retry of that call — reusing the correct prefix instead of re-planning the task. Security denials are never retried.
 - **Tripartite Memory System**: Enabled by default. Query-time retrieval injects relevant wiki knowledge (confidence-gated, content snippets, contradiction-aware) plus "what worked before" snippets from similar successful past sessions into every prompt, on all planner tiers. Async knowledge extraction, FlashLLM contradiction detection, telemetry-triggered RLM analysis, vector search with sentence-transformers, wiki graph database, and per-tag novelty thresholds.
 - **EvoX Meta-Evolution (Offline Pipeline)**: Self-improving offline search that jointly evolves candidate solutions and the search strategies used to generate them. Uses AdaEvolve-style multi-objective proxy scoring, UCB parent selection, and a lightweight strategy-code sandbox.
 - **Shadow Workspace Rollbacks**: Auto-creates hidden git branch (`vibe/shadow-<session-id>`) before write-heavy operations. One-command restore if the session fails.
@@ -431,11 +432,18 @@ After every run — successful **or failed** — a Reflector→Curator pipeline 
 the agent learned into compact, reusable lessons and stores them in the wiki:
 
 - **Reflector**: reads the trajectory (query, tool calls, outcome) and produces up to
-  `memory.reflection.max_lessons` lessons as `{title, lesson, applies_when, kind}`
+  `memory.reflection.max_lessons` lessons as `{title, lesson, applies_when, kind, generality}`
   where kind is `pitfall`, `procedure`, or `tip`. Trivial sessions are skipped.
+- **Critique gate**: each lesson carries an LLM self-assessed `generality` score (1–5);
+  lessons scoring below `min_generality` (default 3) are dropped before they ever reach
+  the wiki, keeping instance-specific noise out of the playbook (missing scores fail open).
 - **Curator**: deduplicates against existing lesson pages — a repeat lesson *merges*
   (additive refinement + helpful/harmful counters) instead of creating a duplicate,
   which keeps the playbook compact and prevents context collapse.
+- **Usage feedback**: lessons actually injected into a run get their counters updated by
+  that run's outcome (COMPLETED → helpful, ERROR → harmful), so the playbook self-ranks
+  by demonstrated usefulness. When pivotal retry (below) marks a failure turn, new
+  lessons are anchored on it.
 - **Retrieval**: lesson pages are indexed immediately, so future queries on related
   tasks retrieve them through the normal memory path (confidence-gated,
   contradiction-aware, with bounded content snippets) — no separate store needed.
@@ -443,6 +451,15 @@ the agent learned into compact, reusable lessons and stores them in the wiki:
 Configured under `memory.reflection` in `~/.vibe/config.yaml` (enabled by default when
 memory is on). Raw trajectories remain in the trace store for the offline RLM path;
 curated lessons live in the wiki where they are actually retrieved.
+
+### Pivotal error retry
+
+When the same tool call fails twice with identical arguments, the loop marks that
+iteration as the **pivotal turn** and — instead of drifting or degrading to ERROR —
+issues one bounded, guided retry of just that call (error details attached, correct
+prefix preserved, no re-planning). Security denials are never retried, the budget is
+one retry per call signature, and everything degrades gracefully to prior behavior.
+Configure under `error_recovery` (`pivotal_retry_enabled`, `max_pivotal_retries`).
 
 ---
 
@@ -490,6 +507,18 @@ widely-cited work:
 - [A-MEM: Agentic Memory for LLM Agents](https://arxiv.org/abs/2502.12110) (Xu et al., NeurIPS 2025) — structured, status-aware memory notes.
 - [Generative Agents: Interactive Simulacra of Human Behavior](https://arxiv.org/abs/2304.03442) (Park et al., 2023) — relevance/recency/importance gating at retrieval time.
 
+The 2026 frontier (compile-don't-retrieve, feedback loops, harness optimization) informs
+the current and planned increments — full study log with all sources in
+[`docs/plans/2026-08-22-experience-learning-study-and-plan.md`](docs/plans/2026-08-22-experience-learning-study-and-plan.md):
+
+- [XSkill: Continual Learning from Experience and Skills in Multimodal Agents](https://arxiv.org/abs/2603.12056) (ICML 2026) — critique at write time + usage-history feedback loop; basis for the generality gate and usage-updated counters.
+- [Rethinking Continual Experience Internalization](https://arxiv.org/abs/2606.04703) (2026) — naive experience accumulation collapses; principle-level lessons survive; motivates the generality gate and planned lesson compaction.
+- [PivoARL: Agent RL via Pivotal-Aware Self-Feedback Retry](https://arxiv.org/abs/2607.03702) (2026) — retry locally from the pivotal error, reuse the correct prefix; basis for pivotal error retry.
+- [Evo-Harness: Context-to-Harness Skill Compilation](https://arxiv.org/abs/2608.15071) (2026) — compile one-shot executions into executable skill harnesses; guides lesson→skill promotion.
+- [Muscle Memory for Agents: Compile not Merely Retrieve](https://arxiv.org/abs/2608.08995) (2026) — compilation beats retrieval for recurring intent; guides lesson→skill promotion.
+- [Meta-Harness: End-to-End Optimization of Model Harnesses](https://arxiv.org/abs/2603.28052) (Lee et al., 2026) — the harness itself is the optimizable object, searched with full access to prior candidates' source/scores/traces; guides EvoX-over-harness.
+- [Harness Updating Is Not Harness Benefit](https://arxiv.org/abs/2605.30621) (2026) — self-modifications require held-out eval acceptance; basis for the regression gate on harness changes.
+
 ---
 
 ## 📚 Documentation Index
@@ -502,4 +531,4 @@ widely-cited work:
 
 ---
 
-*Vibe Agent is currently in Phase 4.2 (Self-Improving Skill-Maker) + Phase 5.2 (Shadow Workspace). See the [Roadmap](docs/ROADMAP.md) for what's next. Test suite: **1699 tests passing**.*
+*Vibe Agent is currently in Phase 4.2 (Self-Improving Skill-Maker) + Phase 5.2 (Shadow Workspace). See the [Roadmap](docs/ROADMAP.md) for what's next. Test suite: **1729 tests passing**.*

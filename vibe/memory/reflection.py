@@ -6,9 +6,13 @@ TrajectoryReflector distills a few reusable lessons from the trajectory
 curator merges each lesson into the wiki as a small incremental delta item:
 an existing similar lesson page is updated (helpful/harmful counter
 incremented, lesson text refined additively) instead of rewritten — this
-prevents "context collapse". Lessons live in ordinary wiki pages tagged
-``lesson`` and are indexed into PageIndex immediately, so they become
-routable into future prompts via the normal wiki-hint path.
+prevents "context collapse". Write-time quality gate: the LLM scores each
+lesson's generality (1–5) and the curator drops low scores. A usage-feedback
+loop (``record_usage``) attributes session outcomes to the lesson pages
+injected into the prompt: COMPLETED → helpful+1, ERROR → harmful+1.
+Lessons live in ordinary wiki pages tagged ``lesson`` and are indexed into
+PageIndex immediately, so they become routable into future prompts via the
+normal wiki-hint path.
 
 Error policy: all public methods catch exceptions and return safe defaults.
 """
@@ -49,7 +53,7 @@ _REFLECTION_PROMPT_TEMPLATE = """You are a trajectory reflection engine. Analyze
 agent session below and distill up to {max_lessons} reusable lessons.
 
 Session outcome: {outcome}
-Original user query: {query}
+Original user query: {query}{pivotal_block}
 
 Rules:
 - Each lesson must be a specific, reusable rule of the form "When X, do Y \
@@ -60,6 +64,9 @@ from errors, retries, and dead ends.
 use them to learn what the agent actually did.
 - kind must be one of: "pitfall" (something to avoid), "procedure" (a \
 reusable routine that worked), "tip" (a generalizable insight).
+- generality must be an integer 1-5 rating how reusable the lesson is beyond \
+this specific task: 1 = tied to this specific instance, 5 = reusable \
+principle.
 - Return at most {max_lessons} lessons. If nothing is generalizable, return [].
 - Respond with ONLY a JSON array. No markdown code fences, no extra text.
 
@@ -71,7 +78,8 @@ Example:
 the port is not already served by a stale process before editing code, \
 because a duplicate server masks every fix.",
     "applies_when": "A dev server does not reflect recent edits",
-    "kind": "pitfall"
+    "kind": "pitfall",
+    "generality": 4
   }}
 ]
 
@@ -108,6 +116,30 @@ def _render_lesson_content(lesson: dict, *, helpful: int, harmful: int) -> str:
     return "\n".join(parts)
 
 
+def _parse_generality(value: Any) -> int | None:
+    """Parse a generality score defensively; None when missing/unparseable."""
+    try:
+        return int(float(value))  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
+def _bump_counter(content: str | None, name: str) -> tuple[int, int]:
+    """Read the helpful/harmful counters from page content and bump one of them."""
+    helpful = _read_counter(content, "helpful")
+    harmful = _read_counter(content, "harmful")
+    if name == "helpful":
+        helpful += 1
+    elif name == "harmful":
+        harmful += 1
+    return helpful, harmful
+
+
+def _render_with_counters(body: str, *, helpful: int, harmful: int) -> str:
+    """Attach the counter lines at the bottom of a lesson page body."""
+    return f"{body}\n\nhelpful: {helpful}\nharmful: {harmful}"
+
+
 def _topic_tags(title: str, limit: int = 3) -> list[str]:
     """Derive up to ``limit`` topic tags from significant title words."""
     tags: list[str] = []
@@ -127,8 +159,12 @@ def _topic_tags(title: str, limit: int = 3) -> list[str]:
 class TrajectoryReflector:
     """Distill reusable lessons from a finished session and curate them into the wiki.
 
+    Also applies outcome-based usage feedback (``record_usage``) to lesson
+    pages that were injected into the session's prompt.
+
     Thread-safety: stateless — safe to use from multiple coroutines.
-    Error policy: ``reflect()`` never raises; all errors are caught and logged.
+    Error policy: ``reflect()``/``record_usage()`` never raise; all errors
+    are caught and logged.
     """
 
     def __init__(
@@ -154,6 +190,7 @@ class TrajectoryReflector:
         messages: list[Any],
         state: Any,
         session_id: str,
+        pivotal_turn: int | None = None,
     ) -> list[WikiPage]:
         """Reflect on a finished trajectory and write lesson pages to the wiki.
 
@@ -162,6 +199,9 @@ class TrajectoryReflector:
             messages: Conversation messages (role/content[/metadata] attrs).
             state: Terminal QueryState (COMPLETED/INCOMPLETE/ERROR) or its name.
             session_id: Session UUID for citation tracking.
+            pivotal_turn: Optional transcript message index where the session
+                derailed; surfaced in the prompt so lessons anchor on the
+                failure point.
 
         Returns:
             List of created or updated WikiPages. Empty list on skip or error.
@@ -181,17 +221,31 @@ class TrajectoryReflector:
                 return []
 
             max_lessons = self._cfg_int("max_lessons", 3)
+            min_generality = self._cfg_int("min_generality", 3)
+            pivotal_block = ""
+            if pivotal_turn is not None:
+                pivotal_block = (
+                    f"\nThe session derailed at trajectory turn [{pivotal_turn}] "
+                    "(the `[i]` message index in the transcript) — anchor lessons "
+                    "on that failure point and how to avoid it."
+                )
             prompt = _REFLECTION_PROMPT_TEMPLATE.format(
                 max_lessons=max_lessons,
                 outcome=outcome,
                 query=(query or "")[:500],
+                pivotal_block=pivotal_block,
                 transcript=transcript,
             )
             raw = await self._call_llm(prompt)
             if not raw:
                 return []
 
-            lessons = self._parse_lessons(raw, outcome=outcome, max_lessons=max_lessons)
+            lessons = self._parse_lessons(
+                raw,
+                outcome=outcome,
+                max_lessons=max_lessons,
+                min_generality=min_generality,
+            )
             if not lessons:
                 return []
 
@@ -220,6 +274,48 @@ class TrajectoryReflector:
         except Exception as e:
             logger.warning("Trajectory reflection failed (non-fatal): %s", e)
             return []
+
+    async def record_usage(self, page_ids: list[str] | None, state: Any) -> None:
+        """Attribute a session outcome to previously injected lesson pages.
+
+        ACE-style noisy usage feedback (no LLM): every lesson page injected
+        into the session's prompt gets a counter bumped — COMPLETED →
+        ``helpful`` +1, ERROR → ``harmful`` +1, anything else (e.g.
+        INCOMPLETE) → no signal. Updated pages are re-indexed so PageIndex
+        stays in sync. Never raises.
+        """
+        try:
+            outcome = getattr(state, "name", None) or str(state or "")
+            counter = {"COMPLETED": "helpful", "ERROR": "harmful"}.get(outcome)
+            if counter is None or not page_ids:
+                return
+            if self.wiki is None or not hasattr(self.wiki, "get_page"):
+                return
+
+            seen: set[str] = set()
+            for page_id in page_ids:
+                if not page_id or page_id in seen:
+                    continue
+                seen.add(page_id)
+                try:
+                    page = await self.wiki.get_page(page_id)
+                    if page is None:
+                        continue
+                    # Only lesson pages carry usage counters
+                    if "lesson" not in (getattr(page, "tags", None) or []):
+                        continue
+                    helpful, harmful = _bump_counter(page.content, counter)
+                    merged = _render_with_counters(
+                        _strip_counters(page.content), helpful=helpful, harmful=harmful
+                    )
+                    updated = await self.wiki.update_page(page_id=page.id, content=merged)
+                    index_wiki_page(self.pageindex, updated)
+                except Exception as page_err:
+                    logger.debug(
+                        "Usage feedback failed for page %s (non-fatal): %s", page_id, page_err
+                    )
+        except Exception as e:
+            logger.warning("Usage feedback failed (non-fatal): %s", e)
 
     # ------------------------------------------------------------------
     # Curator (ACE-style merge instead of rewrite)
@@ -260,18 +356,15 @@ class TrajectoryReflector:
     ) -> WikiPage:
         """ACE-style delta update: increment the outcome counter and append the
         refined lesson text additively. Status is left to the wiki's gates."""
-        helpful = _read_counter(page.content, "helpful")
-        harmful = _read_counter(page.content, "harmful")
-        if outcome == "ERROR":
-            harmful += 1
-        else:
-            helpful += 1
+        helpful, harmful = _bump_counter(
+            page.content, "harmful" if outcome == "ERROR" else "helpful"
+        )
 
         body = _strip_counters(page.content)
         new_text = lesson["lesson"]
         if new_text and new_text not in body:
             body = f"{body}\n\nRefinement: {new_text}" if body else new_text
-        merged = f"{body}\n\nhelpful: {helpful}\nharmful: {harmful}"
+        merged = _render_with_counters(body, helpful=helpful, harmful=harmful)
 
         return await self.wiki.update_page(
             page_id=page.id,
@@ -341,12 +434,16 @@ class TrajectoryReflector:
             total_chars += len(line)
         return "\n\n".join(lines)
 
-    def _parse_lessons(self, raw: str, *, outcome: str, max_lessons: int) -> list[dict]:
+    def _parse_lessons(
+        self, raw: str, *, outcome: str, max_lessons: int, min_generality: int = 1
+    ) -> list[dict]:
         """Parse the LLM response into lesson dicts.
 
         Robust to markdown code fences, prose around the JSON array, and
         malformed entries. Invalid/missing kinds default to "pitfall" for
-        ERROR sessions and "tip" otherwise.
+        ERROR sessions and "tip" otherwise. Lessons with a parseable
+        ``generality`` score below ``min_generality`` are dropped; missing or
+        unparseable scores are accepted (fail-open).
         """
         if not raw or not raw.strip():
             return []
@@ -386,6 +483,9 @@ class TrajectoryReflector:
             kind = str(entry.get("kind", "")).strip().lower()
             if kind not in _LESSON_KINDS:
                 kind = "pitfall" if outcome == "ERROR" else "tip"
+            generality = _parse_generality(entry.get("generality"))
+            if generality is not None and generality < min_generality:
+                continue
             lessons.append(
                 {
                     "title": title,

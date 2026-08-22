@@ -413,3 +413,255 @@ def test_transcript_bounded(reflector):
     transcript = reflector._build_transcript(messages)
     assert len(transcript) <= 12000 + 100  # bound + last line slack
     assert "[transcript truncated]" in transcript
+
+
+# ---------------------------------------------------------------------------
+# Generality gate (write-time critique)
+# ---------------------------------------------------------------------------
+
+
+def _generality_json(generality, **overrides) -> str:
+    entry = {
+        "title": "Pin base image digests",
+        "lesson": "When pulling base images, pin by digest because tags drift. " * 3,
+        "applies_when": "Writing Dockerfiles",
+        "kind": "procedure",
+        "generality": generality,
+    }
+    entry.update(overrides)
+    return json.dumps([entry])
+
+
+@pytest.mark.asyncio
+async def test_generality_low_score_dropped(wiki, pageindex, llm):
+    llm.complete = AsyncMock(
+        return_value=FakeLLMResponse(
+            content=_generality_json(
+                1,
+                title="Restart pod 7 in this outage",
+                lesson="In this specific outage, restarting pod 7 fixed it. " * 3,
+            )
+        )
+    )
+    reflector = TrajectoryReflector(
+        wiki=wiki,
+        pageindex=pageindex,
+        llm_client=llm,
+        config=ReflectionConfig(min_transcript_chars=10),  # default min_generality=3
+    )
+    pages = await reflector.reflect(
+        query="q", messages=_make_messages(), state="COMPLETED", session_id="sess-g01"
+    )
+    assert pages == []
+    assert await wiki.list_pages() == []
+
+
+@pytest.mark.asyncio
+async def test_generality_high_score_accepted(wiki, pageindex, llm):
+    llm.complete = AsyncMock(return_value=FakeLLMResponse(content=_generality_json(5)))
+    reflector = TrajectoryReflector(
+        wiki=wiki,
+        pageindex=pageindex,
+        llm_client=llm,
+        config=ReflectionConfig(min_transcript_chars=10),
+    )
+    pages = await reflector.reflect(
+        query="q", messages=_make_messages(), state="COMPLETED", session_id="sess-g02"
+    )
+    assert len(pages) == 1
+    assert "lesson" in pages[0].tags
+
+
+@pytest.mark.asyncio
+async def test_generality_missing_accepted_fail_open(reflector):
+    # _LESSON_JSON carries no "generality" key at all
+    pages = await reflector.reflect(
+        query="q", messages=_make_messages(), state="COMPLETED", session_id="sess-g03"
+    )
+    assert len(pages) == 1
+
+
+@pytest.mark.asyncio
+async def test_generality_unparseable_accepted_fail_open(wiki, pageindex, llm):
+    llm.complete = AsyncMock(return_value=FakeLLMResponse(content=_generality_json("high")))
+    reflector = TrajectoryReflector(
+        wiki=wiki,
+        pageindex=pageindex,
+        llm_client=llm,
+        config=ReflectionConfig(min_transcript_chars=10),
+    )
+    pages = await reflector.reflect(
+        query="q", messages=_make_messages(), state="COMPLETED", session_id="sess-g04"
+    )
+    assert len(pages) == 1
+
+
+@pytest.mark.asyncio
+async def test_generality_threshold_from_config(wiki, pageindex, llm):
+    llm.complete = AsyncMock(
+        return_value=FakeLLMResponse(
+            content=json.dumps(
+                [
+                    {
+                        "title": "Check disk space before installs",
+                        "lesson": "When an install fails opaquely, check disk space first. " * 3,
+                        "kind": "tip",
+                        "generality": 4,
+                    },
+                    {
+                        "title": "State assumptions before acting",
+                        "lesson": "When requirements are ambiguous, state assumptions "
+                        "explicitly before acting, because silent guesses compound. " * 2,
+                        "kind": "tip",
+                        "generality": 5,
+                    },
+                ]
+            )
+        )
+    )
+    reflector = TrajectoryReflector(
+        wiki=wiki,
+        pageindex=pageindex,
+        llm_client=llm,
+        config=ReflectionConfig(min_transcript_chars=10, min_generality=5),
+    )
+    pages = await reflector.reflect(
+        query="q", messages=_make_messages(), state="COMPLETED", session_id="sess-g05"
+    )
+    # Only the generality-5 lesson survives the stricter gate
+    assert len(pages) == 1
+    assert pages[0].title == "State assumptions before acting"
+
+
+# ---------------------------------------------------------------------------
+# Pivotal-turn annotation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_reflect_pivotal_turn_included_in_prompt(reflector, llm):
+    await reflector.reflect(
+        query="q",
+        messages=_make_messages(),
+        state="ERROR",
+        session_id="sess-p01",
+        pivotal_turn=3,
+    )
+    prompt = llm.complete.call_args.args[0]
+    assert "[3]" in prompt
+    assert "derailed" in prompt
+
+
+@pytest.mark.asyncio
+async def test_reflect_without_pivotal_turn_omits_note(reflector, llm):
+    await reflector.reflect(
+        query="q", messages=_make_messages(), state="COMPLETED", session_id="sess-p02"
+    )
+    prompt = llm.complete.call_args.args[0]
+    assert "derailed" not in prompt
+
+
+# ---------------------------------------------------------------------------
+# Usage feedback (record_usage)
+# ---------------------------------------------------------------------------
+
+
+async def _make_lesson_page(wiki, *, helpful: int = 1, harmful: int = 0):
+    return await wiki.create_page(
+        title="Pin base image digests",
+        content=(
+            "When pulling base images, pin by digest because tags drift.\n\n"
+            f"helpful: {helpful}\nharmful: {harmful}"
+        ),
+        tags=["lesson", "procedure"],
+    )
+
+
+@pytest.mark.asyncio
+async def test_record_usage_completed_bumps_helpful(reflector, wiki):
+    page = await _make_lesson_page(wiki)
+    await reflector.record_usage([page.id], "COMPLETED")
+    updated = await wiki.get_page(page.id)
+    assert "helpful: 2" in updated.content
+    assert "harmful: 0" in updated.content
+    # Body text preserved
+    assert "pin by digest" in updated.content
+
+
+@pytest.mark.asyncio
+async def test_record_usage_error_bumps_harmful(reflector, wiki):
+    page = await _make_lesson_page(wiki)
+    await reflector.record_usage([page.id], "ERROR")
+    updated = await wiki.get_page(page.id)
+    assert "helpful: 1" in updated.content
+    assert "harmful: 1" in updated.content
+
+
+@pytest.mark.asyncio
+async def test_record_usage_incomplete_no_change(reflector, wiki):
+    page = await _make_lesson_page(wiki)
+    await reflector.record_usage([page.id], "INCOMPLETE")
+    updated = await wiki.get_page(page.id)
+    assert "helpful: 1" in updated.content
+    assert "harmful: 0" in updated.content
+
+
+@pytest.mark.asyncio
+async def test_record_usage_skips_non_lesson_pages(reflector, wiki):
+    page = await wiki.create_page(
+        title="Docker overview",
+        content="General knowledge.\n\nhelpful: 3\nharmful: 0",
+        tags=["docker"],
+    )
+    await reflector.record_usage([page.id], "COMPLETED")
+    updated = await wiki.get_page(page.id)
+    assert "helpful: 3" in updated.content
+    assert "harmful: 0" in updated.content
+
+
+@pytest.mark.asyncio
+async def test_record_usage_tolerates_missing_pages(reflector, wiki):
+    page = await _make_lesson_page(wiki)
+    # Unknown ids are skipped without failing the valid ones
+    await reflector.record_usage(["no-such-page-id", page.id], "COMPLETED")
+    updated = await wiki.get_page(page.id)
+    assert "helpful: 2" in updated.content
+
+
+@pytest.mark.asyncio
+async def test_record_usage_counters_accumulate_across_calls(reflector, wiki):
+    page = await _make_lesson_page(wiki)
+    await reflector.record_usage([page.id], "COMPLETED")
+    await reflector.record_usage([page.id], "ERROR")
+    await reflector.record_usage([page.id], "COMPLETED")
+    updated = await wiki.get_page(page.id)
+    assert "helpful: 3" in updated.content
+    assert "harmful: 1" in updated.content
+
+
+@pytest.mark.asyncio
+async def test_record_usage_reindexes_updated_page(reflector, wiki, pageindex, monkeypatch):
+    page = await _make_lesson_page(wiki)
+    spy = MagicMock()
+    monkeypatch.setattr("vibe.memory.reflection.index_wiki_page", spy)
+    await reflector.record_usage([page.id], "COMPLETED")
+    spy.assert_called_once()
+    args = spy.call_args.args
+    assert args[0] is pageindex
+    assert args[1].id == page.id
+    assert "helpful: 2" in args[1].content
+
+
+@pytest.mark.asyncio
+async def test_record_usage_never_raises(reflector, wiki, monkeypatch):
+    page = await _make_lesson_page(wiki)
+    # Wiki read failure is swallowed
+    monkeypatch.setattr(wiki, "get_page", AsyncMock(side_effect=RuntimeError("db gone")))
+    await reflector.record_usage([page.id], "COMPLETED")
+    monkeypatch.undo()
+    # Empty/None inputs and unknown outcomes are silent no-ops
+    await reflector.record_usage(None, "COMPLETED")
+    await reflector.record_usage([], "COMPLETED")
+    await reflector.record_usage([page.id], None)
+    updated = await wiki.get_page(page.id)
+    assert "helpful: 1" in updated.content

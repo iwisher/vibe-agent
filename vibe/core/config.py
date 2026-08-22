@@ -427,6 +427,19 @@ class FallbackConfig(BaseModel):
         return v
 
 
+class ErrorRecoveryConfig(BaseModel):
+    """Error recovery configuration (pivotal local retry, PivoARL-style).
+
+    Pivotal local retry detects repeated identical tool-call failures within a
+    run and, before the loop degrades to ERROR/INCOMPLETE, performs at most one
+    guided retry of the pivotal failing call — reusing the correct message
+    prefix instead of re-planning. Security denials are never retried.
+    """
+
+    pivotal_retry_enabled: bool = True
+    max_pivotal_retries: int = 1
+
+
 # ---------------------------------------------------------------------------
 # Tripartite memory (Phase 1a)
 # ---------------------------------------------------------------------------
@@ -505,6 +518,12 @@ class ReflectionConfig(BaseModel):
     # Curator dedup: a new lesson merges into an existing lesson page when their
     # titles match exactly or share at least this fraction of words.
     merge_title_overlap: float = Field(default=0.7, ge=0.0, le=1.0)
+    # Generality gate: the reflection prompt asks the LLM to score each lesson's
+    # generality (1 = tied to this specific instance, 5 = reusable principle);
+    # lessons scoring below this threshold are dropped. Missing or unparseable
+    # scores are accepted (fail-open) — bad lessons are weeded out later by the
+    # usage-feedback counters.
+    min_generality: int = Field(default=3, ge=1, le=5)
 
 
 class TripartiteMemoryConfig(BaseModel):
@@ -557,6 +576,7 @@ class VibeConfig(BaseSettings):
     preferences: PreferenceConfig = Field(default_factory=PreferenceConfig)
     skill_maker: SkillMakerConfig = Field(default_factory=SkillMakerConfig)
     shadow_workspace: ShadowWorkspaceConfig = Field(default_factory=ShadowWorkspaceConfig)
+    error_recovery: ErrorRecoveryConfig = Field(default_factory=ErrorRecoveryConfig)
 
     # Legacy flat compat
     api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")

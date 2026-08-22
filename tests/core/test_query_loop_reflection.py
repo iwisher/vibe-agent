@@ -16,8 +16,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from vibe.core.config import ReflectionConfig, TripartiteMemoryConfig, WikiConfig
-from vibe.core.query_loop import QueryLoop
-from vibe.memory.pageindex import PageIndex
+from vibe.core.query_loop import QueryLoop, QueryState
+from vibe.memory.pageindex import PageIndex, index_wiki_page
 from vibe.memory.wiki import LLMWiki
 
 # ---------------------------------------------------------------------------
@@ -313,3 +313,126 @@ async def test_tool_messages_carry_tool_name_metadata(fake_tools):
     assert len(tool_msgs) == 1
     assert tool_msgs[0].metadata == {"tool_name": "web_search"}
     assert tool_msgs[0].tool_call_id == "call_1"
+
+
+# ---------------------------------------------------------------------------
+# Usage feedback: injection tracking
+# ---------------------------------------------------------------------------
+
+
+async def _seed_lesson_page(wiki, pageindex, title: str = "Pin base image digests"):
+    """Create a lesson-tagged page and index it so _build_wiki_hint can route it."""
+    page = await wiki.create_page(
+        title=title,
+        content="When pulling base images, pin by digest because tags drift. " * 3,
+        tags=["lesson", "procedure"],
+    )
+    index_wiki_page(pageindex, page)
+    return page
+
+
+def _loop_with_wiki(fake_tools, wiki, pageindex, llm, **cfg_kwargs) -> QueryLoop:
+    return QueryLoop(
+        llm_client=llm,
+        tool_system=fake_tools,
+        wiki=wiki,
+        pageindex=pageindex,
+        config=_config(**cfg_kwargs),
+        max_iterations=1,
+        stream=False,
+    )
+
+
+@pytest.mark.asyncio
+async def test_wiki_hint_tracks_only_lesson_pages(fake_tools, wiki, pageindex):
+    lesson = await _seed_lesson_page(wiki, pageindex)
+    # A plain page matching the same query is injected but must NOT be tracked
+    plain = await wiki.create_page(
+        title="Pin base image digests background",
+        content="Background reading on image pinning. " * 3,
+        tags=["docker"],
+    )
+    index_wiki_page(pageindex, plain)
+
+    loop = _loop_with_wiki(fake_tools, wiki, pageindex, _make_llm())
+    hint = await loop._build_wiki_hint("pin base image digests", 0.3)
+
+    assert "## Relevant Knowledge" in hint
+    assert lesson.title in hint and plain.title in hint
+    assert loop._injected_lesson_ids == [lesson.id]
+
+
+@pytest.mark.asyncio
+async def test_injected_lesson_ids_reset_at_run_start(fake_tools, wiki, pageindex):
+    llm = _make_llm("A long enough answer to pass the skip heuristic. " * 10)
+    loop = _loop_with_wiki(fake_tools, wiki, pageindex, llm, reflection_enabled=False)
+    loop._injected_lesson_ids = ["stale-id"]
+    loop.add_user_message("Tell me something interesting about python async. " * 4)
+    await _drain(loop)
+    assert loop._injected_lesson_ids == []
+
+
+@pytest.mark.asyncio
+async def test_tracking_failure_never_breaks_hint(fake_tools, wiki, pageindex):
+    lesson = await _seed_lesson_page(wiki, pageindex)
+    loop = _loop_with_wiki(fake_tools, wiki, pageindex, _make_llm())
+    loop._injected_lesson_ids = None  # append would explode — must be swallowed
+    hint = await loop._build_wiki_hint("pin base image digests", 0.3)
+    assert lesson.title in hint
+
+
+# ---------------------------------------------------------------------------
+# Usage feedback: ordering + pivotal annotation in the reflection task
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_record_usage_runs_before_reflection(fake_tools, wiki, pageindex, monkeypatch):
+    lesson = await _seed_lesson_page(wiki, pageindex)
+    llm = _make_llm("A detailed answer about pinning base image digests. " * 10)
+
+    order: list = []
+
+    async def _record_usage(page_ids, state):
+        order.append(("record_usage", list(page_ids), state))
+
+    async def _reflect(**kwargs):
+        order.append(("reflect", kwargs))
+        return []
+
+    inst = MagicMock()
+    inst.record_usage = _record_usage
+    inst.reflect = _reflect
+    monkeypatch.setattr("vibe.memory.reflection.TrajectoryReflector", MagicMock(return_value=inst))
+
+    loop = _loop_with_wiki(fake_tools, wiki, pageindex, llm)
+    async for _ in loop.run("How do I pin base image digests in docker? " * 2):
+        pass
+    await _await_task(loop._reflection_task)
+
+    # Usage feedback (no LLM) runs FIRST, then LLM reflection
+    assert [step[0] for step in order] == ["record_usage", "reflect"]
+    # record_usage receives exactly the lesson pages injected during the run
+    assert order[0][1] == [lesson.id]
+    assert order[0][2] == QueryState.COMPLETED
+    # No pivotal turn set by default
+    assert order[1][1]["pivotal_turn"] is None
+
+
+@pytest.mark.asyncio
+async def test_pivotal_turn_plumbed_to_reflect(fake_tools, wiki, pageindex, monkeypatch):
+    llm = _make_llm("A long enough answer to pass the skip heuristic. " * 10)
+    inst = MagicMock()
+    inst.record_usage = AsyncMock(return_value=None)
+    inst.reflect = AsyncMock(return_value=[])
+    monkeypatch.setattr("vibe.memory.reflection.TrajectoryReflector", MagicMock(return_value=inst))
+
+    loop = _loop_with_wiki(fake_tools, wiki, pageindex, llm)
+    loop._pivotal_turn = 7  # set by a later workstream; read defensively here
+    loop.add_user_message("Tell me something interesting about python async. " * 4)
+    await _drain(loop)
+    await _await_task(loop._reflection_task)
+
+    inst.record_usage.assert_awaited_once()
+    inst.reflect.assert_awaited_once()
+    assert inst.reflect.call_args.kwargs["pivotal_turn"] == 7

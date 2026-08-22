@@ -146,3 +146,9 @@ memory:
     enabled: true                      # Distill reusable lessons after every session
     max_lessons: 3                     # Max lessons written per session
     min_transcript_chars: 400          # Skip trivial sessions shorter than this
+    min_generality: 3                  # Drop lessons self-scored below this generality (1–5)
+
+# 13. Error recovery — pivotal retry for repeated tool failures
+error_recovery:
+  pivotal_retry_enabled: true          # One guided retry per failing call signature
+  max_pivotal_retries: 1               # Hard bound per call signature per run

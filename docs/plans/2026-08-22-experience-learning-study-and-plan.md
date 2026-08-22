@@ -133,13 +133,62 @@ risk budget is one extra LLM call per failing task.
 Both touch `vibe/core/query_loop.py` (A: `_build_wiki_hint` + finally block; C: tool
 error path). **Choice: sequential (A → C)** — simplest, zero edit-conflict risk.
 
+**B1. Where does lesson compaction live?**
+Options: (a) extend `reflection.py`'s curator; (b) new `vibe/memory/compaction.py`
+(`LessonCompactor`); (c) CLI-only script.
+**Choice: (b).** Keeps the reflector focused; invocable from CLI and tests; follows the
+one-class-per-file memory-module convention.
+
+**B2. What triggers compaction?**
+Options: (a) auto after every reflection (LLM cost per session, latency risk);
+(b) manual CLI `vibe memory wiki compact` + a threshold hint when lesson pages pile up;
+(c) on read.
+**Choice: (b).** Matches the existing manual-only `vibe memory wiki expire` precedent;
+no surprise LLM spend. Auto-compaction can come later behind a config flag.
+
+**B3. How are lessons merged?**
+**Choice:** cluster lesson pages with the existing keyword word-overlap measure (no new
+deps), one LLM synthesis call per cluster producing a principle-level page, **summing
+helpful/harmful counters and unioning citations** (ACE: counters are the memory), and
+marking old pages archived/superseded — never delete (reversible, stable).
+
+**B4. Lesson→skill promotion path?**
+**Choice:** extend `SkillMakerPipeline` with a lesson-sourced candidate: a lesson page
+qualifies when it is principle-level (`generality >= 4`), net-positive
+(`helpful - harmful >= 2`), and `kind = procedure`. The generator is asked for a v2
+**script-backed** skill (the stock-analysis pattern); acceptance gate = existing
+`SkillValidator` scan + smoke-run of the script's verification when fixture inputs are
+derivable, then the normal approval gate. No new install machinery.
+(Gate note: B's gate is validate+smoke-run for skills; D's gate is the eval-suite
+regression check for harness changes — two different, appropriate gates. This refines
+the earlier "build once in B" note: the *pattern* — never accept without an objective
+check — is what carries over.)
+
+**D1. EvoX-over-harness scope?**
+Full Meta-Harness-style search over arbitrary harness code is a multi-week build.
+**Choice: MVP = bounded knob/prompt evolution.** `vibe evox run --target harness`
+evolves a declared search space: memory/reflection config knobs (`routing_min_confidence`,
+`max_lessons`, `min_generality`, …) and prompt-template *variants* for
+extraction/reflection (candidate strings, not free-form code). Scoring = the built-in
+eval suite (limited, like CI's `--limit 20`); acceptance = score improvement with no
+>5% regression vs `docs/baseline_scorecard.json` (reuses the existing CI regression-gate
+convention). The evaluator is mockable so unit tests need no live model.
+
+**D2. AgentHER relabeling in the RLM export?**
+**Choice:** `rlm_trainer.py` currently keeps only `success` sessions. Add a relabel stage
+behind `rlm.relabel_failures` (default true, only active when RLM is already enabled):
+for each failed session, one LLM call proposes either an achievable alternative goal the
+trajectory *does* demonstrate (emit a training pair marked `relabeled`) or discard;
+confidence-gated (low confidence → discard). Never raises; relabeled pairs are
+counted/logged separately so data provenance stays auditable.
+
 ---
 
 ## 4. Status
 
 - [x] Study + consolidation (this file)
-- [ ] Workstream A — lesson quality & feedback
-- [ ] Workstream C — pivotal local retry
-- [ ] README update
+- [x] Workstream A — lesson quality & feedback (generality gate, usage→counter loop, pivotal annotation; +20 tests)
+- [x] Workstream C — pivotal local retry (`error_recovery` config; guided retry; security denials never retried; +10 tests)
+- [x] README + CONFIGURATION/sample_config updates; suite at 1729 passed, 1 skipped
 - [ ] Workstream B — lesson lifecycle (not started)
 - [ ] Workstream D — offline self-improvement (not started)
