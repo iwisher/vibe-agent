@@ -31,10 +31,14 @@
 │                                                                                                     │
 │  ❯ 💬 Response: The current price for QQQ is $482.15 with 48.2M volume.                             │
 │                                                                                                     │
-╞══ ⌨️ 💬 USER PROMPT ── 📬 [queue: 0] ───────────────────────────────────────────────────────────────╡
+╞══ ⌨️ 💬 USER PROMPT ── 📬 [queue: 0] ── ⤢ [Ctrl-T] Expand ══════════════════════════════════════════╡
 │  ❯ _                                                                                                │
-└─ 🚪 [Ctrl-C] Exit  │  📜 [↑/↓] History  │  🧹 [/clear] Reset  │  🔍 [/verbose]  │  ⚙️ [/bg] ─────────┘
+└─ 🚪 [Ctrl-C] Exit │ 📜 [↑/↓] History │ 🧹 [/clear] Reset │ 🔍 [/verbose] │ ⚙️ [/bg] │ ⤢ [Ctrl-T] ────┘
 ```
+
+> **Expandable input:** `Ctrl-T` toggles the prompt tile between 1 line and 50% of the
+> screen height (recomputed on every render, so it tracks terminal resizes). While
+> expanded, `Enter` still submits and `Alt-Enter` inserts a newline.
 
 ---
 
@@ -78,6 +82,8 @@
   - `🧹 [/clear] Reset`
   - `🔍 [/verbose] Details`
   - `⚙️ [/bg] Background`
+  - `⤢ [Ctrl-T] Expand/Collapse` input tile (max 50% of screen height)
+  - `⏎ [Alt-Enter] Newline` while input is expanded
 
 ---
 
@@ -93,14 +99,27 @@ Custom prompt_toolkit `Lexer` that returns token styling tuples `(style_str, tex
 ### 4.2 TUI Structure (`VibeTUI`)
 - `top_system_bar`: Dynamic FormattedTextControl showing App Title, Model, State, Tokens/Speed.
 - `thinking_area`: `TextArea` with `TUIKeywordLexer` and violet header.
-- `log_area`: `TextArea` with `TUIKeywordLexer` and cyan/emerald header.
-- `input_area`: `TextArea` with prompt `❯ ` and amber/queue header.
+- Labeled section dividers (`╞══ … ══╡`): the log divider is static; the input divider
+  is dynamic (status, queue preview, expand/collapse hint). Each seam between tiles is a
+  labeled divider, so section boundaries survive long sessions.
+- `log_area`: `TextArea` with `TUIKeywordLexer` and cyan/emerald divider.
+- `input_area`: multiline `TextArea` with prompt `❯ ` and amber divider. Height is a
+  callable (`_input_height`) re-evaluated every render: 1 line collapsed, half the
+  terminal rows when expanded via `Ctrl-T` (never more than 50% of the screen).
+  `Alt-Enter` inserts a newline while expanded; `Enter` always submits.
 - `bottom_action_bar`: FormattedTextControl showing shortcut guide.
 
 ---
 
 ## 5. Experience Changelog & Versioning
 
+- **v0.5.2**:
+  - Section seams are now labeled unicode dividers (`╞══ ⚡ 🛠️ WORKING LOG … ══╡`),
+    merging the old separate header + plain border lines so boundaries stay obvious
+    after long sessions.
+  - Input tile is expandable: `Ctrl-T` toggles between 1 line and 50% of the screen
+    height (dynamic, tracks resizes); `Alt-Enter` inserts newlines while expanded.
+  - Footer shortcut guide now includes the expand toggle.
 - **v0.5.1**:
   - Modernized TUI with full Obsidian Blue theme.
   - Added emoji-rich top status bar and bottom shortcut guide.

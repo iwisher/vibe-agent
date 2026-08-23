@@ -4,7 +4,8 @@ Provides a full-screen prompt_toolkit layout with:
 - Top system bar: system title, model badge, live state, token stats
 - Top tile: agent thinking / reasoning stream with TrueColor syntax highlighting
 - Middle tile: working log / tool results / metrics with real-time keyword lexer
-- Bottom tile: user prompt box with live status and queue preview
+- Labeled unicode dividers (╞══ … ══╡) marking each section boundary
+- Bottom tile: user prompt box, expandable to half the screen via Ctrl-T
 - Bottom action bar: keyboard shortcuts and command helpers
 """
 
@@ -121,11 +122,10 @@ _TUI_STYLE = Style.from_dict(
         "header.thinking": "bg:#1e1438 #e0aaff bold",
         "header.log": "bg:#0d2621 #5eead4 bold",
         "header.input": "bg:#1f2937 #fbbf24 bold",
-        # Borders & Frame Dividers
+        # Section Dividers (labeled unicode frames between tiles)
         "border": "#334155",
-        "border.thinking": "#583da1",
-        "border.log": "#0d9488",
-        "border.input": "#d97706",
+        "border.log": "bg:#0d2621 #0d9488 bold",
+        "border.input": "bg:#1f2937 #d97706 bold",
         # Text Areas Backgrounds & Foregrounds
         "text-area.thinking": "bg:#0e0d17 #e2e8f0",
         "text-area.log": "bg:#080c14 #e2e8f0",
@@ -175,7 +175,9 @@ class VibeTUI:
             style="class:text-area.log",
         )
 
-        # Input area, with optional up-arrow history recall
+        # Input area: multiline so it can expand. Starts at 1 line; Ctrl-T
+        # toggles it to half the screen height for editing long prompts.
+        self._input_expanded = False
         input_kwargs: dict[str, Any] = {}
         if history_path:
             from prompt_toolkit.history import FileHistory
@@ -183,20 +185,23 @@ class VibeTUI:
             input_kwargs["history"] = FileHistory(history_path)
         self.input_area = TextArea(
             prompt="❯ ",
-            multiline=False,
-            wrap_lines=False,
+            multiline=True,
+            wrap_lines=True,
+            height=self._input_height,
             style="class:text-area.input",
             **input_kwargs,
         )
 
-        # Status shown across top bar and input tile header
+        # Status shown across top bar and input section divider
         self._model_name = "default"
         self._system_state = "READY"
         self._status_text = "ready"
         self._metrics_summary = ""
         self._queue_text = ""
 
-        # Layout: Top bar / thinking / log / input / Bottom shortcuts
+        # Layout: Top bar / thinking / log / input / Bottom shortcuts.
+        # Each section seam is a labeled divider so boundaries stay obvious
+        # even after long sessions.
         self.container = HSplit(
             [
                 Window(
@@ -210,24 +215,18 @@ class VibeTUI:
                     style="class:header.thinking",
                 ),
                 self.thinking_area,
-                self._make_border("class:border.thinking"),
-                Window(
-                    FormattedTextControl(" ⚡ 🛠️ WORKING LOG & TOOL ACTIONS "),
-                    height=1,
-                    style="class:header.log",
-                ),
+                self._make_divider("⚡ 🛠️ WORKING LOG & TOOL ACTIONS", "class:border.log"),
                 self.log_area,
-                self._make_border("class:border.log"),
                 Window(
                     FormattedTextControl(self._get_input_header),
                     height=1,
-                    style="class:header.input",
+                    style="class:border.input",
                 ),
                 self.input_area,
                 Window(
                     FormattedTextControl(
                         " 🚪 [Ctrl-C] Exit  │  📜 [↑/↓] History  │  🧹 [/clear] Reset  │"
-                        "  🔍 [/verbose]  │  ⚙️ [/bg] "
+                        "  🔍 [/verbose]  │  ⚙️ [/bg]  │  ⤢ [Ctrl-T] Expand "
                     ),
                     height=1,
                     style="class:header.shortcuts",
@@ -242,6 +241,27 @@ class VibeTUI:
         self._submit_callback: Callable[[str], None] | None = None
         self._history_index: int | None = None
         self._current_input: str = ""
+
+    def _input_height(self) -> int:
+        """Input area height: 1 line collapsed, half the screen when expanded.
+
+        Called by the layout engine on every render, so the expanded height
+        tracks terminal resizes.
+        """
+        if not self._input_expanded:
+            return 1
+        rows = 24
+        if self._app is not None:
+            try:
+                rows = self._app.output.get_size().rows
+            except Exception:
+                pass
+        return max(3, rows // 2)
+
+    def _toggle_input_expanded(self) -> None:
+        """Toggle the input area between 1 line and half-screen height."""
+        self._input_expanded = not self._input_expanded
+        self._invalidate()
 
     def _history_backward(self) -> None:
         """Recall the previous command from history (Up arrow / Ctrl-P)."""
@@ -289,6 +309,10 @@ class VibeTUI:
         def _(event: Any) -> None:
             self._history_forward()
 
+        @kb.add("c-t")
+        def _(event: Any) -> None:
+            self._toggle_input_expanded()
+
         @kb.add("enter")
         def _(event: Any) -> None:
             text = self.input_area.text.strip()
@@ -299,12 +323,18 @@ class VibeTUI:
                 self._on_submit(text)
             self.input_area.text = ""
 
+        @kb.add("escape", "enter")
+        def _(event: Any) -> None:
+            # Alt-Enter inserts a newline while the input area is expanded.
+            if self._input_expanded:
+                self.input_area.buffer.insert_text("\n")
+
         return kb
 
-    def _make_border(self, style: str = "class:border") -> Window:
-        """Return a 1-line horizontal unicode frame divider between tiles."""
+    def _make_divider(self, label: str, style: str = "class:border") -> Window:
+        """Return a 1-line labeled unicode divider marking a section boundary."""
         return Window(
-            FormattedTextControl("═" * 200),
+            FormattedTextControl(f"╞══ {label} " + "═" * 200 + "╡"),
             height=1,
             style=style,
         )
@@ -323,13 +353,15 @@ class VibeTUI:
         return HTML(f" {'  ──  '.join(parts)} ")
 
     def _get_input_header(self) -> HTML:
-        """Dynamic input tile header with live status and queue info."""
+        """Dynamic input section divider with live status, queue, expand hint."""
         parts = [self._status_text]
         if self._queue_text:
             parts.append(f"📬 {self._queue_text}")
+        parts.append("⤢ [Ctrl-T] Collapse" if self._input_expanded else "⤢ [Ctrl-T] Expand")
         # User-derived text (queue preview, model names) can contain HTML
         # metacharacters, so escape before handing to the HTML parser.
-        return HTML(f" ⌨️ 💬 USER PROMPT │ {html.escape(' │ '.join(parts))} ")
+        body = html.escape(" │ ".join(parts))
+        return HTML(f"╞══ ⌨️ 💬 USER PROMPT │ {body} " + "═" * 200 + "╡")
 
     def set_model(self, model: str) -> None:
         """Update active model badge in the top bar."""
@@ -356,7 +388,7 @@ class VibeTUI:
             self._invalidate()
 
     def set_status(self, text: str) -> None:
-        """Update the status shown in the input tile header."""
+        """Update the status shown in the input section divider."""
         if text != self._status_text:
             self._status_text = text
             self._invalidate()

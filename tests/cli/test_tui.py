@@ -116,15 +116,20 @@ def test_vibe_tui_top_header_state_and_metrics():
     assert "$0.0024" in top_header.value
 
 
-def test_vibe_tui_has_borders():
+def test_vibe_tui_has_labeled_dividers():
     tui = VibeTUI()
-    # Should have 2 border windows between 3 tiles
-    borders = [
+    # Two labeled section dividers: before the log tile and before the input tile
+    dividers = [
         child
         for child in tui.container.children
         if isinstance(child, Window) and child.style.startswith("class:border")
     ]
-    assert len(borders) == 2
+    assert len(dividers) == 2
+    styles = {d.style for d in dividers}
+    assert styles == {"class:border.log", "class:border.input"}
+    # The log divider is static and carries its section label
+    log_divider = next(d for d in dividers if d.style == "class:border.log")
+    assert "WORKING LOG" in log_divider.content.text
 
 
 def test_vibe_tui_headers_have_styles():
@@ -134,13 +139,11 @@ def test_vibe_tui_headers_have_styles():
         for child in tui.container.children
         if isinstance(child, Window) and child.style.startswith("class:header.")
     ]
-    assert len(headers) == 5
+    assert len(headers) == 3
     styles = {h.style for h in headers}
     assert styles == {
         "class:header.system",
         "class:header.thinking",
-        "class:header.log",
-        "class:header.input",
         "class:header.shortcuts",
     }
 
@@ -151,27 +154,25 @@ def test_vibe_tui_headers_have_styles():
 
 
 def test_vibe_tui_layout_order():
-    """Layout must be: top_bar, thinking_header, thinking, border, log_header, log, border,
-    input_header, input, shortcuts."""
+    """Layout must be: top_bar, thinking_header, thinking, log_divider, log,
+    input_divider, input, shortcuts."""
     tui = VibeTUI()
     children = tui.container.children
-    assert len(children) == 10
+    assert len(children) == 8
 
     # Headers & Bars
     assert children[0].style == "class:header.system"
     assert children[1].style == "class:header.thinking"
-    assert children[4].style == "class:header.log"
-    assert children[7].style == "class:header.input"
-    assert children[9].style == "class:header.shortcuts"
+    assert children[7].style == "class:header.shortcuts"
 
     # Content areas (HSplit stores each TextArea's internal window)
     assert children[2].content.buffer is tui.thinking_area.buffer
-    assert children[5].content.buffer is tui.log_area.buffer
-    assert children[8].content.buffer is tui.input_area.buffer
+    assert children[4].content.buffer is tui.log_area.buffer
+    assert children[6].content.buffer is tui.input_area.buffer
 
-    # Borders
-    assert children[3].style == "class:border.thinking"
-    assert children[6].style == "class:border.log"
+    # Labeled section dividers
+    assert children[3].style == "class:border.log"
+    assert children[5].style == "class:border.input"
 
 
 def test_vibe_tui_input_area_is_focused():
@@ -195,7 +196,7 @@ def test_vibe_tui_display_areas_are_read_only():
 
 
 def test_vibe_tui_layout_stable_after_many_appends():
-    """After many rounds of content, headers and borders must stay in place."""
+    """After many rounds of content, headers and dividers must stay in place."""
     tui = VibeTUI()
     # Simulate 50 rounds of thinking + log output
     for i in range(50):
@@ -203,14 +204,12 @@ def test_vibe_tui_layout_stable_after_many_appends():
         tui.append_log(f"log round {i}")
 
     children = tui.container.children
-    assert len(children) == 10
+    assert len(children) == 8
     assert children[0].style == "class:header.system"
     assert children[1].style == "class:header.thinking"
-    assert children[4].style == "class:header.log"
-    assert children[7].style == "class:header.input"
-    assert children[3].style == "class:border.thinking"
-    assert children[6].style == "class:border.log"
-    assert children[9].style == "class:header.shortcuts"
+    assert children[3].style == "class:border.log"
+    assert children[5].style == "class:border.input"
+    assert children[7].style == "class:header.shortcuts"
 
 
 def test_vibe_tui_content_accumulates_in_order():
@@ -505,3 +504,98 @@ def test_vibe_tui_history_navigation_shortcuts():
     # Press Down again -> should return to empty
     down_binding.handler(None)
     assert tui.input_area.text == ""
+
+
+# ---------------------------------------------------------------------------
+# Expandable input area
+# ---------------------------------------------------------------------------
+
+
+def _find_binding(tui, *key_values):
+    kb = tui.container.key_bindings
+    for b in kb.bindings:
+        keys = tuple(k.value for k in b.keys)
+        if keys == key_values:
+            return b
+    return None
+
+
+def test_vibe_tui_input_area_supports_multiline_wrapping():
+    """The input area must be multiline + wrapped so it can grow vertically."""
+    tui = VibeTUI()
+    assert tui.input_area.buffer.multiline()
+    assert tui.input_area.wrap_lines
+
+
+def test_vibe_tui_input_height_collapsed_by_default():
+    tui = VibeTUI()
+    assert tui._input_expanded is False
+    assert tui._input_height() == 1
+
+
+def test_vibe_tui_ctrl_t_toggles_input_expansion():
+    tui = VibeTUI()
+    toggle = _find_binding(tui, "c-t")
+    assert toggle is not None, "Ctrl-T toggle binding must exist"
+
+    toggle.handler(None)
+    assert tui._input_expanded is True
+    # No running app -> fallback 24 rows -> half = 12
+    assert tui._input_height() == 12
+
+    toggle.handler(None)
+    assert tui._input_expanded is False
+    assert tui._input_height() == 1
+
+
+def test_vibe_tui_expanded_input_never_exceeds_half_screen():
+    """Expanded height must be capped at 50% of the terminal height."""
+
+    class FakeOutput:
+        def get_size(self):
+            return SimpleSize(rows=40)
+
+    class SimpleSize:
+        def __init__(self, rows):
+            self.rows = rows
+
+    class FakeApp:
+        output = FakeOutput()
+
+        def invalidate(self):
+            pass
+
+    tui = VibeTUI()
+    tui._app = FakeApp()
+    tui._toggle_input_expanded()
+    assert tui._input_height() == 20  # exactly 50% of 40 rows
+
+
+async def test_vibe_tui_alt_enter_inserts_newline_only_when_expanded():
+    tui = VibeTUI()
+    alt_enter = _find_binding(tui, "escape", "c-m")
+    assert alt_enter is not None, "Alt-Enter newline binding must exist"
+
+    # Collapsed: no-op (Enter submits; single-line input)
+    tui.input_area.text = "line one"
+    alt_enter.handler(None)
+    assert tui.input_area.text == "line one"
+
+    # Expanded: inserts a newline at the cursor
+    tui.input_area.buffer.cursor_position = len(tui.input_area.text)
+    tui._toggle_input_expanded()
+    alt_enter.handler(None)
+    assert tui.input_area.text == "line one\n"
+
+
+def test_vibe_tui_input_divider_shows_expand_hint():
+    tui = VibeTUI()
+    assert "[Ctrl-T] Expand" in tui._get_input_header().value
+    tui._toggle_input_expanded()
+    assert "[Ctrl-T] Collapse" in tui._get_input_header().value
+
+
+def test_vibe_tui_footer_mentions_expand_shortcut():
+    tui = VibeTUI()
+    footer = tui.container.children[-1]
+    assert "Ctrl-T" in footer.content.text

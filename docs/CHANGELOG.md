@@ -23,6 +23,10 @@ All notable changes to Vibe Agent will be documented in this file.
 - **Litter & Stray Artifacts**: Untracked `.tmp/` prompt drafts from git and purged local working tree artifacts.
 - Test suite: **1,823 tests passing**.
 
+### TUI
+- **Expandable Input Area** (`vibe/cli/tui.py`): The prompt tile is now multiline and expands on demand — `Ctrl-T` toggles between 1 line and 50% of the terminal height (recomputed every render, so it tracks resizes); `Alt-Enter` inserts a newline while expanded; `Enter` always submits.
+- **Labeled Section Dividers**: Replaced separate header lines + plain `═` borders with labeled unicode dividers (`╞══ ⚡ 🛠️ WORKING LOG & TOOL ACTIONS ══╡`, `╞══ ⌨️ 💬 USER PROMPT │ status │ queue ══╡`), keeping section boundaries unmistakable after long sessions while saving 2 lines of chrome. Footer shortcut guide now includes the expand toggle.
+
 ---
 
 ## [0.5.0-alpha] — 2026-08-22
