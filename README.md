@@ -20,7 +20,7 @@ Vibe Agent is an open, visual-first interactive CLI agent harness. It is designe
 - **Multi-Agent Swarm**: DAG-based orchestration of specialized sub-agents (Research, Coding, Critic, Planner) with Pub/Sub message bus, broadcast deduplication, and shared wiki.
 - **React Trace Dashboard**: Web UI for session observability — timeline, wiki graph, telemetry charts, system stats. Dark theme, real-time WebSocket updates.
 - **Preference Layer**: 8 persistent heuristics converting user feedback into agent behavior — tool defaults, approval rules, style, macros, recovery, compaction, provider routing, extraction.
-- **Secret Redaction**: Automatic stripping of API keys (OpenAI, AWS, GitHub, etc.) and passwords from trace stores and logs.
+- **Secret Redaction**: Comprehensive 40+ pattern stripping of API keys (OpenAI, AWS, GitHub, Slack, Google, Stripe, Discord, JWTs, private keys) and passwords from trace stores and logs.
 - **Interactive CLI**: Markdown-rendered responses, structured tool-call panels (name, args, duration, truncated output), unified error panels, streaming with native reasoning/thinking display, persistent history, and rich skill/wiki/memory management commands.
 
 ---
@@ -548,4 +548,4 @@ the current and planned increments — full study log with all sources in
 
 ---
 
-*Vibe Agent is currently in Phase 4.2 (Self-Improving Skill-Maker) + Phase 5.2 (Shadow Workspace). See the [Roadmap](docs/ROADMAP.md) for what's next. Test suite: **1811 tests passing**.*
+*Vibe Agent is currently in Phase 4.2 (Self-Improving Skill-Maker) + Phase 5.2 (Shadow Workspace). See the [Roadmap](docs/ROADMAP.md) for what's next. Test suite: **1,823 tests passing**.*

@@ -4,6 +4,27 @@ All notable changes to Vibe Agent will be documented in this file.
 
 ---
 
+## [0.5.1-alpha] — 2026-08-23
+
+### Security & Hardening
+- **SSRF Redirect & Cloud Metadata Protection** (`vibe/tools/browser.py`): Replaced blind redirect following with a manual redirect resolution loop validating `is_safe_url()` against the SSRF policy on every redirect hop (`Location`). Normalized IPv6-mapped IPv4 addresses (`::ffff:...`), and expanded CIDR blocklists to include Carrier-Grade NAT (`100.64.0.0/10`) and Alibaba Cloud metadata (`100.100.100.200/32`).
+- **Secret Redaction Consolidation** (`vibe/harness/security/redactor.py`): Migrated 40+ comprehensive secret detection patterns (Slack tokens/webhooks, Google API keys, Stripe live/test keys, JWTs, Discord tokens/webhooks, basic auth, URL query secret params) into `SecretRedactor` to protect all stored session checkpoints, traces, and logs.
+- **Browser Tool Alias & Interaction Safety**: Registered `FetchUrlTool` (`fetch_url`) alias in `QueryLoopFactory` and added explicit error handling when interactive click actions are attempted in static mode.
+
+### Fixed & Refactored
+- **Pivotal Turn Lifecycle & Reflection**: Cleared `_pivotal_turn` upon trajectory reflection consumption to prevent failure index leakage into subsequent interactive turns.
+- **SkillMaker Double Approval Gate & Event Loop**: Unified `CLIApprovalGate` across `SkillInstaller` and `SkillMakerPipeline`, and wrapped `approval_gate.approve()` in `asyncio.to_thread` to prevent interactive `input()` from freezing the asyncio event loop.
+- **Skill Runner Default Quoting**: Fixed variable substitution `${VAR:-default}` to safely quote defaults containing whitespace under `quote=True`.
+- **CLI PageIndex Configuration Path**: Updated `wiki compact` and `wiki index rebuild` to read `DEFAULT_CONFIG.memory.pageindex.index_path` instead of hardcoding paths.
+
+### Removed & Consolidated
+- **Dashboard Backend Consolidation**: Unified the dashboard on [`vibe/dashboard/server.py`](file:///Users/rsong/DevSpace/vibe-agent/vibe/dashboard/server.py) and purged legacy secondary files `api.py` and `data.py`.
+- **Duplicate Test & Shim Purge**: Merged 17 CRUD/similarity test cases into canonical harness test suites and deleted root test duplicates (`tests/test_trace_store.py`, `tests/test_session_store.py`) alongside obsolete prototypes (`vector_index_upgrade.py`, `url_safety.py`, `redaction.py`).
+- **Litter & Stray Artifacts**: Untracked `.tmp/` prompt drafts from git and purged local working tree artifacts.
+- Test suite: **1,823 tests passing**.
+
+---
+
 ## [0.5.0-alpha] — 2026-08-22
 
 Research basis and consolidated plan: `docs/plans/2026-08-22-experience-learning-study-and-plan.md`.

@@ -193,6 +193,10 @@ Converts user feedback into persistent, testable, code-based heuristics. All fea
 ### 5.4 Tool System & Security (`vibe/tools/`)
 *   **Bash Sandbox:** Uses `subprocess_exec` (no shell) + regex denylist (`sudo`, `rm -rf /`, etc.).
 *   **File Jail:** `_resolve_and_jail()` prevents path traversal even via symlinks.
+*   **Adaptive Dual-Tier Browser Tool** (`browser.py`):
+    - **Tier 1 (Static):** Fast HTTP fetch via `httpx` with markdown parsing and optional `Docling` document conversion.
+    - **Tier 2 (Dynamic):** Headless Chromium via Playwright for JavaScript rendering, selectors, and interactive clicks.
+    - **SSRF Defense:** Hardened `SSRFGuard` with thread-offloaded DNS resolution, IPv6-mapped IPv4 unmapping, private/loopback/CGNAT/metadata CIDR blocklists, and manual hop-by-hop redirect verification. Registered as `browse` and `fetch_url`.
 *   **Hook Pipeline:** 5 stages (`PRE_VALIDATE → PRE_MODIFY → PRE_ALLOW → POST_EXECUTE → POST_FIX`).
 *   **SecurityCoordinator:** 5-layer defense with `SecurityCheckResult` per layer.
     - Layer 1: PatternEngine scans for dangerous commands.
@@ -232,7 +236,7 @@ Native skill format with TOML frontmatter (`+++` delimited):
     - **Performance:** Singleton loader with 1000-entry LRU cache.
     - **Search:** Vector similarity with keyword pre-filtering to minimize search space.
 *   **Secret Redactor** (`vibe/harness/security/redactor.py`):
-    - Standardized layer for stripping credentials (OpenAI, AWS, GitHub, etc.) before they hit any persistence layer (TraceStore, EvalStore, Audit Logs).
+    - Comprehensive 40+ pattern regex redaction layer for stripping credentials (OpenAI, AWS, GitHub, Slack, Google, Stripe, Discord, JWTs, private keys, connection passwords) before they hit any persistence layer (TraceStore, EvalStore, Audit Logs).
 *   **EvalStore:** SQLite storage for `evals` and `eval_results`.
 *   **Tripartite Memory System** (enabled by default):
     - **LLMWiki** (`wiki.py`): Markdown-based long-term memory with strict file locking and parallelized backlink resolution. Uses FlashLLM for contradiction detection. Read-time gating via `is_page_injectable` (status + contradiction flags); archived pages are excluded but never deleted.
@@ -241,7 +245,7 @@ Native skill format with TOML frontmatter (`+++` delimited):
     - **LessonCompactor** (`compaction.py`): On-demand (`vibe memory wiki compact`) clustering of accumulated lesson pages into principle-level pages — counters summed, citations unioned, originals archived (`superseded_by` provenance). Prevents long-run playbook bloat/collapse.
     - **Skill promotion**: Validated procedure lessons (generality ≥ 4, net counters ≥ 2) are compiled by the SkillMaker pipeline into script-backed executable skill drafts, gated by validator scan + sandbox smoke-run before the approval gate.
     - **RLMThresholdAnalyzer** (`rlm_analyzer.py`): Telemetry-driven analysis evaluating session tokens and compaction rates to trigger Recursive Language Model training. **Launches actual LoRA fine-tuning** via background task + subprocess worker. Dataset export (`rlm_trainer.py`) relabels failed sessions into achievable-goal training pairs (AgentHER-style, confidence-gated) instead of discarding them.
-    - **PageIndex** (`pageindex.py`): Vector-based routing with `UpgradedVectorIndex` (sentence-transformers with fallback). Query-time routing is confidence-gated (`routing_min_confidence`) and the resulting memory block is injected on all planner tiers.
+    - **PageIndex** (`pageindex.py`): Vector-based routing backed by `vector_index.py` (`SentenceTransformerIndex` with keyword fallback). Query-time routing is confidence-gated (`routing_min_confidence`) and the resulting memory block is injected on all planner tiers.
     - **WikiGraph** (`wiki_graph.py`): Entity nodes, relationship edges, and entity resolution via alias merging.
     - **Novelty Thresholds** (`novelty_thresholds.py`): Per-tag/per-domain thresholds for nuanced deduplication.
     - **TelemetryCollector** (`telemetry_collector.py`): Decoupled telemetry API for CLI and services.
@@ -268,10 +272,9 @@ Native skill format with TOML frontmatter (`+++` delimited):
 ## 7. Dashboard (`vibe/dashboard/`)
 
 ### 7.1 Backend
-*   **FastAPI Server** (`server.py`): Session/wiki/skill/telemetry endpoints. WebSocket live updates. Token auth.
-*   **Data Layer** (`data.py`): Async wrappers around TraceStore, LLMWiki, SkillInstaller, TelemetryCollector.
+*   **FastAPI Server** (`server.py`): Single unified server handling session/wiki/skill/telemetry endpoints, WebSocket live updates, token authentication, and static asset serving.
 *   **API Endpoints**: `/api/sessions`, `/api/wiki/pages`, `/api/wiki/graph`, `/api/skills`, `/api/telemetry`, `/api/stats`, `/api/config`.
-*   **Security**: Binds to 127.0.0.1, strict CORS (localhost only), read-only API.
+*   **Security**: Binds to 127.0.0.1, strict CORS (localhost only), token auth, read-only API.
 
 ### 7.2 Frontend
 *   **React 18** (CDN-loaded, no build step): Stat cards, session list, D3.js wiki graph, Recharts telemetry.
