@@ -80,9 +80,13 @@ def test_unsafe_command_always(clean_vibe_dir, tmp_path):
         assert not approver.store.check_approval("rm other.txt", work_dir)
 
 
-def test_session_approval_exact_match(tmp_path):
-    approver = HumanApprover(mode=ApprovalMode.INTERACTIVE)
-    approver.timeout_seconds = 5
+def test_session_approval_exact_match(tmp_path, clean_vibe_dir):
+    # Isolate the approval store: without this patch the real
+    # ~/.vibe/approvals.json is consulted and ambient "always" rules
+    # (e.g. a scoped approval for `ls`) break the test outside CI.
+    with patch("vibe.tools.security.approval_store.DEFAULT_STORE_PATH", clean_vibe_dir):
+        approver = HumanApprover(mode=ApprovalMode.INTERACTIVE)
+        approver.timeout_seconds = 5
 
     # Keep TTY mocks active for all interactive requests in this test
     with (
