@@ -21,6 +21,12 @@ Research basis and consolidated plan: `docs/plans/2026-08-22-experience-learning
 - **Skill script steps**: `script = "scripts/x.py"` steps executed through the sandboxed Bash tool with typed, `shlex`-quoted variables and path jailing; `json_has_keys` verification; validator scans script contents. `skills/stock-analysis` converted to an executable skill (Anthropic Agent Skills / CodeAct pattern).
 - **CLI rendering** (`vibe/cli/rendering.py`): markdown-rendered responses, structured tool panels (name/args/duration, truncated output), unified error panels, markup-safe streaming; tool metadata stamped on ToolResults.
 
+### Fixed — CLI, History Navigation & Rendering
+- **Terminal history navigation & shortcuts**: Fixed history recall (`Up`, `Down`, `Ctrl-P`, `Ctrl-N`) in `VibeTUI` by appending inputs to buffer history on submit and adding bidirectional traversal with input preservation.
+- **History persistence**: Prevented `_save_readline_history()` from overwriting `prompt_toolkit`'s `FileHistory` database on interactive exit; enabled history search and auto-suggestions (`AutoSuggestFromHistory`).
+- **Stream chunk highlighting**: Added `highlight=False` to `safe_print_chunk` so Rich auto-highlighter does not inject ANSI escape codes around literal brackets in streamed responses.
+- **Approval UI hook & offload**: Fixed terminal input area corruption and event loop blocking during interactive command approvals by running security checks via `asyncio.to_thread` and suspending/redrawing prompt_toolkit cleanly via `run_in_terminal`.
+
 ### Fixed — Memory wiring
 - TraceStore was never constructed by the factory (wrong constructor kwarg, silently swallowed) — now built correctly and wired into the planner.
 - Extracted wiki pages were never indexed (call to a nonexistent `PageIndex.add_page`) — new `index_wiki_page` makes pages immediately routable.
@@ -28,10 +34,13 @@ Research basis and consolidated plan: `docs/plans/2026-08-22-experience-learning
 - Similar-session retrieval now actually filters `success=1` and injects "what worked before" snippets.
 - Learning tasks (extraction/reflection/RLM/skill-maker) were orphaned in one-shot CLI runs — `single_query_mode` and `SessionController.shutdown()` now await `QueryLoop.close()`, which settles learning tasks with a bounded grace period.
 
+### Removed
+- **Dashboard research paper page**: Removed static paper summary endpoints (`/api/research/papers`) and UI components from the dashboard to focus purely on live runtime telemetry, session replays, and wiki graph observability.
+
 ### Changed
 - `memory.enabled` and `memory.wiki.auto_extract` now default to `true` (verified to construct with no optional dependencies).
 - `SkillParser` no longer drops `[[variables]]`; `Skill` carries `skill_dir`.
-- Test suite: 1647 → 1812 tests.
+- Test suite: 1647 → 1843 tests.
 
 ---
 

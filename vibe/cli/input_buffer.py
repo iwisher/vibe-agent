@@ -11,12 +11,14 @@ _HAS_PT: bool = False
 
 try:
     from prompt_toolkit import PromptSession
+    from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
     from prompt_toolkit.history import FileHistory
     from prompt_toolkit.patch_stdout import patch_stdout
 
     _HAS_PT = True
 except Exception:
     PromptSession = None  # type: ignore[misc,assignment]
+    AutoSuggestFromHistory = None  # type: ignore[misc,assignment]
     FileHistory = None  # type: ignore[misc,assignment]
     patch_stdout = None  # type: ignore[misc,assignment]
 
@@ -28,9 +30,13 @@ def get_prompt_session(history_path: str | None = None) -> Any:
         return _PROMPT_SESSION
     if not _HAS_PT:
         return None
-    kwargs: dict[str, Any] = {}
+    kwargs: dict[str, Any] = {
+        "enable_history_search": True,
+    }
     if history_path and FileHistory is not None:
         kwargs["history"] = FileHistory(history_path)
+        if AutoSuggestFromHistory is not None:
+            kwargs["auto_suggest"] = AutoSuggestFromHistory()
     try:
         _PROMPT_SESSION = PromptSession(**kwargs)
     except Exception:

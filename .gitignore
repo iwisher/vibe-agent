@@ -24,8 +24,10 @@ htmlcov/
 *.swo
 
 # Project-specific
+.vibe/
 ~/.vibe/
 *.db
+evox_self_evolution_results.json
 vibe/**/__pycache__/
 *.pyc
 

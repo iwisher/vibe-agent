@@ -444,7 +444,8 @@ async def interactive_mode(controller: Any) -> None:
             _approval_ctx["loop"] = None
             if original_console_file is not None:
                 console.file = original_console_file
-            _save_readline_history()
+            if prompt_session is None:
+                _save_readline_history()
             await controller.shutdown()
             if not output_task.done():
                 output_task.cancel()

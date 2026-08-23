@@ -380,3 +380,73 @@ def test_vibe_tui_history_path_wires_file_history(tmp_path):
 
     tui = VibeTUI(history_path=str(tmp_path / "history"))
     assert isinstance(tui.input_area.buffer.history, FileHistory)
+
+
+def test_vibe_tui_enter_appends_to_history():
+    """Submitting input must append the text to history."""
+    submitted = []
+    tui = VibeTUI()
+    tui.set_submit_callback(submitted.append)
+
+    # Find the enter key binding
+    kb = tui.container.key_bindings
+    bindings = [b for b in kb.bindings if any(k.value in ("c-m", "enter") for k in b.keys)]
+    assert bindings, "Enter key binding must exist"
+    enter_binding = bindings[0]
+
+    # Type first command and trigger enter
+    tui.input_area.text = "first command"
+    enter_binding.handler(None)
+    assert submitted == ["first command"]
+    assert tui.input_area.text == ""
+
+    # Type second command and trigger enter
+    tui.input_area.text = "second command"
+    enter_binding.handler(None)
+    assert submitted == ["first command", "second command"]
+    assert tui.input_area.text == ""
+
+    # Verify history recorded the strings
+    history_strings = list(tui.input_area.buffer.history.get_strings())
+    assert "first command" in history_strings
+    assert "second command" in history_strings
+
+
+def test_vibe_tui_history_navigation_shortcuts():
+    """Up and c-p must navigate back; Down and c-n must navigate forward in history."""
+    tui = VibeTUI()
+    tui.set_submit_callback(lambda text: None)
+
+    kb = tui.container.key_bindings
+    up_binding = [b for b in kb.bindings if any(k.value in ("up", "c-p") for k in b.keys)][0]
+    down_binding = [b for b in kb.bindings if any(k.value in ("down", "c-n") for k in b.keys)][0]
+    enter_binding = [b for b in kb.bindings if any(k.value in ("c-m", "enter") for k in b.keys)][0]
+
+    # Populate history
+    tui.input_area.text = "echo alpha"
+    enter_binding.handler(None)
+    tui.input_area.text = "echo beta"
+    enter_binding.handler(None)
+
+    # Initially empty
+    assert tui.input_area.text == ""
+
+    # Press Up -> should recall "echo beta"
+    up_binding.handler(None)
+    assert tui.input_area.text == "echo beta"
+
+    # Press Up again -> should recall "echo alpha"
+    up_binding.handler(None)
+    assert tui.input_area.text == "echo alpha"
+
+    # Press Down -> should go forward to "echo beta"
+    down_binding.handler(None)
+    assert tui.input_area.text == "echo beta"
+
+    # Press Down again -> should return to empty
+    down_binding.handler(None)
+    assert tui.input_area.text == ""
+
+    # Press Down again -> should return to empty
+    down_binding.handler(None)
+    assert tui.input_area.text == ""

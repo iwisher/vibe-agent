@@ -93,7 +93,7 @@ def safe_print_chunk(console: Console, chunk: str, style: str | None = None) -> 
     """
     if not chunk:
         return
-    console.print(chunk, end="", markup=False, style=style)
+    console.print(chunk, end="", markup=False, highlight=False, style=style)
 
 
 def _args_summary(args: dict[str, Any] | None) -> str:

@@ -115,6 +115,35 @@ class VibeTUI:
 
         self._app: Application | None = None
         self._submit_callback: Callable[[str], None] | None = None
+        self._history_index: int | None = None
+        self._current_input: str = ""
+
+    def _history_backward(self) -> None:
+        """Recall the previous command from history (Up arrow / Ctrl-P)."""
+        history = list(self.input_area.buffer.history.get_strings())
+        if not history:
+            return
+        if self._history_index is None:
+            self._current_input = self.input_area.text
+            self._history_index = len(history) - 1
+        elif self._history_index > 0:
+            self._history_index -= 1
+        self.input_area.text = history[self._history_index]
+        self.input_area.buffer.cursor_position = len(self.input_area.text)
+
+    def _history_forward(self) -> None:
+        """Recall the next command from history (Down arrow / Ctrl-N)."""
+        history = list(self.input_area.buffer.history.get_strings())
+        if self._history_index is None:
+            return
+        if self._history_index < len(history) - 1:
+            self._history_index += 1
+            self.input_area.text = history[self._history_index]
+            self.input_area.buffer.cursor_position = len(self.input_area.text)
+        else:
+            self._history_index = None
+            self.input_area.text = self._current_input
+            self.input_area.buffer.cursor_position = len(self.input_area.text)
 
     def _make_kb(self) -> KeyBindings:
         """Create key bindings."""
@@ -125,10 +154,23 @@ class VibeTUI:
         def _(event: Any) -> None:
             event.app.exit()
 
+        @kb.add("up")
+        @kb.add("c-p")
+        def _(event: Any) -> None:
+            self._history_backward()
+
+        @kb.add("down")
+        @kb.add("c-n")
+        def _(event: Any) -> None:
+            self._history_forward()
+
         @kb.add("enter")
         def _(event: Any) -> None:
             text = self.input_area.text.strip()
+            self._history_index = None
+            self._current_input = ""
             if text:
+                self.input_area.buffer.history.append_string(text)
                 self._on_submit(text)
             self.input_area.text = ""
 
