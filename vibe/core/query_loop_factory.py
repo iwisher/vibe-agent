@@ -254,6 +254,8 @@ class QueryLoopFactory:
             sm_cfg = getattr(self.config, "skill_maker", None)
             if sm_cfg is not None and getattr(sm_cfg, "enabled", False):
                 try:
+                    from vibe.harness.skills.approval import CLIApprovalGate
+                    from vibe.harness.skills.installer import SkillInstaller
                     from vibe.harness.skills.maker import SkillMakerPipeline
                     from vibe.harness.skills.maker_config import SkillMakerConfig
 
@@ -263,6 +265,8 @@ class QueryLoopFactory:
                         config=sm_cfg,
                         wiki=wiki,
                         llm_client=llm,
+                        skill_installer=SkillInstaller(),
+                        approval_gate=CLIApprovalGate(),
                     )
                     kwargs["skill_maker"] = skill_maker
                 except Exception as e:

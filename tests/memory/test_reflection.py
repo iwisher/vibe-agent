@@ -16,7 +16,7 @@ import pytest
 
 from vibe.core.config import ReflectionConfig
 from vibe.memory.pageindex import PageIndex
-from vibe.memory.reflection import TrajectoryReflector
+from vibe.memory.reflection import TrajectoryReflector, _read_generality
 from vibe.memory.wiki import LLMWiki
 
 # ---------------------------------------------------------------------------
@@ -533,6 +533,36 @@ async def test_generality_threshold_from_config(wiki, pageindex, llm):
     assert pages[0].title == "State assumptions before acting"
 
 
+@pytest.mark.asyncio
+async def test_generality_persisted_on_new_lesson(wiki, pageindex, llm):
+    """A known generality score is written as a `generality: N` content line."""
+    llm.complete = AsyncMock(return_value=FakeLLMResponse(content=_generality_json(4)))
+    reflector = TrajectoryReflector(
+        wiki=wiki,
+        pageindex=pageindex,
+        llm_client=llm,
+        config=ReflectionConfig(min_transcript_chars=10),
+    )
+    pages = await reflector.reflect(
+        query="q", messages=_make_messages(), state="COMPLETED", session_id="sess-g06"
+    )
+    assert len(pages) == 1
+    assert "generality: 4" in pages[0].content
+    assert _read_generality(pages[0].content) == 4
+
+
+@pytest.mark.asyncio
+async def test_generality_line_absent_when_unknown(reflector):
+    """Fail-open lessons (no generality score) carry no generality line."""
+    # _LESSON_JSON carries no "generality" key at all
+    pages = await reflector.reflect(
+        query="q", messages=_make_messages(), state="COMPLETED", session_id="sess-g07"
+    )
+    assert len(pages) == 1
+    assert "generality:" not in pages[0].content
+    assert _read_generality(pages[0].content) is None
+
+
 # ---------------------------------------------------------------------------
 # Pivotal-turn annotation
 # ---------------------------------------------------------------------------
@@ -653,6 +683,23 @@ async def test_record_usage_reindexes_updated_page(reflector, wiki, pageindex, m
 
 
 @pytest.mark.asyncio
+async def test_record_usage_preserves_generality_line(reflector, wiki):
+    page = await wiki.create_page(
+        title="Pin base image digests",
+        content=(
+            "When pulling base images, pin by digest because tags drift.\n\n"
+            "generality: 4\n\nhelpful: 1\nharmful: 0"
+        ),
+        tags=["lesson", "procedure"],
+    )
+    await reflector.record_usage([page.id], "COMPLETED")
+    updated = await wiki.get_page(page.id)
+    assert "helpful: 2" in updated.content
+    # The persisted generality score survives counter bumps (promotion needs it)
+    assert _read_generality(updated.content) == 4
+
+
+@pytest.mark.asyncio
 async def test_record_usage_never_raises(reflector, wiki, monkeypatch):
     page = await _make_lesson_page(wiki)
     # Wiki read failure is swallowed
@@ -665,3 +712,61 @@ async def test_record_usage_never_raises(reflector, wiki, monkeypatch):
     await reflector.record_usage([page.id], None)
     updated = await wiki.get_page(page.id)
     assert "helpful: 1" in updated.content
+
+
+# ---------------------------------------------------------------------------
+# Prompt template override (memory.reflection.prompt_template — harness evolution)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_reflection_prompt_override_used(wiki, pageindex, llm):
+    reflector = TrajectoryReflector(
+        wiki=wiki,
+        pageindex=pageindex,
+        llm_client=llm,
+        config=ReflectionConfig(
+            min_transcript_chars=10,
+            prompt_template="CUSTOM REFLECT max={max_lessons}\n{transcript}\nEND REFLECT",
+        ),
+    )
+    await reflector.reflect(
+        query="q", messages=_make_messages(), state="COMPLETED", session_id="sess-ovl"
+    )
+    prompt = llm.complete.call_args[0][0]
+    assert prompt.startswith("CUSTOM REFLECT max=3")
+    assert prompt.endswith("END REFLECT")
+    assert "dockerize" in prompt  # transcript content threaded through
+
+
+@pytest.mark.asyncio
+async def test_reflection_prompt_override_unknown_placeholders_kept(wiki, pageindex, llm):
+    reflector = TrajectoryReflector(
+        wiki=wiki,
+        pageindex=pageindex,
+        llm_client=llm,
+        config=ReflectionConfig(
+            min_transcript_chars=10,
+            prompt_template="CUSTOM {bogus} stays {max_lessons}\n{transcript}",
+        ),
+    )
+    await reflector.reflect(
+        query="q", messages=_make_messages(), state="COMPLETED", session_id="sess-ovl2"
+    )
+    prompt = llm.complete.call_args[0][0]
+    assert "{bogus} stays 3" in prompt  # unknown placeholder preserved, no KeyError
+
+
+@pytest.mark.asyncio
+async def test_reflection_default_template_when_no_override(wiki, pageindex, llm):
+    reflector = TrajectoryReflector(
+        wiki=wiki,
+        pageindex=pageindex,
+        llm_client=llm,
+        config=ReflectionConfig(min_transcript_chars=10),
+    )
+    await reflector.reflect(
+        query="q", messages=_make_messages(), state="COMPLETED", session_id="sess-ovl3"
+    )
+    prompt = llm.complete.call_args[0][0]
+    assert "trajectory reflection engine" in prompt

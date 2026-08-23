@@ -10,7 +10,7 @@ Vibe Agent is an open, visual-first interactive CLI agent harness. It is designe
 - **Context Management**: Automated compaction with 4 strategies (TRUNCATE, LLM_SUMMARIZE, OFFLOAD, DROP), plus adaptive iteration budgets based on task complexity.
 - **Eval-Driven Development**: 50+ built-in eval cases, adversarial testing, multi-model scorecards, soak tests with degradation detection, and factory-per-case isolation.
 - **Phase 2 Skill System**: Native vibe skill format with TOML frontmatter, validation, security scanning, atomic installation, typed variables, orchestration, marketplace, and dynamic tool declaration. **Deterministic script steps** let fixed logic live in bundled `scripts/` executed through the sandboxed Bash tool — the LLM only picks the skill and supplies typed inputs.
-- **Skill-Maker (Self-Improving)**: Automatically detects recurring task patterns from wiki extractions, generates SKILL.md drafts via LLM, validates through sandbox, and proposes installation via approval gate.
+- **Skill-Maker (Self-Improving)**: Automatically detects recurring task patterns from wiki extractions, generates SKILL.md drafts via LLM, validates through sandbox, and proposes installation via approval gate. Validated lesson pages (principle-level, net-positive counters) are promoted into **script-backed executable skill drafts** that must pass a validator scan and a sandbox smoke-run before proposal.
 - **Trajectory Reflection (Test-Time Learning)**: Post-session Reflector→Curator distills compact lessons (pitfalls / procedures / tips) from every run — including failures — gated by an LLM generality self-score, dedups them into lesson wiki pages with helpful/harmful counters that are updated by actual usage outcomes, and retrieves them into future prompts. Enabled by default.
 - **Pivotal Error Retry**: When the same tool call fails repeatedly, the loop marks the pivotal turn and issues one bounded, reflection-guided retry of that call — reusing the correct prefix instead of re-planning the task. Security denials are never retried.
 - **Tripartite Memory System**: Enabled by default. Query-time retrieval injects relevant wiki knowledge (confidence-gated, content snippets, contradiction-aware) plus "what worked before" snippets from similar successful past sessions into every prompt, on all planner tiers. Async knowledge extraction, FlashLLM contradiction detection, telemetry-triggered RLM analysis, vector search with sentence-transformers, wiki graph database, and per-tag novelty thresholds.
@@ -226,6 +226,13 @@ python -m vibe evox run --evaluator signal_filter --iterations 50
 
 # Traveling Salesman Problem (representative complex case)
 python -m vibe evox run --evaluator tsp --target 10 --iterations 60
+
+# Harness evolution: optimize the agent's own memory/reflection config knobs and
+# extraction/reflection prompt variants against the built-in eval suite.
+# Candidates are accepted only if they beat the same-run reference score without
+# regressing >5% vs the baseline scorecard; every candidate is logged with full
+# provenance (overrides, scores, eval report) — config is never auto-modified.
+python -m vibe evox run --target harness --limit 20
 ```
 
 ### Integration with memory and skills
@@ -420,6 +427,9 @@ vibe memory wiki show <page-id-or-slug>
 # Expire old draft pages
 vibe memory wiki expire --days 30
 
+# Compact accumulated lesson pages into principle-level pages (merge, never delete)
+vibe memory wiki compact
+
 # Rebuild the routing index
 vibe memory wiki index rebuild
 ```
@@ -444,6 +454,12 @@ the agent learned into compact, reusable lessons and stores them in the wiki:
   that run's outcome (COMPLETED → helpful, ERROR → harmful), so the playbook self-ranks
   by demonstrated usefulness. When pivotal retry (below) marks a failure turn, new
   lessons are anchored on it.
+- **Compaction**: `vibe memory wiki compact` clusters similar lesson pages and merges
+  each cluster into one principle-level page (counters summed, citations unioned,
+  originals archived — never deleted), preventing slow playbook bloat/collapse.
+- **Promotion**: validated procedure lessons (generality ≥ 4, helpful − harmful ≥ 2) are
+  compiled by the Skill-Maker into script-backed executable skill drafts — the
+  lesson→capability compile step.
 - **Retrieval**: lesson pages are indexed immediately, so future queries on related
   tasks retrieve them through the normal memory path (confidence-gated,
   contradiction-aware, with bounded content snippets) — no separate store needed.
@@ -531,4 +547,4 @@ the current and planned increments — full study log with all sources in
 
 ---
 
-*Vibe Agent is currently in Phase 4.2 (Self-Improving Skill-Maker) + Phase 5.2 (Shadow Workspace). See the [Roadmap](docs/ROADMAP.md) for what's next. Test suite: **1729 tests passing**.*
+*Vibe Agent is currently in Phase 4.2 (Self-Improving Skill-Maker) + Phase 5.2 (Shadow Workspace). See the [Roadmap](docs/ROADMAP.md) for what's next. Test suite: **1811 tests passing**.*

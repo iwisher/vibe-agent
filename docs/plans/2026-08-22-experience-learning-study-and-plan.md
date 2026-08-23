@@ -189,6 +189,8 @@ counted/logged separately so data provenance stays auditable.
 - [x] Study + consolidation (this file)
 - [x] Workstream A — lesson quality & feedback (generality gate, usage→counter loop, pivotal annotation; +20 tests)
 - [x] Workstream C — pivotal local retry (`error_recovery` config; guided retry; security denials never retried; +10 tests)
-- [x] README + CONFIGURATION/sample_config updates; suite at 1729 passed, 1 skipped
-- [ ] Workstream B — lesson lifecycle (not started)
-- [ ] Workstream D — offline self-improvement (not started)
+- [x] Workstream B — lesson lifecycle: `vibe/memory/compaction.py` + `vibe memory wiki compact`; archive via `status="archived"` + `superseded` citation (never delete); lesson→script-backed-skill promotion in SkillMaker (generality ≥ 4, net counters ≥ 2, procedure kind; validator scan + smoke-run gate); generality now persisted on lesson pages; +33 tests
+- [x] Workstream D — offline self-improvement: `vibe evox run --target harness` (bounded knob/prompt-variant space, eval-suite scoring, >5% regression gate, JSONL provenance, config never auto-modified); AgentHER relabeling in RLM export (`rlm.relabel_failures`, fail-closed on low confidence, provenance kept); +49 tests
+- [x] README + CONFIGURATION/sample_config updates; suite at **1811 passed, 1 skipped**
+
+All four workstreams complete.

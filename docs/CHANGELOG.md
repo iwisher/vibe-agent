@@ -4,6 +4,37 @@ All notable changes to Vibe Agent will be documented in this file.
 
 ---
 
+## [0.5.0-alpha] — 2026-08-22
+
+Research basis and consolidated plan: `docs/plans/2026-08-22-experience-learning-study-and-plan.md`.
+
+### Added — Experience Learning & Harness Self-Improvement
+- **Trajectory Reflection** (`vibe/memory/reflection.py`): post-session Reflector→Curator distills generality-gated lessons (`pitfall`/`procedure`/`tip`) from every run — including failures — into lesson wiki pages with helpful/harmful counters (ACE/XSkill lineage).
+- **Usage-feedback loop**: lessons injected into a run get counters updated from its outcome; counters now rank the playbook by demonstrated usefulness.
+- **Lesson Compaction** (`vibe/memory/compaction.py`, `vibe memory wiki compact`): merges similar lesson pages into principle-level pages (counters summed, citations unioned, originals archived — never deleted) to prevent playbook collapse.
+- **Lesson→Skill promotion**: validated procedure lessons are compiled by SkillMaker into script-backed executable skill drafts, gated by validator scan + sandbox smoke-run before approval.
+- **Pivotal Error Retry** (`error_recovery` config): repeated identical tool failures mark the pivotal turn and trigger one bounded guided retry reusing the correct prefix; security denials are never retried.
+- **EvoX harness target** (`vibe/evox/harness_target.py`, `vibe evox run --target harness`): bounded evolution of harness config knobs + prompt variants scored by the eval suite, with a >5% regression-gate acceptance and full JSONL provenance (Meta-Harness lineage).
+- **RLM failure relabeling** (`rlm.relabel_failures`): failed sessions are relabeled into achievable-goal training pairs (AgentHER-style, confidence-gated, provenance kept) instead of discarded.
+
+### Added — Deterministic Skill Scripts & CLI Rendering
+- **Skill script steps**: `script = "scripts/x.py"` steps executed through the sandboxed Bash tool with typed, `shlex`-quoted variables and path jailing; `json_has_keys` verification; validator scans script contents. `skills/stock-analysis` converted to an executable skill (Anthropic Agent Skills / CodeAct pattern).
+- **CLI rendering** (`vibe/cli/rendering.py`): markdown-rendered responses, structured tool panels (name/args/duration, truncated output), unified error panels, markup-safe streaming; tool metadata stamped on ToolResults.
+
+### Fixed — Memory wiring
+- TraceStore was never constructed by the factory (wrong constructor kwarg, silently swallowed) — now built correctly and wired into the planner.
+- Extracted wiki pages were never indexed (call to a nonexistent `PageIndex.add_page`) — new `index_wiki_page` makes pages immediately routable.
+- Wiki memory hint was silently dropped on the embedding/LLM planner tiers — now injected on all tiers, with confidence gating, bounded content snippets, and contradiction/archived-page exclusion.
+- Similar-session retrieval now actually filters `success=1` and injects "what worked before" snippets.
+- Learning tasks (extraction/reflection/RLM/skill-maker) were orphaned in one-shot CLI runs — `single_query_mode` and `SessionController.shutdown()` now await `QueryLoop.close()`, which settles learning tasks with a bounded grace period.
+
+### Changed
+- `memory.enabled` and `memory.wiki.auto_extract` now default to `true` (verified to construct with no optional dependencies).
+- `SkillParser` no longer drops `[[variables]]`; `Skill` carries `skill_dir`.
+- Test suite: 1647 → 1812 tests.
+
+---
+
 ## [0.4.0-alpha] — 2026-05-23
 
 ### Added — Real-Time Response Streaming & Reasoning (Phase 5.4 GA)

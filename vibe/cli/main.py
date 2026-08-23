@@ -1368,6 +1368,53 @@ def wiki_expire(
         )
 
 
+@wiki_app.command("compact")
+def wiki_compact():
+    """Merge clusters of similar lesson pages into principle-level lessons.
+
+    Sums helpful/harmful counters, unions citations, and archives the merged
+    members (never deletes). Thresholds come from memory.reflection config.
+    """
+    import asyncio
+
+    from vibe.core.query_loop_factory import QueryLoopFactory
+    from vibe.memory.compaction import LessonCompactor
+    from vibe.memory.pageindex import PageIndex
+
+    wiki = _get_wiki()
+    pageindex = PageIndex(index_path="~/.vibe/memory/index.json")
+    # Reuse the factory to get an LLM client for synthesis
+    factory = QueryLoopFactory(
+        base_url=DEFAULT_CONFIG.llm.base_url,
+        model=DEFAULT_CONFIG.llm.default_model,
+        api_key=DEFAULT_CONFIG.resolve_api_key(),
+        config=DEFAULT_CONFIG,
+    )
+    llm_client = factory.create_llm()
+
+    reflection_cfg = getattr(getattr(DEFAULT_CONFIG, "memory", None), "reflection", None)
+    compactor = LessonCompactor(
+        wiki=wiki, pageindex=pageindex, llm_client=llm_client, config=reflection_cfg
+    )
+    report = asyncio.run(compactor.compact())
+
+    if report.clusters_found == 0:
+        console.print("[dim]No lesson clusters large enough to compact.[/dim]")
+        return
+    console.print("[green]✓[/green] Lesson compaction complete:")
+    console.print(f"  Lesson pages scanned: {report.lesson_pages}")
+    console.print(f"  Clusters found: {report.clusters_found}")
+    console.print(f"  Merged: {report.clusters_merged}  Skipped: {report.clusters_skipped}")
+    for merge in report.merges:
+        archived = ", ".join(i[:8] for i in merge.member_ids)
+        console.print(
+            f"  • [bold]{merge.title}[/bold] "
+            f"[dim]({merge.merged_page_id[:8]}; archived: {archived})[/dim]"
+        )
+    if report.errors:
+        console.print(f"  [yellow]Errors: {len(report.errors)} (see logs)[/yellow]")
+
+
 @wiki_app.command("compile")
 def wiki_compile(
     hours: int = typer.Option(24, "--hours", "-h", help="Look back N hours for sessions"),
@@ -1551,6 +1598,23 @@ def memory_status():
     table.add_row("Telemetry (24h)", "Compactions", str(compactions_24h))
 
     console.print(table)
+
+    # Lesson-compaction hint: suggest merging when lesson pages pile up
+    # (threshold = compact_min_cluster * 3).
+    try:
+        reflection_cfg = getattr(getattr(DEFAULT_CONFIG, "memory", None), "reflection", None)
+        hint_threshold = int(getattr(reflection_cfg, "compact_min_cluster", 3)) * 3
+        lesson_pages = asyncio.run(wiki.list_pages(tag="lesson"))
+        active_lessons = [
+            p for p in lesson_pages if getattr(p, "status", None) in ("draft", "verified")
+        ]
+        if len(active_lessons) > hint_threshold:
+            console.print(
+                f"[dim]{len(active_lessons)} lesson pages found — consider running "
+                "`vibe memory wiki compact` to merge similar lessons.[/dim]"
+            )
+    except Exception:
+        pass
 
 
 @memory_app.command("import")

@@ -426,3 +426,54 @@ async def test_apply_gates_never_raises(fake_llm, fake_wiki):
     # Should NOT raise even with None items
     approved = await extractor.apply_gates(None)  # type: ignore[arg-type]
     assert approved == []
+
+
+# ---------------------------------------------------------------------------
+# Prompt template override (memory.wiki.extraction_prompt — harness evolution)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_extraction_prompt_override_used(fake_llm, fake_wiki):
+    from vibe.core.config import TripartiteMemoryConfig, WikiConfig
+
+    config = TripartiteMemoryConfig(
+        wiki=WikiConfig(extraction_prompt="CUSTOM OVERRIDE\n{transcript}\nEND OVERRIDE")
+    )
+    extractor = KnowledgeExtractor(llm_client=fake_llm, wiki=fake_wiki, config=config)
+    messages = [FakeMessage(role="user", content="What is Docker?")]
+    await extractor.extract_from_session(messages, "sess-ovl")
+
+    prompt = fake_llm.complete.call_args[0][0]
+    assert prompt.startswith("CUSTOM OVERRIDE")
+    assert prompt.endswith("END OVERRIDE")
+    assert "What is Docker?" in prompt
+
+
+@pytest.mark.asyncio
+async def test_extraction_prompt_override_unknown_placeholders_kept(fake_llm, fake_wiki):
+    from vibe.core.config import TripartiteMemoryConfig, WikiConfig
+
+    config = TripartiteMemoryConfig(
+        wiki=WikiConfig(extraction_prompt="CUSTOM {bogus} stays\n{transcript}")
+    )
+    extractor = KnowledgeExtractor(llm_client=fake_llm, wiki=fake_wiki, config=config)
+    messages = [FakeMessage(role="user", content="What is Docker?")]
+    await extractor.extract_from_session(messages, "sess-ovl2")
+
+    prompt = fake_llm.complete.call_args[0][0]
+    assert "{bogus} stays" in prompt  # unknown placeholder preserved, no KeyError
+
+
+@pytest.mark.asyncio
+async def test_extraction_default_template_when_no_override(fake_llm, fake_wiki):
+    from vibe.core.config import TripartiteMemoryConfig
+
+    extractor = KnowledgeExtractor(
+        llm_client=fake_llm, wiki=fake_wiki, config=TripartiteMemoryConfig()
+    )
+    messages = [FakeMessage(role="user", content="What is Docker?")]
+    await extractor.extract_from_session(messages, "sess-ovl3")
+
+    prompt = fake_llm.complete.call_args[0][0]
+    assert "knowledge extraction engine" in prompt

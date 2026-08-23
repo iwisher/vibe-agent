@@ -7,7 +7,9 @@ curator merges each lesson into the wiki as a small incremental delta item:
 an existing similar lesson page is updated (helpful/harmful counter
 incremented, lesson text refined additively) instead of rewritten — this
 prevents "context collapse". Write-time quality gate: the LLM scores each
-lesson's generality (1–5) and the curator drops low scores. A usage-feedback
+lesson's generality (1–5) and the curator drops low scores; the score is
+persisted as a ``generality: N`` content line so lesson compaction and skill
+promotion can read it back. A usage-feedback
 loop (``record_usage``) attributes session outcomes to the lesson pages
 injected into the prompt: COMPLETED → helpful+1, ERROR → harmful+1.
 Lessons live in ordinary wiki pages tagged ``lesson`` and are indexed into
@@ -24,7 +26,7 @@ import logging
 import re
 from typing import TYPE_CHECKING, Any
 
-from vibe.memory.extraction import _TOOL_SUMMARY_MAX_CHARS, KnowledgeExtractor
+from vibe.memory.extraction import _TOOL_SUMMARY_MAX_CHARS, KnowledgeExtractor, _SafeFormatDict
 from vibe.memory.models import WikiPage  # noqa: F401 — re-exported for convenience
 from vibe.memory.pageindex import index_wiki_page
 
@@ -99,17 +101,30 @@ def _read_counter(content: str | None, name: str) -> int:
     return int(match.group(1)) if match else 0
 
 
+def _read_generality(content: str | None) -> int | None:
+    """Read the persisted ``generality: N`` score; None when the line is absent."""
+    match = re.search(_COUNTER_RE_TEMPLATE.format(name="generality"), content or "", re.MULTILINE)
+    return int(match.group(1)) if match else None
+
+
 def _strip_counters(content: str | None) -> str:
     """Remove trailing counter lines so the body can be re-rendered."""
     return _COUNTER_LINE_RE.sub("", content or "").rstrip()
 
 
 def _render_lesson_content(lesson: dict, *, helpful: int, harmful: int) -> str:
-    """Render the structured body of a lesson page (counters at the bottom)."""
+    """Render the structured body of a lesson page (counters at the bottom).
+
+    The generality score (when the LLM provided one) is persisted as a
+    ``generality: N`` line — compaction and skill promotion read it back.
+    """
     parts = [lesson["lesson"], ""]
     if lesson.get("applies_when"):
         parts.append(f"**Applies when:** {lesson['applies_when']}")
     parts.append(f"**Kind:** {lesson['kind']}")
+    generality = _parse_generality(lesson.get("generality"))
+    if generality is not None:
+        parts.append(f"generality: {generality}")
     parts.append("")
     parts.append(f"helpful: {helpful}")
     parts.append(f"harmful: {harmful}")
@@ -229,12 +244,19 @@ class TrajectoryReflector:
                     "(the `[i]` message index in the transcript) — anchor lessons "
                     "on that failure point and how to avoid it."
                 )
-            prompt = _REFLECTION_PROMPT_TEMPLATE.format(
-                max_lessons=max_lessons,
-                outcome=outcome,
-                query=(query or "")[:500],
-                pivotal_block=pivotal_block,
-                transcript=transcript,
+            # format_map with a safe dict so unknown {placeholders} in a custom
+            # template are preserved literally. A ``memory.reflection.
+            # prompt_template`` config override (harness evolution) replaces
+            # the built-in template.
+            template = self._prompt_template()
+            prompt = template.format_map(
+                _SafeFormatDict(
+                    max_lessons=max_lessons,
+                    outcome=outcome,
+                    query=(query or "")[:500],
+                    pivotal_block=pivotal_block,
+                    transcript=transcript,
+                )
             )
             raw = await self._call_llm(prompt)
             if not raw:
@@ -492,6 +514,7 @@ class TrajectoryReflector:
                     "lesson": lesson_text,
                     "applies_when": str(entry.get("applies_when", "")).strip(),
                     "kind": kind,
+                    "generality": generality,
                 }
             )
             if len(lessons) >= max_lessons:
@@ -522,6 +545,20 @@ class TrajectoryReflector:
         except Exception as e:
             logger.warning("LLM reflection call failed: %s", e)
             return None
+
+    def _prompt_template(self) -> str:
+        """Return the reflection prompt template (config override or built-in).
+
+        The override lives at ``memory.reflection.prompt_template``; it is read
+        defensively so mock/None configs keep the built-in template.
+        """
+        try:
+            override = getattr(self.config, "prompt_template", None)
+            if isinstance(override, str) and override.strip():
+                return override
+        except Exception:
+            pass
+        return _REFLECTION_PROMPT_TEMPLATE
 
     def _cfg_int(self, name: str, default: int) -> int:
         """Read an int knob from the ReflectionConfig (mock/None-safe)."""

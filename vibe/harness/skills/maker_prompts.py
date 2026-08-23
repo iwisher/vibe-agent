@@ -47,6 +47,101 @@ Task pattern summary:
 Generate ONLY the SKILL.md content. No extra commentary."""
 
 
+# Prompt for lesson→skill promotion (Workstream B4): compiles a validated,
+# principle-level procedure lesson into a v2 *script-backed* skill following
+# the stock-analysis pattern (typed variables, deterministic script step,
+# verification). Placeholders are substituted via str.replace so the TOML
+# examples can contain literal {{ variable }} templates without escaping.
+LESSON_SKILL_GENERATION_PROMPT = """You are an expert at compiling reusable lessons into \
+executable automation skills for a CLI agent.
+
+A validated lesson from past sessions is being promoted into a script-backed \
+skill. Deterministic logic must live in scripts/, not prose.
+
+The output must follow this exact format — a SKILL.md file, then one delimiter \
+line per bundled script:
+
++++
+vibe_skill_version = "2.0.0"
+id = "@SKILL_ID@"
+name = "<short human-readable name>"
+description = "<what the skill automates>"
+category = "lesson"
+tags = ["lesson"]
+
+[[variables]]
+name = "example_input"
+type = "string"
+required = false
+default = "example"
+description = "<what this input controls>"
+
+[[steps]]
+id = "run"
+description = "Run the deterministic script and emit the result"
+tool = "bash"
+script = "scripts/run.py"
+command = "{{ example_input }}"
+
+[steps.verification]
+exit_code = 0
++++
+
+# <Skill Name>
+
+## Overview
+<one short paragraph>
+
+## Pitfalls
+- ...
+
+## Examples
+### Example 1:
+**Input:** ...
+**Expected:** ...
+
+=== scripts/run.py ===
+#!/usr/bin/env python3
+<deterministic stdlib-only python script reading variables from argv>
+
+Rules:
+- Every typed variable MUST declare a default so the skill can be smoke-run \
+with no arguments.
+- The script reads variable values from argv (argparse or sys.argv) and prints \
+its result; when the result is structured, print one JSON object and add \
+json_has_keys to [steps.verification].
+- Stdlib only: no network, no writes outside the working directory, no \
+credentials, no subprocess.
+- The skill must automate the procedure described by the lesson, generalized \
+beyond the original task instance.
+
+Lesson to compile:
+Title: @LESSON_TITLE@
+
+@LESSON_CONTENT@
+
+Generate ONLY the SKILL.md content followed by the === scripts/... === \
+block(s). No extra commentary."""
+
+
+def build_lesson_skill_prompt(skill_id: str, lesson_title: str, lesson_content: str) -> str:
+    """Build the LLM prompt for promoting a lesson page to a script-backed skill.
+
+    Args:
+        skill_id: Unique identifier the generated skill must use.
+        lesson_title: Title of the qualifying lesson wiki page.
+        lesson_content: Lesson body (counters stripped, length-bounded).
+
+    Returns:
+        Formatted prompt string ready for LLM completion.
+    """
+    return (
+        LESSON_SKILL_GENERATION_PROMPT.replace("@SKILL_ID@", skill_id)
+        .replace("@LESSON_TITLE@", lesson_title)
+        .replace("@LESSON_CONTENT@", lesson_content)
+    )
+
+
 def build_skill_generation_prompt(
     skill_id: str,
     skill_name: str,

@@ -137,6 +137,7 @@ memory:
     novelty_threshold: 0.5
     confidence_threshold: 0.8
     default_ttl_days: 30
+    # extraction_prompt: null          # Override the built-in extraction prompt (harness evolution)
   pageindex:
     index_path: "~/.vibe/memory/index.json"
     routing_timeout_seconds: 2.0
@@ -147,6 +148,13 @@ memory:
     max_lessons: 3                     # Max lessons written per session
     min_transcript_chars: 400          # Skip trivial sessions shorter than this
     min_generality: 3                  # Drop lessons self-scored below this generality (1–5)
+    compact_min_cluster: 3             # Min similar lessons per compaction cluster
+    compact_overlap: 0.5               # Title+tag word-overlap for `vibe memory wiki compact`
+    # prompt_template: null            # Override the built-in reflection prompt (harness evolution)
+  rlm:
+    enabled: false                     # Opt-in: telemetry-triggered LoRA fine-tuning
+    relabel_failures: true             # Relabel failed sessions with an achievable goal (AgentHER)
+    relabel_min_confidence: 0.7        # Discard relabels below this confidence (0.0-1.0)
 
 # 13. Error recovery — pivotal retry for repeated tool failures
 error_recovery:

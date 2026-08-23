@@ -1599,7 +1599,7 @@ class QueryLoop:
             from vibe.memory.rlm_trainer import RLMTrainer
 
             analyzer = RLMThresholdAnalyzer(self._telemetry, self._config_memory.rlm)
-            trainer = RLMTrainer()
+            trainer = RLMTrainer(llm_client=self.llm, rlm_config=self._config_memory.rlm)
 
             decision = await analyzer.analyze_and_train(
                 wiki=self.wiki,

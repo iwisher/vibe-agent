@@ -101,7 +101,8 @@ _INJECTABLE_STATUSES = frozenset({"draft", "verified"})
 def is_page_injectable(page: Any) -> bool:
     """Return True if a wiki page is safe to inject into a prompt.
 
-    Excludes expired pages and pages flagged as contradicted (a
+    Excludes expired pages, archived (superseded) pages — only draft/verified
+    statuses are injectable — and pages flagged as contradicted (a
     ``{"type": "contradiction_flag"}`` citation entry, added by
     LLMWiki.update_page when FlashLLM detects a contradiction).
     """
@@ -275,8 +276,15 @@ class LLMWiki:
         content: str | None = None,
         tags: list[str] | None = None,
         citations: list[dict] | None = None,
+        status: str | None = None,
     ) -> WikiPage:
-        """Update an existing page. Returns the updated WikiPage."""
+        """Update an existing page. Returns the updated WikiPage.
+
+        ``status`` performs an explicit status transition (e.g. ``"archived"``
+        for superseded lesson pages). Archived pages keep their content on disk
+        and are excluded from prompt injection because ``is_page_injectable``
+        only admits draft/verified pages.
+        """
         await self._load_indices()
 
         page = await self.get_page(page_id)
@@ -291,11 +299,15 @@ class LLMWiki:
         if tags is not None:
             page.tags = tags
         if citations is not None:
-            # Merge citations (avoid duplicates by session)
-            existing_sessions = {c.get("session") for c in page.citations}
+            # Merge citations, deduping by (session, type): provenance entries
+            # carry a session id; marker entries (e.g. contradiction_flag,
+            # superseded) carry a type and must not collide with each other.
+            existing_keys = {(c.get("session"), c.get("type")) for c in page.citations}
             for c in citations:
-                if c.get("session") not in existing_sessions:
+                key = (c.get("session"), c.get("type"))
+                if key not in existing_keys:
                     page.citations.append(c)
+                    existing_keys.add(key)
         page.last_updated = _today_iso()
 
         page_lock = self._get_async_file_lock(Path(str(page.path) + ".lock"))
@@ -338,6 +350,11 @@ class LLMWiki:
                         )
             except Exception as e:
                 logger.debug("Contradiction detection failed for %s (non-fatal): %s", page_id, e)
+
+        # Explicit status transition (e.g. archiving superseded lessons).
+        # Applied before auto-promotion so an archived page is never promoted.
+        if status is not None:
+            page.status = status
 
         # Auto-promote to verified only when no contradiction was detected
         if not contradiction_detected and page.status == "draft" and page.has_distinct_sessions():
@@ -524,11 +541,12 @@ class LLMWiki:
         return await self.update_page(page_id)  # update_page auto-promotes if criteria met
 
     async def get_status_counts(self) -> dict[str, int]:
-        """Return counts of wiki pages by status: {total, verified, draft}."""
+        """Return counts of wiki pages by status: {total, verified, draft, archived}."""
         md_files = list(self.base_path.glob("*.md"))
         total = len(md_files)
         verified = 0
         draft = 0
+        archived = 0
         for md in md_files:
             page = _parse_page_file(md)
             if page:
@@ -536,7 +554,9 @@ class LLMWiki:
                     verified += 1
                 elif page.status == "draft":
                     draft += 1
-        return {"total": total, "verified": verified, "draft": draft}
+                elif page.status == "archived":
+                    archived += 1
+        return {"total": total, "verified": verified, "draft": draft, "archived": archived}
 
     async def close(self) -> None:
         """Release resources. Part of Closable protocol."""

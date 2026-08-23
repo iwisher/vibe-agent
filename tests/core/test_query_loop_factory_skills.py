@@ -111,6 +111,53 @@ class TestQueryLoopFactorySkillWiring:
         assert "skill_install_prompt" in tool_names
 
 
+class TestQueryLoopFactorySkillMakerWiring:
+    """SkillMakerPipeline gets a working installer + approval gate when enabled."""
+
+    def test_factory_wires_installer_and_approval_gate(self, tmp_path, monkeypatch):
+        from vibe.core.config import TripartiteMemoryConfig, VibeConfig
+        from vibe.harness.skills.approval import CLIApprovalGate
+        from vibe.harness.skills.maker_config import SkillMakerConfig
+
+        monkeypatch.setenv("HOME", str(tmp_path))
+        config = VibeConfig.model_construct(
+            memory=TripartiteMemoryConfig(enabled=False),
+            skill_maker=SkillMakerConfig(enabled=True),
+        )
+        factory = QueryLoopFactory(
+            base_url="http://test",
+            model="test-model",
+            working_dir=str(tmp_path),
+            config=config,
+        )
+
+        ql = factory.create()
+
+        assert ql.skill_maker is not None
+        assert ql.skill_maker.installer is not None
+        assert isinstance(ql.skill_maker.approval_gate, CLIApprovalGate)
+
+    def test_factory_leaves_skill_maker_none_when_disabled(self, tmp_path, monkeypatch):
+        from vibe.core.config import TripartiteMemoryConfig, VibeConfig
+        from vibe.harness.skills.maker_config import SkillMakerConfig
+
+        monkeypatch.setenv("HOME", str(tmp_path))
+        config = VibeConfig.model_construct(
+            memory=TripartiteMemoryConfig(enabled=False),
+            skill_maker=SkillMakerConfig(enabled=False),
+        )
+        factory = QueryLoopFactory(
+            base_url="http://test",
+            model="test-model",
+            working_dir=str(tmp_path),
+            config=config,
+        )
+
+        ql = factory.create()
+
+        assert ql.skill_maker is None
+
+
 class TestQueryLoopFactorySecurityWiring:
     """Test that QueryLoopFactory wires SecurityConfig into SecurityCoordinator."""
 

@@ -29,6 +29,13 @@ class _MockMessage:
         self.content = content
 
 
+class _SafeFormatDict(dict):
+    """format_map mapping that leaves unknown {placeholders} untouched."""
+
+    def __missing__(self, key: str) -> str:
+        return "{" + key + "}"
+
+
 # ---------------------------------------------------------------------------
 # Extraction prompt
 # ---------------------------------------------------------------------------
@@ -144,9 +151,12 @@ class KnowledgeExtractor:
                 logger.debug("Extraction skipped: empty transcript")
                 return []
 
-            # Use format_map with a safe dict so that {{}} escapes in the template
-            # don't cause KeyError when extra curly-brace literal text is present.
-            prompt = _EXTRACTION_PROMPT_TEMPLATE.format(transcript=transcript)
+            # Use format_map with a safe dict so that unknown {placeholders} in
+            # a custom prompt template are preserved literally instead of
+            # raising KeyError. A ``memory.wiki.extraction_prompt`` config
+            # override (harness evolution) replaces the built-in template.
+            template = self._prompt_template()
+            prompt = template.format_map(_SafeFormatDict(transcript=transcript))
             response = await self._call_llm(prompt)
             if not response:
                 return []
@@ -320,6 +330,20 @@ class KnowledgeExtractor:
             return str(name) if name else "result"
         except Exception:
             return "result"
+
+    def _prompt_template(self) -> str:
+        """Return the extraction prompt template (config override or built-in).
+
+        The override lives at ``memory.wiki.extraction_prompt``; it is read
+        defensively so mock/None configs keep the built-in template.
+        """
+        try:
+            override = getattr(getattr(self.config, "wiki", None), "extraction_prompt", None)
+            if isinstance(override, str) and override.strip():
+                return override
+        except Exception:
+            pass
+        return _EXTRACTION_PROMPT_TEMPLATE
 
     async def _call_llm(self, prompt: str) -> str | None:
         """Call the LLM with the extraction prompt. Returns raw response or None."""

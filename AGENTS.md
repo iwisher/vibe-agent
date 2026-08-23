@@ -19,8 +19,8 @@ Key capabilities:
 - **Eval-Driven Development**: 47 built-in YAML eval cases, adversarial testing, multi-model scorecards, and soak tests with degradation detection.
 - **Skill System v2**: Native skill format with TOML frontmatter, validation, security scanning, atomic installation, typed variables, orchestration, marketplace, and dynamic tool declaration.
 - **Skill-Maker (Self-Improving)**: Auto-detects recurring task patterns from wiki extractions, generates SKILL.md drafts via LLM, validates through sandbox, and proposes installation.
-- **Tripartite Memory System**: Automated async knowledge extraction, FlashLLM contradiction detection, telemetry-triggered RLM analysis (LoRA fine-tuning), vector search with sentence-transformers, wiki graph database, and per-tag novelty thresholds.
-- **EvoX Meta-Evolution (Offline Pipeline)**: Two-level evolution — an inner loop evolves candidate solutions under a search strategy; an outer loop meta-evolves the strategy itself (as executable Python code) when progress stagnates. Multi-objective proxy scoring, UCB parent selection, `vibe evox run` CLI.
+- **Tripartite Memory System**: Enabled by default. Automated async knowledge extraction (including failed sessions), post-session **trajectory reflection** (generality-gated lesson pages with usage-driven helpful/harmful counters), **lesson compaction** (`vibe memory wiki compact`), query-time injection on all planner tiers (confidence-gated, contradiction-aware), FlashLLM contradiction detection, telemetry-triggered RLM analysis (LoRA fine-tuning, AgentHER-style failure relabeling), vector search with sentence-transformers, wiki graph database, and per-tag novelty thresholds.
+- **EvoX Meta-Evolution (Offline Pipeline)**: Two-level evolution — an inner loop evolves candidate solutions under a search strategy; an outer loop meta-evolves the strategy itself (as executable Python code) when progress stagnates. Multi-objective proxy scoring, UCB parent selection, `vibe evox run` CLI. `--target harness` evolves the agent's own memory/reflection config knobs and prompt variants against the eval suite, accepted only through a >5% regression gate vs the baseline scorecard.
 - **Shadow Workspace Rollbacks**: Auto-creates hidden git branch (`vibe/shadow-<session-id>`) before write-heavy operations; one-command restore on failure.
 - **Multi-Agent Swarm**: DAG-based orchestration of specialized sub-agents (Research, Coding, Critic, Planner) with Pub/Sub message bus and shared wiki.
 - **React Trace Dashboard**: Web UI for session observability — timeline, wiki graph, telemetry charts, system stats. Dark theme, real-time WebSocket updates.
@@ -104,6 +104,7 @@ vibe-agent/
 │   ├── memory/                 # Tripartite memory system
 │   │   ├── extraction.py       # Async knowledge extraction
 │   │   ├── reflection.py       # TrajectoryReflector — post-session lesson curation
+│   │   ├── compaction.py       # LessonCompactor — merges lesson pages into principles
 │   │   ├── wiki.py             # Wiki page CRUD + FlashLLM contradiction
 │   │   ├── pageindex.py        # Vector-based routing index
 │   │   ├── wiki_graph.py       # Entity-relationship graph
@@ -119,6 +120,7 @@ vibe-agent/
 │   │   ├── strategy.py / strategy_code.py  # Evolvable strategies as executable code
 │   │   ├── population.py / generators.py / metrics.py / types.py
 │   │   ├── evaluators.py / circle_packing.py / tsp.py  # Benchmarks
+│   │   ├── harness_target.py   # `--target harness`: bounded harness knob/prompt evolution + regression gate
 │   │   └── cli.py              # `vibe evox run` command
 │   ├── tools/                  # Tool system + security
 │   │   ├── bash.py             # Sandboxed Bash (subprocess_exec, no shell)
@@ -271,7 +273,7 @@ python -m vibe.cli.main eval run --limit 20
 
 ## 6. Testing Strategy
 
-- **Test count**: ~1600 test functions across 150 test files (`tests/`), with subdirectories mirroring `vibe/` (`tests/core/`, `tests/memory/`, `tests/evox/`, `tests/tools/security/`, ...).
+- **Test count**: ~1800 test functions across 150+ test files (`tests/`), with subdirectories mirroring `vibe/` (`tests/core/`, `tests/memory/`, `tests/evox/`, `tests/tools/security/`, ...).
 - **Framework**: pytest with `pytest-asyncio` in auto mode (`asyncio_mode = "auto"` in `pyproject.toml`) — async test functions need no decorator.
 - **Structure**: Mirror the `vibe/` package under `tests/` (e.g. `vibe/core/config.py` → `tests/core/test_config.py`).
 - **Test types**:
@@ -326,6 +328,7 @@ Top-level sections of `VibeConfig` (all Pydantic models in `vibe/core/config.py`
 - `eval` — Eval runner settings
 - `cost_router` — Cost limits and latency-aware routing
 - `session` — Durable session checkpoints / recovery
+- `error_recovery` — Pivotal retry (`pivotal_retry_enabled`, `max_pivotal_retries`)
 - `preferences` — Preference layer settings
 - `skill_maker` — Self-improving pipeline settings
 - `shadow_workspace` — Git shadow branch settings (`enabled`, `auto_rollback`)

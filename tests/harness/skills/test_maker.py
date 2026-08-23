@@ -1,6 +1,7 @@
 """Tests for SkillMakerPipeline."""
 
 from dataclasses import dataclass
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -338,3 +339,229 @@ class TestResetSession:
         # Reset and verify
         pipeline.reset_session()
         assert pipeline._proposals_this_session == 0
+
+
+# ---------------------------------------------------------------------------
+# Lesson→skill promotion (B4)
+# ---------------------------------------------------------------------------
+
+_LESSON_BUNDLE = """+++
+vibe_skill_version = "2.0.0"
+id = "lesson_restart_abc12345"
+name = "Restart Stale Dev Server"
+description = "Restart the stale process holding a dev-server port before editing code"
+category = "lesson"
+tags = ["lesson"]
+
+[[variables]]
+name = "port"
+type = "integer"
+required = false
+default = 8000
+description = "Port the dev server should listen on"
+
+[[steps]]
+id = "run"
+description = "Run the deterministic port-check script"
+tool = "bash"
+script = "scripts/run.py"
+command = "{{ port }}"
+
+[steps.verification]
+exit_code = 0
+json_has_keys = ["ok"]
++++
+
+# Restart Stale Dev Server
+
+## Overview
+Checks whether a dev-server port is held by a stale process.
+
+## Pitfalls
+- A duplicate server masks every fix
+
+## Examples
+### Example 1:
+**Input:** port=8000
+**Expected:** JSON with ok
+
+=== scripts/run.py ===
+import json
+import sys
+
+port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
+print(json.dumps({"ok": True, "port": port}))
+"""
+
+_FAILING_BUNDLE = _LESSON_BUNDLE.replace(
+    'print(json.dumps({"ok": True, "port": port}))',
+    "sys.exit(1)",
+)
+
+
+def _lesson_page(
+    *,
+    kind: str = "procedure",
+    generality: int = 4,
+    helpful: int = 3,
+    harmful: int = 0,
+    status: str = "draft",
+    page_id: str = "lp-1",
+) -> SimpleNamespace:
+    content = (
+        "When a dev server ignores code changes, restart the stale process "
+        "holding the port before editing code, because a duplicate server "
+        "masks every fix.\n\n"
+        f"**Kind:** {kind}\n"
+        f"generality: {generality}\n\n"
+        f"helpful: {helpful}\n"
+        f"harmful: {harmful}"
+    )
+    return SimpleNamespace(
+        id=page_id,
+        title="Restart stale dev servers before debugging",
+        content=content,
+        tags=["lesson", kind, "server"],
+        status=status,
+    )
+
+
+def _lesson_llm(bundle: str = _LESSON_BUNDLE):
+    llm = MagicMock()
+    llm.complete = AsyncMock(return_value=LLMResponse(content=bundle))
+    return llm
+
+
+class TestLessonQualification:
+    def test_qualifying_lesson_accepted(self):
+        pipeline = SkillMakerPipeline()
+        assert pipeline._qualifies_for_promotion(_lesson_page()) is True
+
+    def test_rejects_low_generality(self):
+        pipeline = SkillMakerPipeline()
+        assert pipeline._qualifies_for_promotion(_lesson_page(generality=3)) is False
+
+    def test_rejects_negative_net_counters(self):
+        pipeline = SkillMakerPipeline()
+        assert pipeline._qualifies_for_promotion(_lesson_page(helpful=1, harmful=2)) is False
+
+    def test_rejects_pitfall_kind(self):
+        pipeline = SkillMakerPipeline()
+        assert pipeline._qualifies_for_promotion(_lesson_page(kind="pitfall")) is False
+
+    def test_rejects_archived(self):
+        pipeline = SkillMakerPipeline()
+        assert pipeline._qualifies_for_promotion(_lesson_page(status="archived")) is False
+
+    @pytest.mark.asyncio
+    async def test_detect_lesson_candidates_filters(self, mock_wiki):
+        mock_wiki.list_pages = AsyncMock(
+            return_value=[
+                _lesson_page(page_id="ok"),
+                _lesson_page(generality=2, page_id="low-gen"),
+                _lesson_page(kind="tip", page_id="tip"),
+                _lesson_page(status="archived", page_id="archived"),
+            ]
+        )
+        pipeline = SkillMakerPipeline(wiki=mock_wiki)
+        candidates = await pipeline.detect_lesson_candidates()
+        assert [p.id for p in candidates] == ["ok"]
+
+
+class TestGenerateSkillFromLesson:
+    @pytest.mark.asyncio
+    async def test_qualifying_lesson_produces_valid_script_backed_draft(self, tmp_path):
+        pipeline = SkillMakerPipeline(
+            config=SkillMakerConfig(),
+            llm_client=_lesson_llm(),
+            staging_dir=tmp_path / "staging",
+        )
+        proposal = await pipeline.generate_skill_from_lesson(_lesson_page())
+
+        assert proposal is not None
+        assert proposal.validation_result.is_valid
+        assert proposal.validation_result.risks == []
+        # Script-backed draft staged on disk
+        staged = tmp_path / "staging" / proposal.skill_draft.id
+        assert proposal.staged_dir == str(staged)
+        assert (staged / "SKILL.md").exists()
+        assert (staged / "scripts" / "run.py").exists()
+        # The draft follows the v2 script-step pattern
+        step = proposal.skill_draft.steps[0]
+        assert step.script == "scripts/run.py"
+        assert step.verification.json_has_keys == ["ok"]
+        assert proposal.skill_draft.skill_dir == str(staged)
+        assert proposal.pattern.tag == "lesson"
+
+    @pytest.mark.asyncio
+    async def test_smoke_run_failure_blocks_proposal(self, tmp_path):
+        pipeline = SkillMakerPipeline(
+            config=SkillMakerConfig(),
+            llm_client=_lesson_llm(_FAILING_BUNDLE),
+            staging_dir=tmp_path / "staging",
+        )
+        proposal = await pipeline.generate_skill_from_lesson(_lesson_page())
+        assert proposal is None
+
+    @pytest.mark.asyncio
+    async def test_missing_script_bundle_returns_none(self, tmp_path):
+        llm = MagicMock()
+        llm.complete = AsyncMock(
+            return_value=LLMResponse(content="+++\n... toml but no script block ...\n+++")
+        )
+        pipeline = SkillMakerPipeline(
+            config=SkillMakerConfig(), llm_client=llm, staging_dir=tmp_path / "staging"
+        )
+        proposal = await pipeline.generate_skill_from_lesson(_lesson_page())
+        assert proposal is None
+
+    @pytest.mark.asyncio
+    async def test_script_path_escape_rejected(self):
+        pipeline = SkillMakerPipeline()
+        raw = "+++\nx = 1\n+++\n\n=== scripts/../evil.py ===\nprint('x')\n"
+        assert pipeline._split_skill_bundle(raw) is None
+
+    @pytest.mark.asyncio
+    async def test_no_llm_returns_none(self, tmp_path):
+        pipeline = SkillMakerPipeline(staging_dir=tmp_path / "staging")
+        assert await pipeline.generate_skill_from_lesson(_lesson_page()) is None
+
+
+class TestLessonProposalInstallation:
+    @pytest.mark.asyncio
+    async def test_auto_install_uses_staged_dir(self, tmp_path, mock_installer):
+        """Script-backed drafts install from the staged dir (scripts included)."""
+        config = SkillMakerConfig(auto_install_approved=True)
+        pipeline = SkillMakerPipeline(
+            config=config,
+            llm_client=_lesson_llm(),
+            skill_installer=mock_installer,
+            approval_gate=AutoApproveGate(),
+            staging_dir=tmp_path / "staging",
+        )
+        proposal = await pipeline.generate_skill_from_lesson(_lesson_page())
+        assert proposal is not None
+
+        result = await pipeline.propose_installation(proposal)
+
+        assert result is not None
+        assert result.success is True
+        mock_installer.install_from_path.assert_awaited_once()
+        installed_from = mock_installer.install_from_path.call_args.args[0]
+        assert str(installed_from) == proposal.staged_dir
+
+    @pytest.mark.asyncio
+    async def test_approved_message_points_at_staged_dir(self, tmp_path, mock_installer):
+        pipeline = SkillMakerPipeline(
+            config=SkillMakerConfig(),
+            llm_client=_lesson_llm(),
+            skill_installer=mock_installer,
+            approval_gate=AutoApproveGate(),
+            staging_dir=tmp_path / "staging",
+        )
+        proposal = await pipeline.generate_skill_from_lesson(_lesson_page())
+        result = await pipeline.propose_installation(proposal)
+
+        assert result is not None and result.success is True
+        assert proposal.staged_dir in result.message
+        mock_installer.install_from_path.assert_not_awaited()

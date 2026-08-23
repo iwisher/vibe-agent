@@ -26,6 +26,7 @@ vibe/evox/
 ├── evaluators.py      # Toy evaluators (string, expression, keywords, signal filter)
 ├── circle_packing.py  # Paper-inspired benchmark evaluator + domain generator
 ├── tsp.py             # Traveling Salesman Problem evaluator + domain-aware generator
+├── harness_target.py  # `--target harness`: bounded harness knob/prompt evolution + regression gate (added 2026-08-22)
 └── cli.py             # `vibe evox run` command
 
 tests/evox/
@@ -164,7 +165,26 @@ python -m vibe evox run --evaluator circle_packing --target 12 --iterations 80
 
 # Traveling Salesman Problem (target = number of cities)
 python -m vibe evox run --evaluator tsp --target 10 --iterations 60
+
+# Harness evolution (added 2026-08-22): optimize the agent's own harness —
+# memory/reflection config knobs and extraction/reflection prompt variants —
+# against the built-in eval suite. A candidate is accepted only if it beats the
+# same-run reference score AND stays within 5% of docs/baseline_scorecard.json
+# (the CI regression-gate convention). Every evaluation is appended with full
+# provenance (overrides, scores, eval report path) to
+# <output-dir>/harness_candidates.jsonl; accepted overrides are written to
+# accepted_overrides.json — the live config is never auto-modified.
+python -m vibe evox run --target harness --limit 20
 ```
+
+The harness target (`vibe/evox/harness_target.py`) defines a declared
+`HarnessSearchSpace` (default knobs: `routing_min_confidence {0.2,0.3,0.4}`,
+`max_lessons {2,3,5}`, `min_generality {2,3,4}`, plus two conservative variants per
+prompt slot), a `HarnessEvaluator` behind a narrow `EvalSuiteRunner` protocol (fully
+mockable — tests need no live model), the regression-gate acceptance check, and the
+provenance log. Design rationale and sources: Meta-Harness (arXiv 2603.28052) and
+arXiv 2605.30621 (held-out acceptance), tracked in
+`docs/plans/2026-08-22-experience-learning-study-and-plan.md`.
 
 ### Self-evolution demo
 

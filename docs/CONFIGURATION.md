@@ -349,7 +349,17 @@ memory:
     min_generality: 3           # Drop lessons the LLM self-scores below this generality
                               # (1 = instance-specific, 5 = reusable principle; missing
                               # scores are accepted — fail-open)
+    compact_min_cluster: 3      # Min similar lesson pages per compaction cluster
+    compact_overlap: 0.5        # Title+tag word-overlap threshold for clustering (0.0–1.0)
 ```
+
+Lesson pages accumulate one per session. `vibe memory wiki compact` clusters similar
+lessons (title+tag word overlap) and merges each cluster of at least
+`compact_min_cluster` pages into one principle-level page via a single LLM synthesis
+call — summing helpful/harmful counters, unioning citations, taking the max generality.
+Merged members are archived (never deleted) and excluded from prompt injection. When
+lesson pages exceed `compact_min_cluster * 3`, `vibe memory status` prints a hint to
+run compaction.
 
 **Error recovery: pivotal retry**
 
@@ -368,6 +378,8 @@ error_recovery:
 
 The RLM analyzer monitors session telemetry and logs a recommendation when your conversations become large/complex enough to warrant local model fine-tuning.
 
+When training data is exported, failed sessions can be relabeled instead of discarded (AgentHER-style hindsight relabeling): each failed session gets one LLM call proposing an achievable alternative goal the trajectory actually demonstrates. The corrected pair is exported with `relabeled: true` and the original goal kept for provenance; low-confidence or incoherent sessions are discarded. Relabeled and discarded counts are logged separately.
+
 ```yaml
 memory:
   rlm:
@@ -376,6 +388,8 @@ memory:
     trigger_threshold_compaction_pct: 0.3  # Trigger if >30% of sessions needed compaction
     trigger_window_sessions: 50       # Look at last N sessions
     min_sessions_before_trigger: 10   # Minimum sessions required before analyzing
+    relabel_failures: true            # Relabel failed sessions with an achievable goal
+    relabel_min_confidence: 0.7       # Discard relabels below this confidence (0.0-1.0)
 ```
 
 ### Complete Tripartite Memory Example
@@ -411,6 +425,8 @@ memory:
     max_transcript_chars: 12000
     merge_title_overlap: 0.7
     min_generality: 3
+    compact_min_cluster: 3
+    compact_overlap: 0.5
 
   rlm:
     enabled: true
@@ -418,6 +434,8 @@ memory:
     trigger_threshold_compaction_pct: 0.3
     trigger_window_sessions: 50
     min_sessions_before_trigger: 10
+    relabel_failures: true
+    relabel_min_confidence: 0.7
 ```
 
 ### Checking Memory Status
@@ -431,6 +449,9 @@ vibe memory wiki list --status verified
 
 # Expire old drafts
 vibe memory wiki expire --days 30
+
+# Merge clusters of similar lesson pages into principle-level lessons
+vibe memory wiki compact
 ```
 
 ---

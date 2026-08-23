@@ -19,7 +19,7 @@ class WikiPage:
     title: str
     content: str  # body of the markdown (after frontmatter)
     tags: list[str]
-    status: str  # draft | verified | expired
+    status: str  # draft | verified | archived | expired
     date_created: str  # ISO date string (YYYY-MM-DD)
     last_updated: str  # ISO date string (YYYY-MM-DD)
     citations: list[dict]

@@ -459,6 +459,9 @@ class WikiConfig(BaseModel):
 
     auto_extract: bool = True
     base_path: str = "~/.vibe/wiki"
+    # Optional prompt-template override for knowledge extraction (used by
+    # offline harness evolution): when set, replaces the built-in extraction
+    # prompt. Must keep the {transcript} placeholder.
     extraction_prompt: Optional[str] = None
     novelty_threshold: float = Field(default=0.5, ge=0.0, le=1.0)
     confidence_threshold: float = Field(default=0.8, ge=0.0, le=1.0)
@@ -498,6 +501,13 @@ class RLMConfig(BaseModel):
     max_train_steps: int = Field(default=100, ge=1)
     training_device: str = Field(default="auto", pattern=r"^(auto|cpu|cuda|mps)$")
     ollama_register: bool = True
+    # AgentHER-style failure relabeling in the dataset export (only active when
+    # RLM is already enabled): each failed session gets ONE LLM call proposing
+    # an achievable alternative goal the trajectory actually demonstrates; the
+    # relabeled pair is exported with provenance markers, otherwise the session
+    # is discarded. Sessions scoring below relabel_min_confidence are discarded.
+    relabel_failures: bool = True
+    relabel_min_confidence: float = Field(default=0.7, ge=0.0, le=1.0)
 
 
 class ReflectionConfig(BaseModel):
@@ -524,6 +534,17 @@ class ReflectionConfig(BaseModel):
     # scores are accepted (fail-open) — bad lessons are weeded out later by the
     # usage-feedback counters.
     min_generality: int = Field(default=3, ge=1, le=5)
+    # Lesson compaction (manual: `vibe memory wiki compact`): clusters of at
+    # least compact_min_cluster lesson pages whose title+tag word overlap meets
+    # compact_overlap are merged by one LLM synthesis call into a single
+    # principle-level page (counters summed, citations unioned, members
+    # archived — never deleted).
+    compact_min_cluster: int = Field(default=3, ge=2)
+    compact_overlap: float = Field(default=0.5, ge=0.0, le=1.0)
+    # Optional prompt-template override (used by offline harness evolution):
+    # when set, replaces the built-in reflection prompt. Must keep the
+    # {transcript} placeholder; unknown placeholders are left as-is.
+    prompt_template: Optional[str] = None
 
 
 class TripartiteMemoryConfig(BaseModel):
