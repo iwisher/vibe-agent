@@ -891,10 +891,14 @@ class QueryLoop:
         )
         return selected
 
-    def _filter_tool_calls(
+    async def _filter_tool_calls(
         self, tool_calls: list
     ) -> tuple[list[Any], list[int], list[ToolResult | None]]:
         """Filter tool calls through security checks.
+
+        The security evaluation is blocking and may prompt the user for
+        approval, so it runs off the event loop via ``asyncio.to_thread``;
+        this lets the approval UI hook schedule terminal work back on the loop.
 
         Returns:
             allowed_calls: List of calls that passed security.
@@ -911,7 +915,9 @@ class QueryLoop:
         for i, call in enumerate(tool_calls):
             call_name = extract_tool_call_name(call)
             arguments = extract_tool_call_arguments(call)
-            check = self.security_coord.evaluate_tool_call(call_name, arguments)
+            check = await asyncio.to_thread(
+                self.security_coord.evaluate_tool_call, call_name, arguments
+            )
             if check.allowed:
                 if check.modified_args:
                     arguments.update(check.modified_args)
@@ -954,7 +960,7 @@ class QueryLoop:
         Returns results in the same order as tool_calls, with blocked calls
         replaced by error ToolResults.
         """
-        allowed_calls, allowed_indices, results = self._filter_tool_calls(tool_calls)
+        allowed_calls, allowed_indices, results = await self._filter_tool_calls(tool_calls)
 
         if allowed_calls:
             executed = await self.tool_executor.execute(allowed_calls, session_id=self._session_id)
@@ -968,7 +974,7 @@ class QueryLoop:
 
         Falls back to sequential execution if the DAG is invalid or has no parallelism.
         """
-        allowed_calls, allowed_indices, results = self._filter_tool_calls(tool_calls)
+        allowed_calls, allowed_indices, results = await self._filter_tool_calls(tool_calls)
 
         if not allowed_calls or len(allowed_calls) <= 1:
             # Not enough calls for DAG parallelism — use sequential

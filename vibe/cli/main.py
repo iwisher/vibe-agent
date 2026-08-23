@@ -34,6 +34,11 @@ from vibe.evals.runner import EvalRunner
 from vibe.evox.cli import evox_app
 from vibe.harness.memory.eval_store import EvalStore
 from vibe.harness.memory.trace_store import TraceStore
+from vibe.tools.security.human_approval import (
+    render_and_read_choice,
+    reset_approval_ui_hook,
+    set_approval_ui_hook,
+)
 
 app = typer.Typer(help="Vibe Agent — an open agent harness platform")
 eval_app = typer.Typer(help="Run and manage evals")
@@ -77,6 +82,59 @@ def _save_readline_history() -> None:
         readline.write_history_file(str(_HISTORY_FILE))
     except Exception:
         pass
+
+
+# Terminal context for the approval UI hook: the prompt_toolkit app that owns
+# the terminal and the event loop it runs on. Set by the interactive modes
+# while they are active.
+_approval_ctx: dict[str, Any] = {"app": None, "loop": None}
+
+
+def _make_pt_approval_hook():
+    """Build an approval UI hook that renders through prompt_toolkit.
+
+    The hook runs on a worker thread (the security evaluation is offloaded via
+    ``asyncio.to_thread``), so it schedules the prompt back onto the CLI's
+    event loop with ``run_coroutine_threadsafe`` and ``run_in_terminal`` —
+    which suspends the app, renders the approval panel on a clean terminal,
+    reads the choice, then redraws the app. Without this, raw stdin reads race
+    prompt_toolkit and the approval UI overlaps the input area.
+
+    Returns None (decline -> legacy terminal UI) when no prompt_toolkit
+    context is available; any failure after that point is fail-closed.
+    """
+    from prompt_toolkit.application import run_in_terminal
+    from prompt_toolkit.application.current import set_app
+
+    def hook(
+        command: str,
+        pattern_id: str | None,
+        description: str,
+        severity: str,
+        cwd: str,
+        timeout_seconds: int,
+    ) -> str | None:
+        app = _approval_ctx.get("app")
+        loop = _approval_ctx.get("loop")
+        if app is None or loop is None or loop.is_closed():
+            return None
+
+        async def ask() -> str:
+            def render_and_read() -> str:
+                return render_and_read_choice(
+                    command, pattern_id, description, severity, timeout_seconds
+                )
+
+            with set_app(app):
+                return await run_in_terminal(render_and_read, in_executor=True)
+
+        fut = asyncio.run_coroutine_threadsafe(ask(), loop)
+        try:
+            return fut.result(timeout=timeout_seconds + 10)
+        except Exception:
+            return "timeout"  # fail closed; never fall back to legacy mid-prompt
+
+    return hook
 
 
 async def interactive_mode(controller: Any) -> None:
@@ -245,6 +303,12 @@ async def interactive_mode(controller: Any) -> None:
     controller.prompt_shown = True
     if not prompt_session:
         console.print("[bold bright_blue]❯ [/bold bright_blue]", end="")
+    elif getattr(prompt_session, "app", None) is not None:
+        # Route approval prompts through prompt_toolkit so they suspend and
+        # redraw the prompt instead of overlapping the input area.
+        _approval_ctx["app"] = prompt_session.app
+        _approval_ctx["loop"] = asyncio.get_running_loop()
+        set_approval_ui_hook(_make_pt_approval_hook())
 
     pt_ctx = get_patch_stdout()
     original_console_file = None
@@ -375,6 +439,9 @@ async def interactive_mode(controller: Any) -> None:
                     controller.prompt_shown = True
 
         finally:
+            reset_approval_ui_hook()
+            _approval_ctx["app"] = None
+            _approval_ctx["loop"] = None
             if original_console_file is not None:
                 console.file = original_console_file
             _save_readline_history()
@@ -543,9 +610,18 @@ async def interactive_mode_tui(controller: SessionController) -> None:
     queue_task = asyncio.create_task(queue_poller())
     app = tui.create_app()
 
+    # Route approval prompts through prompt_toolkit so they suspend and redraw
+    # the full-screen app instead of overlapping the input tile.
+    _approval_ctx["app"] = app
+    _approval_ctx["loop"] = asyncio.get_running_loop()
+    set_approval_ui_hook(_make_pt_approval_hook())
+
     try:
         await app.run_async()
     finally:
+        reset_approval_ui_hook()
+        _approval_ctx["app"] = None
+        _approval_ctx["loop"] = None
         # Always cancel and drain background tasks, on any exit path.
         for task in (output_task, queue_task):
             if not task.done():
