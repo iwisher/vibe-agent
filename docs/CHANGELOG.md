@@ -12,6 +12,7 @@ All notable changes to Vibe Agent will be documented in this file.
 - **Browser Tool Alias & Interaction Safety**: Registered `FetchUrlTool` (`fetch_url`) alias in `QueryLoopFactory` and added explicit error handling when interactive click actions are attempted in static mode.
 
 ### Fixed & Refactored
+- **SmartApprover Async LLM Client** (`vibe/tools/security/smart_approver.py`): Async LLM clients (e.g. `ModelGateway.complete`) were called synchronously, producing an unawaited-coroutine `RuntimeWarning` that corrupted the TUI frame and silently disabling LLM risk assessment (always falling back to heuristics). Awaitables are now resolved on a private loop from worker threads, closed cleanly on the event-loop thread, and fallback logs at debug level.
 - **Pivotal Turn Lifecycle & Reflection**: Cleared `_pivotal_turn` upon trajectory reflection consumption to prevent failure index leakage into subsequent interactive turns.
 - **SkillMaker Double Approval Gate & Event Loop**: Unified `CLIApprovalGate` across `SkillInstaller` and `SkillMakerPipeline`, and wrapped `approval_gate.approve()` in `asyncio.to_thread` to prevent interactive `input()` from freezing the asyncio event loop.
 - **Skill Runner Default Quoting**: Fixed variable substitution `${VAR:-default}` to safely quote defaults containing whitespace under `quote=True`.

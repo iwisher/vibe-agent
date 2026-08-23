@@ -1,9 +1,33 @@
 """Smart Approver - LLM-based risk assessment for tool calls."""
 
+import asyncio
+import inspect
 import json
+import logging
 from dataclasses import dataclass
 from enum import Enum
 from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+
+def _resolve_sync(response: object) -> object:
+    """Resolve a possibly-awaitable LLM response from synchronous context.
+
+    The smart approver runs synchronously (typically on a security worker
+    thread). Async clients (e.g. ModelGateway.complete) are executed on a
+    private loop when no loop is running here; if a loop IS running (direct
+    event-loop call), the coroutine is closed so it never becomes an
+    unawaited-coroutine RuntimeWarning, and we fall back to heuristics.
+    """
+    if not inspect.isawaitable(response):
+        return response
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(response)
+    response.close()
+    raise RuntimeError("async LLM client cannot be awaited from the event-loop thread")
 
 
 class RiskLevel(Enum):
@@ -183,7 +207,7 @@ Respond in JSON format:
 }}"""
 
         try:
-            response = self.llm_client.complete(prompt)
+            response = _resolve_sync(self.llm_client.complete(prompt))
             parsed = json.loads(response)
 
             risk_level = RiskLevel(parsed.get("risk_level", "medium").lower())
@@ -205,8 +229,9 @@ Respond in JSON format:
                 confidence=0.8,
                 suggested_modifications=suggestions,
             )
-        except Exception:
+        except Exception as e:
             # Fallback to heuristics on LLM failure
+            logger.debug("LLM risk assessment failed, using heuristics: %s", e)
             return self._heuristic_risk_assessment(tool_name, tool_args)
 
     def record_assessment(self, assessment: RiskAssessment, tool_name: str) -> None:

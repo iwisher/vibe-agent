@@ -171,3 +171,51 @@ class TestSmartApprover:
         )
         # Should be at least warn due to unencrypted URL
         assert result.risk_level in (RiskLevel.MEDIUM, RiskLevel.HIGH, RiskLevel.LOW)
+
+
+class TestAsyncLLMClient:
+    """Regression: async LLM clients (e.g. ModelGateway.complete) must not leak
+    unawaited coroutines (RuntimeWarning corrupting the TUI) and the LLM layer
+    should actually run when called from a non-event-loop thread."""
+
+    def test_async_client_resolved_without_unawaited_warning(self):
+        """Sync context (worker thread): coroutine is awaited via a private loop."""
+        import gc
+        import warnings
+
+        class AsyncClient:
+            async def complete(self, prompt: str) -> str:
+                return json.dumps({"risk_level": "low", "reasoning": "async ok"})
+
+        approver = SmartApprover(llm_client=AsyncClient())
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            # file_write is medium-risk -> heuristic alone would WARN; the async
+            # LLM path must actually run and downgrade to APPROVE.
+            result = approver.assess_tool_call("file_write", {"path": "/tmp/x"})
+            gc.collect()
+
+        assert result.decision == ApprovalDecision.APPROVE
+        assert result.reasoning == "async ok"
+        unawaited = [w for w in caught if "never awaited" in str(w.message)]
+        assert not unawaited
+
+    async def test_async_client_on_event_loop_falls_back_without_warning(self):
+        """Event-loop context: coroutine is closed (no warning), heuristics used."""
+        import gc
+        import warnings
+
+        class AsyncClient:
+            async def complete(self, prompt: str) -> str:
+                return json.dumps({"risk_level": "low", "reasoning": "async ok"})
+
+        approver = SmartApprover(llm_client=AsyncClient())
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            result = approver.assess_tool_call("file_write", {"path": "/tmp/x"})
+            gc.collect()
+
+        # Heuristic fallback for medium-risk file_write
+        assert result.decision == ApprovalDecision.WARN
+        unawaited = [w for w in caught if "never awaited" in str(w.message)]
+        assert not unawaited
