@@ -34,20 +34,48 @@ class RedactionPattern:
 _DEFAULT_PATTERNS: list[RedactionPattern] = [
     RedactionPattern(
         name="openai_key",
-        regex=re.compile(r"sk-[a-zA-Z0-9]{48}"),
+        regex=re.compile(r"sk-[a-zA-Z0-9]{20,}"),
         placeholder="[REDACTED_OPENAI_KEY]",
+    ),
+    RedactionPattern(
+        name="github_token",
+        regex=re.compile(r"gh[pousr]_[a-zA-Z0-9]{36}"),
+        placeholder="[REDACTED_GITHUB_TOKEN]",
+    ),
+    RedactionPattern(
+        name="slack_token",
+        regex=re.compile(r"xox[baprs]-[a-zA-Z0-9-]+"),
+        placeholder="[REDACTED_SLACK_TOKEN]",
+    ),
+    RedactionPattern(
+        name="slack_webhook",
+        regex=re.compile(r"https://hooks\.slack\.com/services/[A-Z0-9/]+"),
+        placeholder="[REDACTED_SLACK_WEBHOOK]",
+    ),
+    RedactionPattern(
+        name="google_api_key",
+        regex=re.compile(r"AIza[0-9A-Za-z_-]{35}"),
+        placeholder="[REDACTED_GOOGLE_API_KEY]",
     ),
     RedactionPattern(
         name="aws_access_key",
         regex=re.compile(r"AKIA[0-9A-Z]{16}"),
         placeholder="[REDACTED_AWS_ACCESS_KEY]",
     ),
-    # AWS secret keys: 40 base64 chars, but only when preceded by "AWS" or "Secret" context
-    # to avoid matching OpenAI keys (sk-...) or random base64 strings
     RedactionPattern(
         name="aws_secret_key",
         regex=re.compile(r"(?:AWS|Secret|secret)[\s=:]+([0-9a-zA-Z/+]{40})"),
         placeholder=r"\1[REDACTED_AWS_SECRET]",
+    ),
+    RedactionPattern(
+        name="stripe_key",
+        regex=re.compile(r"(?:sk|pk)_(?:live|test)_[0-9a-zA-Z]{24,}"),
+        placeholder="[REDACTED_STRIPE_KEY]",
+    ),
+    RedactionPattern(
+        name="jwt",
+        regex=re.compile(r"eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*"),
+        placeholder="[REDACTED_JWT]",
     ),
     RedactionPattern(
         name="bearer_token",
@@ -55,9 +83,9 @@ _DEFAULT_PATTERNS: list[RedactionPattern] = [
         placeholder="[REDACTED_BEARER_TOKEN]",
     ),
     RedactionPattern(
-        name="github_token",
-        regex=re.compile(r"ghp_[a-zA-Z0-9]{36}"),
-        placeholder="[REDACTED_GITHUB_TOKEN]",
+        name="basic_auth",
+        regex=re.compile(r"Basic\s+[a-zA-Z0-9+/=]{16,}"),
+        placeholder="Basic [REDACTED_AUTH]",
     ),
     RedactionPattern(
         name="api_key_param",
@@ -68,6 +96,24 @@ _DEFAULT_PATTERNS: list[RedactionPattern] = [
         name="password_param",
         regex=re.compile(r"(password\s*[:=]\s*)[^\s&\"\']+", re.IGNORECASE),
         placeholder=r"\1[REDACTED_PASSWORD]",
+    ),
+    RedactionPattern(
+        name="discord_token",
+        regex=re.compile(r"[MN][A-Za-z\d]{23}\.[\w-]{6}\.[\w-]{27}"),
+        placeholder="[REDACTED_DISCORD_TOKEN]",
+    ),
+    RedactionPattern(
+        name="discord_webhook",
+        regex=re.compile(r"https://discord(?:app)?\.com/api/webhooks/\d+/[A-Za-z0-9_-]+"),
+        placeholder="[REDACTED_DISCORD_WEBHOOK]",
+    ),
+    RedactionPattern(
+        name="url_token_param",
+        regex=re.compile(
+            r"([?&](?:access_token|token|code|api_key|apikey|key|secret|password|client_secret)=)[^&\s]{8,}",
+            re.IGNORECASE,
+        ),
+        placeholder=r"\1[REDACTED]",
     ),
     RedactionPattern(
         name="private_key",
@@ -192,3 +238,38 @@ def get_default_redactor() -> SecretRedactor:
 def redact(text: str) -> str:
     """Redact secrets using the default redactor."""
     return get_default_redactor().redact(text)
+
+
+def redact_sensitive_text(text: str) -> str:
+    """Convenience alias for redact()."""
+    return redact(text)
+
+
+def redact_url_query_params(url: str, replacement: str = "[REDACTED]") -> str:
+    """Redact sensitive query parameters from URL."""
+    sensitive_keys = {
+        "access_token",
+        "token",
+        "code",
+        "api_key",
+        "apikey",
+        "key",
+        "secret",
+        "password",
+        "client_secret",
+    }
+
+    def replace_param(match: re.Match) -> str:
+        prefix = match.group(1)
+        key = match.group(2)
+        if key.lower() in sensitive_keys:
+            return f"{prefix}{key}={replacement}"
+        return match.group(0)
+
+    pattern = re.compile(r"([?&])([^=]+)=([^&\s]+)")
+    return pattern.sub(replace_param, url)
+
+
+def redact_url_userinfo(url: str) -> str:
+    """Redact password from URL userinfo (http://user:pass@host)."""
+    return re.sub(r"(://[^:]+:)[^@]+(@)", r"\1[REDACTED]\2", url)

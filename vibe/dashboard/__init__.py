@@ -3,7 +3,6 @@
 Served via `vibe dashboard` CLI command.
 """
 
-from vibe.dashboard.api import create_app
-from vibe.dashboard.data import DashboardDataSource
+from vibe.dashboard.server import DashboardState, app, run_server
 
-__all__ = ["DashboardDataSource", "create_app"]
+__all__ = ["DashboardState", "app", "run_server"]

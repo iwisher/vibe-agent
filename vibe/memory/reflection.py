@@ -214,7 +214,7 @@ class TrajectoryReflector:
             messages: Conversation messages (role/content[/metadata] attrs).
             state: Terminal QueryState (COMPLETED/INCOMPLETE/ERROR) or its name.
             session_id: Session UUID for citation tracking.
-            pivotal_turn: Optional transcript message index where the session
+            pivotal_turn: Optional loop iteration index where the session
                 derailed; surfaced in the prompt so lessons anchor on the
                 failure point.
 

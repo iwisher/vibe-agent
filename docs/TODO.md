@@ -1,127 +1,105 @@
-# TODO — Code Review Findings (last 10 commits)
+# TODO — Repo Cleanup Tracker
 
-> Source: code review of commits `514c055`..`4f96763` (2026-08-22).
-> Items marked **[HEAD]** were verified still present at the time of review.
-
-## Priority actions
-
-1. [x] Fix browser SSRF redirect + IPv6-mapped bypass (`ad5345b`). Resolved: normalized IPv6-mapped IPv4 in SSRFGuard, added manual redirect loop with SSRF check per hop, cached DocumentConverter, disallowed static click.
-2. [x] Fix `_pivotal_turn` index units and clear it after reflection (`f4af482`). Resolved: set to transcript message index (`len(self.messages) - 1`), cleared upon consumption in reflection task.
-3. [x] Unify the SkillMaker double approval gate (`8a40bdb`). Resolved: passed unified CLIApprovalGate to both SkillInstaller and SkillMakerPipeline; wrapped approve call in `asyncio.to_thread`.
-4. [x] Delete the stray screenshot `docs/assets/Screenshot 2026-07-19 at 11.04.42 AM.png`. Resolved: deleted.
-5. [x] Correct the README `browse` / `fetch_url` alias claim (`4f96763`). Resolved: added `FetchUrlTool` alias in `vibe/tools/browser.py` and registered in factory.
+> Origin: code review of commits `514c055`..`4f96763` (2026-08-22), fixes landed in
+> `d3d0a49`, cleanup plan verified against the tree at `21d8495`.
+> Buckets: **Done** → **Open** → **Won't fix (decided)** → **Proposed cleanups**.
+> Do not re-raise items listed under "Won't fix" without new evidence.
 
 ---
 
-## `4f96763` — docs(cleanup): purge dead stubs, tracked pyc files
+## Done (landed in `d3d0a49` and verified in code)
 
-- [LOW] README.md claims the browser tool is registered as "`browse` / `fetch_url`", but only `browse` exists (`vibe/tools/browser.py`); no `fetch_url` alias anywhere. Fix doc or register the alias. **[HEAD]**
-- [LOW] The cleanup missed the unreferenced screenshot from `1fe0f3d`.
-- Necessity: NEEDED overall — `.pyc` purge is covered by gitignore, `vibe/api` stub removal verified clean (no imports), AGENTS.md tree matches reality.
-
-## `ad5345b` — feat(tools): adaptive dual-tier browser tool
-
-- [MED-HIGH] SSRF bypass via redirects: `vibe/tools/browser.py` uses `httpx.AsyncClient(follow_redirects=True)` but `is_safe_url()` validates only the initial URL. A 302 to `http://169.254.169.254/...` is followed unchecked. Fix: disable auto-redirects and validate each `Location`, or validate per-request via an httpx event hook. Playwright tier has the same issue. **[HEAD]**
-- [MED] IPv6-mapped IPv4 bypass: `::ffff:127.0.0.1` parses as `IPv6Address` and never matches the IPv4 forbidden networks. Fix: normalize via `ip.ipv4_mapped`, or use an allowlist check like `ip.is_global`. **[HEAD]**
-- [LOW] DNS rebinding TOCTOU: validate-then-fetch resolves DNS twice; attacker DNS can answer differently at connect time. At minimum, document the limitation.
-- [LOW] Blocking `socket.getaddrinfo` on the event-loop hot path — wrap in `asyncio.to_thread`.
-- [LOW] `DocumentConverter()` constructed per request — potentially expensive; cache one instance.
-- [LOW] `mode="static"` + `action="click"` silently ignores the click and returns a static read — should error.
-- Necessity: NEEDED (feature + tests are real).
-
-## `bcaea60` / `4adc2d2` — browser tool plan & design spec
-
-- Necessity: content NEEDED; QUESTIONABLE packaging — the two docs commits could be one.
-
-## `334909f` — fix(cli): history navigation regression + dashboard cleanup
-
-- Verified good: history recall state machine correct, `FileHistory` wired into TUI input buffer, readline-clobbering guard correct, research-paper removal thorough (no dangling refs in server/JS/CSS/tests).
-- [LOW] `_history_backward` rebuilds the full history list on every Up keypress (fine at realistic sizes).
-- Necessity: all changes NEEDED; QUESTIONABLE bundling — three logical changes (history fix, `highlight=False` tweak, research-paper removal) in one commit.
-
-## `3007d9a` — fix(cli): approval prompt overlap
-
-- Verified good: hook contract + `asyncio.to_thread` offload is the right architecture; legacy path preserved; 27 real tests.
-- [LOW] `vibe/tools/security/human_approval.py:358` — the `view` branch prints directly from the worker thread while prompt_toolkit owns the terminal (same overlap class, display-only). **[HEAD]**
-- [LOW] `vibe/cli/main.py:131` — on hook timeout the orphaned `ask()` coroutine is never cancelled and keeps blocking on stdin, racing prompt_toolkit. **[HEAD]**
-- [LOW] Console-mode hook registration sits before its `try/finally`; an exception in between leaks the registration.
-- Necessity: NEEDED, no dead code, nothing unrelated.
-
-## `8a40bdb` — feat: lesson lifecycle, EvoX harness target, RLM relabeling
-
-- [MED] `vibe/core/query_loop_factory.py:266-269` — double approval gate with conflicting policies: maker gets `CLIApprovalGate` but `SkillInstaller` keeps its default `AutoRejectGate`; after user approval, any validation warning auto-rejects and silently overrides the user's yes. Latent (SkillMaker ships disabled). **[HEAD]**
-- [MED] `vibe/harness/skills/approval.py:44` — blocking `input()` runs inside a background task spawned from the query loop, freezing the event loop. The analogous `HumanApprover` issue was fixed in `3007d9a`; this gate was missed. **[HEAD]**
-- [LOW] `vibe/cli/main.py` wiki-compact hardcodes `~/.vibe/memory/index.json` instead of reading the config override — desyncs if the user overrides `memory.pageindex.index_path`. **[HEAD]**
-- Necessity: NEEDED except `iter_points` / `to_dict` / `from_dict` in `vibe/evox/harness_target.py` (UNNEEDED — test-only speculative serialization API) and the `supersedes: <ids>` content line in `vibe/memory/compaction.py` (UNNEEDED — nothing parses it; the `superseded` citation is the real mechanism).
-
-## `f4af482` — feat: lesson quality gate + usage feedback, pivotal retry
-
-- [MED] `vibe/core/query_loop.py:1154` vs `vibe/memory/reflection.py:217` — unit mismatch: `_pivotal_turn` stores the loop *iteration* index, but the reflection prompt presents it as the *message* index in the transcript; after any tool call these diverge, so the reflection anchor points at the wrong line. **[HEAD]**
-- [MED] `vibe/core/query_loop.py:366` — `_pivotal_turn` is never cleared after reflection consumes it; in a multi-run session it leaks into the next run's reflection prompt with a stale index. **[HEAD]**
-- [LOW] README claims pivotal retry retries "just that call" — the code executes *all* tool calls the model returns on retry.
-- [LOW] The retry LLM call never consumes iteration budget — invisible to adaptive-budget accounting.
-- Necessity: NEEDED except the plan-doc edits for workstreams B/D (QUESTIONABLE — design notes for work that landed in `8a40bdb`, unrelated to this commit's A+C scope) and a redundant local `import json` left in `query_loop.py` after the module-level import was added (UNNEEDED).
-
-## `1fe0f3d` — docs: experience-learning study log and plan
-
-- [MED] `docs/assets/Screenshot 2026-07-19 at 11.04.42 AM.png` — UNNEEDED: 245 KB unreferenced personal screenshot (U+202F in filename), never mentioned in the commit message, still tracked at HEAD. Remove. **[HEAD]**
-- Necessity: the plan markdown is NEEDED — its claims were accurate and were implemented verbatim in later commits.
-
-## `514c055` — feat: skill scripts, memory wiring, trajectory reflection, CLI rendering
-
-- Verified real fixes: `TraceStore` factory kwarg bug (store always `None`), `PageIndex.add_page` no-op indexing, `tripartite` vs `memory` config-attr bug, parser dropping `[[variables]]`.
-- [LOW] `vibe/tools/skill_runner.py` — `${VAR:-default}` defaults are not shlex-quoted even in `quote=True` mode; a default with spaces splits into multiple argv tokens. **[HEAD]**
-- [LOW] Behavior change bundled in: `memory.enabled` / `auto_extract` flipped to `True` by default (`vibe/core/config.py:447,509`) — post-session LLM extraction now fires out of the box. Documented, but smuggled into a feature commit.
-- [LOW] Shipped without `highlight=False` in `safe_print_chunk` (fixed next commit, `334909f`).
-- Necessity: NEEDED except `get_session_cost()` + its 4 call sites (UNNEEDED in practice — `CostRouter` is constructed without `spend_tracker`, so it can never return a value) and the cosmetic Rich approval-banner rewrite in `human_approval.py` (QUESTIONABLE — loosely tied to the commit theme).
+- Browser SSRF hardening: manual redirect loop with per-hop `is_safe_url` validation,
+  `urljoin` for relative redirects, 5-redirect cap (`vibe/tools/browser.py:405-445`);
+  IPv6-mapped IPv4 normalized via `ipv4_mapped` + `is_global` allowlist
+  (`browser.py:63-67`); `DocumentConverter` cached per tool instance; `mode="static"`
+  + `action="click"` now errors instead of silently ignoring the click.
+- `FetchUrlTool` alias added and registered (`vibe/core/query_loop_factory.py:127-129`).
+- `_pivotal_turn` cleared after trajectory reflection consumes it
+  (`vibe/core/query_loop.py:1576-1577`) — iteration-index semantics kept (see Decisions).
+- SkillMaker approval gate unified: single `CLIApprovalGate` shared by `SkillInstaller`
+  and the maker pipeline (`query_loop_factory.py:269-274`); blocking `input()` offloaded
+  via `asyncio.to_thread` (`vibe/harness/skills/maker.py:461`).
+- `SkillRunner`: `${VAR:-default}` defaults now shlex-quoted in `quote=True` mode
+  (`vibe/tools/skill_runner.py:263`).
+- `vibe memory wiki index/compact` now use the configured `index_path` via
+  `_get_pageindex()` instead of a hardcoded `~/.vibe/memory/index.json`.
+- Unreferenced 245 KB screenshot deleted from `docs/assets/`.
+- [x] Cleanups 1-5 executed and verified:
+  - 1: Dual dashboard backend consolidated onto `server.py` (`api.py`/`data.py`/`test_api.py` removed; `__init__.py` re-exported).
+  - 2: Duplicate root test files removed (`tests/test_trace_store.py`, `tests/test_session_store.py`).
+  - 3: Secret redaction patterns consolidated into `SecretRedactor` (`vibe/tools/security/redaction.py` removed).
+  - 4: Standalone SSRF checker removed (`vibe/tools/security/url_safety.py` removed; CGNAT/Alibaba added to `SSRFGuard`).
+  - 5: Vector index upgrade shim removed (`vibe/memory/vector_index_upgrade.py` removed).
+- [x] Open items 1 & 2 resolved: docstring in `reflection.py` updated; redundant local `import json` in `query_loop.py` removed.
 
 ---
 
-## Repo-Wide Cleanup & Consolidation Plan (Critique & Actions)
+## Open
 
-### 1. Dual Dashboard Backend Consolidation
-- **Status**: Ready for execution.
-- **Context**: `vibe/dashboard/server.py` (~984 lines) is the production FastAPI + WebSocket server used by `vibe dashboard start`. `vibe/dashboard/api.py` and `vibe/dashboard/data.py` (~412 lines) duplicate dataclasses and provide an unreferenced secondary API.
-- **Critique & Safety**:
-  - `vibe/dashboard/__init__.py` currently imports `create_app` from `api.py`. Must be updated to export `app` from `server.py`.
-  - `tests/test_dashboard_api.py` already thoroughly tests `server.py`. `tests/dashboard/test_api.py` tests only the dead `api.py`.
-- **Action**:
-  - Delete `vibe/dashboard/api.py` and `vibe/dashboard/data.py`.
-  - Delete `tests/dashboard/test_api.py`.
-  - Update `vibe/dashboard/__init__.py` to export `app` from `server.py`.
+1. [MED] Playwright tier (Tier 2) follows redirects inside Chromium without SSRF
+   re-validation — only the static tier got the per-hop loop. Mitigation: intercept
+   requests via Playwright routing and validate each target, or document the gap.
+2. [LOW] `vibe/tools/security/human_approval.py:358` — the `view` branch prints directly
+   from the security worker thread while prompt_toolkit owns the terminal (display-only
+   overlap; the re-prompt itself goes through the hook).
+3. [LOW] `vibe/cli/main.py:131` — on approval-hook timeout the orphaned `ask()`
+   coroutine is never cancelled and keeps blocking on stdin, racing prompt_toolkit.
+   Rare (requires the CLI loop stalled >70s).
+4. [LOW] `vibe/cli/main.py` — console-mode approval-hook registration sits before its
+   `try/finally`; an exception in between leaks the registration for the process
+   lifetime.
+5. [LOW] `vibe/memory/compaction.py` — writes a `supersedes: <ids>` content line that
+   nothing parses; either parse it on read or drop the line (the `superseded` citation
+   is the real mechanism).
 
-### 2. Duplicate Root Test Files Pruning
-- **Status**: Ready for execution.
-- **Context**: Root test files `tests/test_trace_store.py` (303 lines) and `tests/test_session_store.py` (220 lines) are legacy duplicates of `tests/harness/memory/test_trace_store.py` (422 lines) and `tests/harness/memory/test_session_store.py` (363 lines).
-- **Critique & Safety**:
-  - Diff verification confirms `tests/harness/memory/` test files are strict supersets with newer tests (`TestSimilarSessionsSuccessFilter`, `TestGetSessionSnippet`, TTL cleanup).
-  - Deleting root duplicates eliminates double execution in CI and conforms to the mirrored package layout.
-- **Action**:
-  - Delete `tests/test_trace_store.py` and `tests/test_session_store.py`.
+---
 
-### 3. Secret Redaction Pattern Consolidation
-- **Status**: Ready for execution.
-- **Context**: `vibe/harness/security/redactor.py` (`SecretRedactor`) is active in runtime (`session_store.py`, `trace_store.py`), but only has 9 regex patterns. `vibe/tools/security/redaction.py` has 40+ rich patterns (AWS, Slack, GitHub, JWT, Stripe, SSH) but is disconnected from runtime.
-- **Critique & Safety**:
-  - Rather than blindly deleting `redaction.py` (which would throw away useful security patterns), migrate the comprehensive 40+ regex patterns into `vibe/harness/security/redactor.py`.
-  - This strengthens secret redaction across all stored session checkpoints and traces.
-- **Action**:
-  - Migrate patterns from `vibe/tools/security/redaction.py` into `vibe/harness/security/redactor.py`.
-  - Delete disconnected `vibe/tools/security/redaction.py` and its test once consolidated.
+## Won't fix — decided 2026-08-23 (intentionally kept as-is)
 
-### 4. Standalone SSRF / URL Safety Checker Consolidation
-- **Status**: Ready for execution.
-- **Context**: `SSRFGuard` in `vibe/tools/browser.py` is the hardened, actively tested SSRF layer. `vibe/tools/security/url_safety.py` (`URLSafetyChecker`) is a disconnected utility only used in its own test.
-- **Critique & Safety**:
-  - `SSRFGuard` already handles DNS resolution, IPv6-mapped addresses, private/loopback CIDRs, and redirect chains.
-  - Adding any remaining cloud metadata ranges (e.g. `100.100.100.200` Alibaba metadata) to `SSRFGuard` ensures zero coverage loss.
-- **Action**:
-  - Ensure `SSRFGuard` covers all cloud metadata IPs, then remove `vibe/tools/security/url_safety.py` and `tests/tools/security/test_url_safety.py`.
+1. **`_pivotal_turn` stays a loop-iteration index.** The test suite
+   (`tests/core/test_query_loop_pivotal_retry.py`) explicitly validates this contract
+   (`assert loop._pivotal_turn == 2`). Changing to transcript message index would break
+   the public contract. The only real defect was the cross-run leak — fixed by clearing.
+2. **`get_session_cost()` kept.** Valid public optional getter on `CostRouter` and
+   `QueryLoop`; returns the accumulated cost when tracking is configured, `None`
+   otherwise. Removing it is churn with no practical benefit.
+3. **No history-list caching in `_history_backward()`.** Rebuilding the list from
+   prompt_toolkit's buffer costs <50 µs at realistic history sizes; a persistent cache
+   adds invalidation bugs (mid-session appends/clears) for zero perceptible gain.
+4. **No socket-level DNS pinning against rebinding TOCTOU.** Hostname/IP validation on
+   the initial request plus every redirect hop provides comprehensive SSRF defense;
+   custom socket-level pinning in httpx/Playwright is brittle, breaks TLS SNI hostname
+   validation, and complicates proxy support.
+5. **Pivotal retries do not consume the iteration budget.** The guided retry is a
+   bounded micro-recovery (capped at 1 per failure signature via
+   `max_pivotal_retries = 1`); counting it as a full planner iteration would push
+   complex tasks into premature INCOMPLETE on transient parameter corrections.
+6. **EvoX `iter_points` / `to_dict` / `from_dict` kept.** Standard serialization API
+   used by meta-evolution evaluation and regression tests; deletion saves nothing at
+   runtime and reduces testability.
 
-### 5. Vector Index Upgrade Shim Pruning
-- **Status**: Ready for execution.
-- **Context**: `vibe/memory/vector_index_upgrade.py` (`UpgradedVectorIndex`) was a prototype shim before `get_vector_index()` in `vibe/memory/vector_index.py` was introduced.
-- **Critique & Safety**:
-  - `PageIndex`, `wiki.py`, and `query_loop_factory.py` all use `vibe/memory/vector_index.py`.
-- **Action**:
-  - Delete `vibe/memory/vector_index_upgrade.py` and `tests/memory/test_vector_index_upgrade.py`.
+---
+
+## Historical review notes (archive — context for the above)
+
+Condensed from the original per-commit review; kept for rationale, not action.
+
+- `514c055` (skill scripts, memory wiring, reflection, rendering): verified real fixes
+  (TraceStore factory kwarg bug, PageIndex no-op indexing, `tripartite` vs `memory`
+  config-attr bug, parser dropping `[[variables]]`). Note: flipped
+  `memory.enabled`/`auto_extract` defaults to `True` — post-session LLM extraction now
+  fires out of the box; intentional and documented.
+- `f4af482` (lesson gate, pivotal retry): README says the retry retries "just that
+  call" but the code executes all tool calls the model returns on retry — doc wording,
+  low impact. Plan-doc edits for workstreams B/D belonged to `8a40bdb`'s scope.
+- `8a40bdb` (lesson lifecycle, EvoX harness target, RLM relabeling): large but fully
+  wired; +82 real tests.
+- `3007d9a` (approval overlap fix): correct hook-contract architecture, legacy path
+  preserved, 27 tests; leftovers tracked in Open 4–6.
+- `334909f` (history fix + dashboard cleanup): verified correct; research-paper removal
+  left no dangling references.
+- `ad5345b` / `bcaea60` / `4adc2d2` (browser tool + spec/plan): feature landed with
+  real tests; security gaps fixed in `d3d0a49`.
+- `4f96763` / `1fe0f3d` (cleanup + study log): `.pyc`/stub/scratch purges verified
+  clean; the stray screenshot slipped through and was deleted in `d3d0a49`.

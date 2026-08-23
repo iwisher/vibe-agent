@@ -211,6 +211,9 @@ def test_ssrf_guard_blocks_ipv6_mapped_ipv4():
     assert not is_safe_url("http://[::ffff:127.0.0.1]/secret")
     assert not is_safe_url("http://[::ffff:169.254.169.254]/latest/meta-data")
     assert not is_safe_url("http://[::ffff:192.168.1.1]/admin")
+    # CGNAT and Cloud Metadata
+    assert not is_safe_url("http://100.64.0.1/status")
+    assert not is_safe_url("http://100.100.100.200/latest/meta-data")
 
 
 @pytest.mark.asyncio

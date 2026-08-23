@@ -209,3 +209,38 @@ class TestSecretRedactorPerformance:
         result = r.redact(text)
         assert "[REDACTED_OPENAI_KEY]" in result
         assert len(result) < len(text)  # Should be shorter (redacted)
+
+
+class TestSecretRedactorEnrichedPatterns:
+    """Tests for migrated/enriched patterns."""
+
+    def test_redacts_slack_token(self):
+        r = SecretRedactor()
+        token = "xoxb-" + "1234567890-" + "abcdefghij"
+        text = f"Token: {token}"
+        result = r.redact(text)
+        assert "xoxb" not in result
+        assert "[REDACTED_SLACK_TOKEN]" in result
+
+    def test_redacts_google_api_key(self):
+        r = SecretRedactor()
+        key = "AIza" + "Sy" + "D" * 33
+        text = f"key: {key}"
+        result = r.redact(text)
+        assert "AIza" not in result
+        assert "[REDACTED_GOOGLE_API_KEY]" in result
+
+    def test_redacts_stripe_key(self):
+        r = SecretRedactor()
+        key = "sk_live_" + "testdummykey" * 2
+        text = f"stripe: {key}"
+        result = r.redact(text)
+        assert "sk_live" not in result
+        assert "[REDACTED_STRIPE_KEY]" in result
+
+    def test_redacts_url_query_secret(self):
+        r = SecretRedactor()
+        url = "https://example.com/api?access_token=" + "dummysecret" * 2 + "&user=john"
+        result = r.redact(url)
+        assert "dummysecret" not in result
+        assert "access_token=[REDACTED]" in result

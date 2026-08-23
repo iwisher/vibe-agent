@@ -940,8 +940,6 @@ class QueryLoop:
 
     def _apply_modified_args_to_call(self, call: Any, arguments: dict[str, Any]) -> None:
         """Apply security-modified arguments back to the original tool call."""
-        import json
-
         if isinstance(call, dict):
             func = call.get("function", {})
             if isinstance(func.get("arguments"), str):

@@ -50,6 +50,8 @@ class SSRFGuard:
         ipaddress.ip_network("172.16.0.0/12"),  # RFC 1918 Private
         ipaddress.ip_network("192.168.0.0/16"),  # RFC 1918 Private
         ipaddress.ip_network("169.254.0.0/16"),  # Link-Local & Cloud Metadata (169.254.169.254)
+        ipaddress.ip_network("100.64.0.0/10"),  # Carrier-Grade NAT (RFC 6598)
+        ipaddress.ip_network("100.100.100.200/32"),  # Alibaba Cloud metadata
         ipaddress.ip_network("0.0.0.0/8"),  # Local identification
         ipaddress.ip_network("::1/128"),  # IPv6 Loopback
         ipaddress.ip_network("fc00::/7"),  # IPv6 Unique Local
