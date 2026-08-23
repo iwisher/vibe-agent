@@ -1,9 +1,10 @@
 """Tests for the VibeTUI tiled terminal UI."""
 
+from prompt_toolkit.document import Document
 from prompt_toolkit.layout import Window
 from prompt_toolkit.widgets import TextArea
 
-from vibe.cli.tui import VibeTUI, _strip_markup
+from vibe.cli.tui import TUIKeywordLexer, VibeTUI, _strip_markup
 
 
 def test_strip_markup_removes_rich_tags():
@@ -11,6 +12,33 @@ def test_strip_markup_removes_rich_tags():
     assert _strip_markup("[dim]thinking[/dim]") == "thinking"
     assert _strip_markup("[red]Error: [/red]fail") == "Error: fail"
     assert _strip_markup("plain text") == "plain text"
+
+
+def test_tui_keyword_lexer_tokenization():
+    lexer = TUIKeywordLexer()
+    line_0 = "❯ 💻 [TOOL:bash] python scripts/fetch.py --url https://api.com in 124ms ✨ ✔ SUCCESS"
+    line_1 = "💥 ✖ Error: file not found"
+    doc = Document(f"{line_0}\n{line_1}")
+    getter = lexer.lex_document(doc)
+
+    line0_tokens = getter(0)
+    # Tokens should preserve all original text exactly
+    reconstructed0 = "".join(text for _, text in line0_tokens)
+    assert reconstructed0 == line_0
+
+    # Verify style classes attached
+    styles0 = [style for style, _ in line0_tokens]
+    assert "class:token.prompt" in styles0
+    assert "class:token.tool" in styles0
+    assert "class:token.url" in styles0
+    assert "class:token.metric" in styles0
+    assert "class:token.success" in styles0
+
+    line1_tokens = getter(1)
+    reconstructed1 = "".join(text for _, text in line1_tokens)
+    assert reconstructed1 == "💥 ✖ Error: file not found"
+    styles1 = [style for style, _ in line1_tokens]
+    assert "class:token.error" in styles1
 
 
 def test_vibe_tui_initialization():
@@ -73,13 +101,28 @@ def test_vibe_tui_set_status_updates_input_header():
     assert "45.6 tok/s" in header.value
 
 
+def test_vibe_tui_top_header_state_and_metrics():
+    tui = VibeTUI()
+    tui.set_model("qwen3:8b")
+    tui.set_system_state("BUSY")
+    tui.set_metrics(1200, 48.5, cost=0.0024)
+
+    top_header = tui._get_top_header()
+    assert "VIBE AGENT" in top_header.value
+    assert "qwen3:8b" in top_header.value
+    assert "BUSY" in top_header.value
+    assert "1200 tokens" in top_header.value
+    assert "48.5 tok/s" in top_header.value
+    assert "$0.0024" in top_header.value
+
+
 def test_vibe_tui_has_borders():
     tui = VibeTUI()
     # Should have 2 border windows between 3 tiles
     borders = [
         child
         for child in tui.container.children
-        if isinstance(child, Window) and child.style == "class:border"
+        if isinstance(child, Window) and child.style.startswith("class:border")
     ]
     assert len(borders) == 2
 
@@ -91,9 +134,15 @@ def test_vibe_tui_headers_have_styles():
         for child in tui.container.children
         if isinstance(child, Window) and child.style.startswith("class:header.")
     ]
-    assert len(headers) == 3
+    assert len(headers) == 5
     styles = {h.style for h in headers}
-    assert styles == {"class:header.thinking", "class:header.log", "class:header.input"}
+    assert styles == {
+        "class:header.system",
+        "class:header.thinking",
+        "class:header.log",
+        "class:header.input",
+        "class:header.shortcuts",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -102,24 +151,27 @@ def test_vibe_tui_headers_have_styles():
 
 
 def test_vibe_tui_layout_order():
-    """Layout must be: header, content, border, header, content, border, header, input."""
+    """Layout must be: top_bar, thinking_header, thinking, border, log_header, log, border,
+    input_header, input, shortcuts."""
     tui = VibeTUI()
     children = tui.container.children
-    assert len(children) == 8
+    assert len(children) == 10
 
-    # Headers
-    assert children[0].style == "class:header.thinking"
-    assert children[3].style == "class:header.log"
-    assert children[6].style == "class:header.input"
+    # Headers & Bars
+    assert children[0].style == "class:header.system"
+    assert children[1].style == "class:header.thinking"
+    assert children[4].style == "class:header.log"
+    assert children[7].style == "class:header.input"
+    assert children[9].style == "class:header.shortcuts"
 
     # Content areas (HSplit stores each TextArea's internal window)
-    assert children[1].content.buffer is tui.thinking_area.buffer
-    assert children[4].content.buffer is tui.log_area.buffer
-    assert children[7].content.buffer is tui.input_area.buffer
+    assert children[2].content.buffer is tui.thinking_area.buffer
+    assert children[5].content.buffer is tui.log_area.buffer
+    assert children[8].content.buffer is tui.input_area.buffer
 
     # Borders
-    assert children[2].style == "class:border"
-    assert children[5].style == "class:border"
+    assert children[3].style == "class:border.thinking"
+    assert children[6].style == "class:border.log"
 
 
 def test_vibe_tui_input_area_is_focused():
@@ -151,12 +203,14 @@ def test_vibe_tui_layout_stable_after_many_appends():
         tui.append_log(f"log round {i}")
 
     children = tui.container.children
-    assert len(children) == 8
-    assert children[0].style == "class:header.thinking"
-    assert children[3].style == "class:header.log"
-    assert children[6].style == "class:header.input"
-    assert children[2].style == "class:border"
-    assert children[5].style == "class:border"
+    assert len(children) == 10
+    assert children[0].style == "class:header.system"
+    assert children[1].style == "class:header.thinking"
+    assert children[4].style == "class:header.log"
+    assert children[7].style == "class:header.input"
+    assert children[3].style == "class:border.thinking"
+    assert children[6].style == "class:border.log"
+    assert children[9].style == "class:header.shortcuts"
 
 
 def test_vibe_tui_content_accumulates_in_order():
@@ -228,7 +282,8 @@ def test_vibe_tui_input_header_contains_status_placeholder():
     """Input header must include the status text placeholder."""
     tui = VibeTUI()
     header = tui._get_input_header()
-    assert "Input" in header.value
+    assert "USER PROMPT" in header.value
+    assert "ready" in header.value
     assert "│" in header.value
 
 

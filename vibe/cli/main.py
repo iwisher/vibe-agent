@@ -530,11 +530,13 @@ async def interactive_mode_tui(controller: SessionController) -> None:
                     prefix = ""
 
                 if result.is_status:
+                    tui.set_system_state("BUSY")
                     if result.status_message:
-                        tui.append_log(f"  → {result.status_message}")
+                        tui.append_log(f"  → ⚙️ {result.status_message}")
                     continue
 
                 if result.is_stream_chunk:
+                    tui.set_system_state("THINKING" if result.reasoning_content else "BUSY")
                     if result.reasoning_content and getattr(controller, "show_reasoning", True):
                         tui.append_thinking(result.reasoning_content)
                     if result.response:
@@ -545,41 +547,46 @@ async def interactive_mode_tui(controller: SessionController) -> None:
                     continue
 
                 if result.error:
+                    tui.set_system_state("ERROR")
                     if source in streamed_sources:
                         tui.append_log("")
                         streamed_sources.discard(source)
                     error_msg = str(result.error)
                     if getattr(result, "actionable_hint", None):
-                        error_msg += f"\nHint: {result.actionable_hint}"
-                    tui.append_log(f"{prefix}Error: {error_msg}")
+                        error_msg += f"\n💡 Hint: {result.actionable_hint}"
+                    tui.append_log(f"{prefix}💥 ✖ Error: {error_msg}")
                     continue
 
                 if result.response:
+                    tui.set_system_state("READY")
                     if source in streamed_sources:
                         # Response was already streamed; just end the line.
                         streamed_sources.discard(source)
                         tui.append_log("")
                     else:
-                        tui.append_log(f"{prefix}{result.response}")
+                        tui.append_log(f"{prefix}💬 {result.response}")
 
                 if result.context_truncated:
-                    tui.append_log("(context compacted)")
+                    tui.append_log("🗜️ (context compacted)")
 
                 for tr in result.tool_results:
                     tui.append_log(f"{prefix}{format_tool_result_text(tr)}")
 
                 if result.metrics:
                     m = result.metrics
+                    model = controller.main_loop.llm.model
+                    cost = get_session_cost(controller.main_loop)
                     metrics_str = format_metrics_line(
                         m,
                         model_used=getattr(result, "model_used", None),
-                        current_model=controller.main_loop.llm.model,
-                        session_cost=get_session_cost(controller.main_loop),
+                        current_model=model,
+                        session_cost=cost,
                     )
                     tui.append_log(f"{prefix}{metrics_str}")
 
-                    # Update live status in input tile title
-                    model = controller.main_loop.llm.model
+                    # Update live status across top system bar and input tile title
+                    tui.set_model(model)
+                    tui.set_metrics(m.total_tokens, m.tokens_per_second, cost)
                     tui.set_status(
                         f"{model} │ {m.total_tokens} tokens │ {m.tokens_per_second:.1f} tok/s"
                     )

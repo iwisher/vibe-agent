@@ -192,21 +192,23 @@ def render_tool_result_from_metadata(console: Console, tr: Any) -> None:
 
 
 def format_tool_result_text(tr: Any, max_chars: int = 1000) -> str:
-    """Format a ToolResult as a plain-text block for the TUI log tile.
+    """Format a ToolResult as an emoji-rich text block for the TUI log tile.
 
     Args:
         tr: A ToolResult (duck-typed: success/content/error/metadata).
         max_chars: Truncation limit for the result body.
 
     Returns:
-        A "[Tool OK]/[Tool ERR] name: body" string with truncation applied.
+        A formatted string with emoji status and tool tag.
     """
     meta = getattr(tr, "metadata", None) or {}
     name = meta.get("tool_name") or "tool"
-    status = "OK" if tr.success else "ERR"
+    status_icon = "✨ ✔" if tr.success else "💥 ✖"
     body = tr.content if tr.content else (getattr(tr, "error", None) or "")
     text = truncate_output(stringify_content(body), max_chars)
-    return f"[Tool {status}] {name}: {text}"
+    duration = meta.get("duration_s")
+    dur_str = f" ({duration:.2f}s)" if duration is not None else ""
+    return f"{status_icon} [TOOL:{name}]{dur_str}: {text}"
 
 
 def render_error(

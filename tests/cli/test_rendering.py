@@ -164,14 +164,14 @@ def test_format_tool_result_text_includes_name_and_truncates():
         metadata={"tool_name": "read_file"},
     )
     text = format_tool_result_text(tr, max_chars=100)
-    assert text.startswith("[Tool OK] read_file: " + "x" * 100)
+    assert text.startswith("✨ ✔ [TOOL:read_file]: " + "x" * 100)
     assert "truncated (4900 more chars)" in text
 
 
 def test_format_tool_result_text_error_variant():
     tr = ToolResult(success=False, content=None, error="nope")
     text = format_tool_result_text(tr)
-    assert text.startswith("[Tool ERR] tool: nope")
+    assert text.startswith("💥 ✖ [TOOL:tool]: nope")
 
 
 def test_stringify_content_handles_dicts_and_none():
