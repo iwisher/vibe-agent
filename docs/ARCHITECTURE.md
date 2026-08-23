@@ -236,7 +236,7 @@ Native skill format with TOML frontmatter (`+++` delimited):
     - **Performance:** Singleton loader with 1000-entry LRU cache.
     - **Search:** Vector similarity with keyword pre-filtering to minimize search space.
 *   **Secret Redactor** (`vibe/harness/security/redactor.py`):
-    - Comprehensive 40+ pattern regex redaction layer for stripping credentials (OpenAI, AWS, GitHub, Slack, Google, Stripe, Discord, JWTs, private keys, connection passwords) before they hit any persistence layer (TraceStore, EvalStore, Audit Logs).
+    - Comprehensive pattern regex redaction layer for stripping credentials (OpenAI, AWS, GitHub, Slack, Google, Stripe, Discord, JWTs, private keys, connection passwords, URL query secrets) before they hit any persistence layer (TraceStore, EvalStore, Audit Logs).
 *   **EvalStore:** SQLite storage for `evals` and `eval_results`.
 *   **Tripartite Memory System** (enabled by default):
     - **LLMWiki** (`wiki.py`): Markdown-based long-term memory with strict file locking and parallelized backlink resolution. Uses FlashLLM for contradiction detection. Read-time gating via `is_page_injectable` (status + contradiction flags); archived pages are excluded but never deleted.

@@ -20,7 +20,7 @@ Vibe Agent is an open, visual-first interactive CLI agent harness. It is designe
 - **Multi-Agent Swarm**: DAG-based orchestration of specialized sub-agents (Research, Coding, Critic, Planner) with Pub/Sub message bus, broadcast deduplication, and shared wiki.
 - **React Trace Dashboard**: Web UI for session observability — timeline, wiki graph, telemetry charts, system stats. Dark theme, real-time WebSocket updates.
 - **Preference Layer**: 8 persistent heuristics converting user feedback into agent behavior — tool defaults, approval rules, style, macros, recovery, compaction, provider routing, extraction.
-- **Secret Redaction**: Comprehensive 40+ pattern stripping of API keys (OpenAI, AWS, GitHub, Slack, Google, Stripe, Discord, JWTs, private keys) and passwords from trace stores and logs.
+- **Secret Redaction**: Comprehensive pattern stripping of API keys (OpenAI, AWS, GitHub, Slack, Google, Stripe, Discord, JWTs, private keys) and passwords from trace stores and logs.
 - **Interactive CLI**: Markdown-rendered responses, structured tool-call panels (name, args, duration, truncated output), unified error panels, streaming with native reasoning/thinking display, persistent history, and rich skill/wiki/memory management commands.
 
 ---
