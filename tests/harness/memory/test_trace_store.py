@@ -447,3 +447,64 @@ class TestGetSessionSnippet:
             )
             assert backend.get_session_snippet("s1") == "final answer"
             assert backend.get_session_snippet("missing") is None
+
+    def test_log_and_retrieve_similar_sessions(self, tmp_path):
+        from vibe.harness.memory.trace_store import TraceStore
+
+        db_path = tmp_path / "traces.db"
+        store = TraceStore(db_path=str(db_path))
+
+        store.log_session(
+            session_id="sess-1",
+            messages=[
+                {"role": "user", "content": "how do I write rust code"},
+                {"role": "assistant", "content": "here is some rust"},
+            ],
+            tool_results=[],
+            success=True,
+            model="test-model",
+        )
+
+        store.log_session(
+            session_id="sess-2",
+            messages=[
+                {"role": "user", "content": "what is the weather"},
+            ],
+            tool_results=[],
+            success=True,
+            model="other-model",
+        )
+
+        similar = store.get_similar_sessions("help with rust programming", limit=5)
+        assert len(similar) >= 1
+        assert any(s["id"] == "sess-1" for s in similar)
+        assert not any(s["id"] == "sess-2" for s in similar)
+
+    def test_get_similar_sessions_empty_query(self, tmp_path):
+        from vibe.harness.memory.trace_store import TraceStore
+
+        db_path = tmp_path / "traces.db"
+        store = TraceStore(db_path=str(db_path))
+        assert store.get_similar_sessions("a") == []
+
+    def test_vector_search_fallback(self, tmp_path, monkeypatch):
+        from vibe.harness.memory.trace_store import TraceStore
+
+        db_path = tmp_path / "traces.db"
+        store = TraceStore(db_path=str(db_path))
+
+        # Mock _get_embedding to return None to force fallback
+        monkeypatch.setattr(store, "_get_embedding", lambda x: None)
+
+        store.log_session(
+            session_id="keyword-sess",
+            messages=[{"role": "user", "content": "the quick brown fox"}],
+            tool_results=[],
+            success=True,
+            model="m1",
+        )
+
+        # Should fallback to keyword search
+        similar = store.get_similar_sessions("quick brown fox", limit=5)
+        assert len(similar) == 1
+        assert similar[0]["id"] == "keyword-sess"

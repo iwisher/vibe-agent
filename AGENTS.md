@@ -107,7 +107,7 @@ vibe-agent/
 │   │   ├── wiki.py             # Wiki page CRUD + FlashLLM contradiction
 │   │   ├── pageindex.py        # Vector-based routing index
 │   │   ├── wiki_graph.py       # Entity-relationship graph
-│   │   ├── vector_index.py / vector_index_upgrade.py  # sentence-transformers index
+│   │   ├── vector_index.py     # sentence-transformers index with keyword fallback
 │   │   ├── semantic_dedup.py   # Vector similarity deduplication
 │   │   ├── novelty_thresholds.py / compiler.py / flash_client.py
 │   │   ├── rlm_analyzer.py     # Telemetry-driven LoRA trigger analysis
@@ -135,7 +135,6 @@ vibe-agent/
 │   │       ├── human_approval.py
 │   │       ├── smart_approver.py
 │   │       ├── checkpoints.py  # Rollback point manager
-│   │       ├── redaction.py    # Secret stripping before persistence
 │   │       └── audit.py        # Security event audit log
 │   ├── swarm/                  # Multi-agent orchestration
 │   │   ├── protocol.py         # Pub/Sub EventBroker + MessageBus
@@ -158,10 +157,8 @@ vibe-agent/
 │   │   └── builtin/            # 47 YAML eval case definitions
 │   └── dashboard/              # FastAPI backend + React frontend
 │       ├── server.py           # FastAPI server (WebSocket, token auth)
-│       ├── api.py              # REST endpoint definitions
-│       ├── data.py             # Async wrappers around stores
 │       └── static/             # index.html, app.js, style.css (no build step)
-├── tests/                      # ~1855 test functions across 150+ files; mirrors vibe/ layout
+├── tests/                      # ~1820 test functions across 140+ files; mirrors vibe/ layout
 ├── scripts/
 │   ├── ci_eval_report.py       # CI regression check + markdown report
 │   └── validate_eval_tags.py   # Eval YAML schema validator

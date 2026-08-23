@@ -27,11 +27,11 @@
 - Unreferenced 245 KB screenshot deleted from `docs/assets/`.
 - [x] Cleanups 1-5 executed and verified:
   - 1: Dual dashboard backend consolidated onto `server.py` (`api.py`/`data.py`/`test_api.py` removed; `__init__.py` re-exported).
-  - 2: Duplicate root test files removed (`tests/test_trace_store.py`, `tests/test_session_store.py`).
-  - 3: Secret redaction patterns consolidated into `SecretRedactor` (`vibe/tools/security/redaction.py` removed).
+  - 2: Duplicate root test files merged into `tests/harness/memory/test_session_store.py` (13 CRUD tests) and `tests/harness/memory/test_trace_store.py` (4 similarity tests); root copies removed.
+  - 3: Secret redaction patterns consolidated into `SecretRedactor`; tests mirrored under `tests/harness/security/test_redactor.py` (`vibe/tools/security/redaction.py` removed).
   - 4: Standalone SSRF checker removed (`vibe/tools/security/url_safety.py` removed; CGNAT/Alibaba added to `SSRFGuard`).
   - 5: Vector index upgrade shim removed (`vibe/memory/vector_index_upgrade.py` removed).
-- [x] Open items 1 & 2 resolved: docstring in `reflection.py` updated; redundant local `import json` in `query_loop.py` removed.
+- [x] Repository polish: `AGENTS.md` tree updated to match reality; `.tmp/` scratch files untracked from git; stray `MagicMock/` removed; `reflection.py` docstring updated; redundant local `import json` removed.
 
 ---
 
