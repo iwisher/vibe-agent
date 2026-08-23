@@ -7,6 +7,7 @@ Vibe Agent is an open, visual-first interactive CLI agent harness. It is designe
 - **Multi-Provider Fallback**: Seamlessly switch between OpenAI, Anthropic, Kimi, and other providers (via OpenRouter or Ollama) when primary models fail. Circuit breaker + latency-aware routing + cost tracking.
 - **Streaming Response Support**: Real-time token streaming (`--stream` CLI flag) with native reasoning/thinking token display for Ollama, Anthropic, OpenAI, and OpenRouter.
 - **Secure Tool Execution**: 5-layer security defense (pattern scanning, file safety, human approval, smart approver, checkpoints) with sandboxed Bash and jailed File tools.
+- **Adaptive Dual-Tier Browser Tool**: Built-in browser tool (`browse` / `fetch_url`) featuring Tier 1 fast static HTTP extraction via Docling & stdlib HTML parser, and Tier 2 dynamic headless browser rendering via Playwright for JavaScript SPAs and element interactions (`click`). Includes strict SSRF protection against loopback/private/metadata networks and output truncation.
 - **Context Management**: Automated compaction with 4 strategies (TRUNCATE, LLM_SUMMARIZE, OFFLOAD, DROP), plus adaptive iteration budgets based on task complexity.
 - **Eval-Driven Development**: 50+ built-in eval cases, adversarial testing, multi-model scorecards, soak tests with degradation detection, and factory-per-case isolation.
 - **Phase 2 Skill System**: Native vibe skill format with TOML frontmatter, validation, security scanning, atomic installation, typed variables, orchestration, marketplace, and dynamic tool declaration. **Deterministic script steps** let fixed logic live in bundled `scripts/` executed through the sandboxed Bash tool — the LLM only picks the skill and supplies typed inputs.
@@ -42,7 +43,7 @@ Query Loop State Machine (IDLE → PLANNING → TOOL_EXECUTION → SYNTHESIZING 
   │   ├── Circuit Breaker + Latency Router + Cost Tracker
   │   └── Fallback Chain (auto_fallback across providers)
   ├── Context Planner / Compactor (adaptive budgets)
-  ├── Tool Executor ──► Bash & File (Jailed Sandbox)
+  ├── Tool Executor ──► Bash, File & Browser (Jailed Sandbox & SSRF Defense)
   │                ──► Skill System + Skill-Maker Pipeline
   │                ──► Shadow Workspace (git branch backup)
   ├── Security Coordinator (5-layer defense)

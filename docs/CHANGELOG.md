@@ -37,6 +37,7 @@ Research basis and consolidated plan: `docs/plans/2026-08-22-experience-learning
 
 ### Removed
 - **Dashboard research paper page**: Removed static paper summary endpoints (`/api/research/papers`) and UI components from the dashboard to focus purely on live runtime telemetry, session replays, and wiki graph observability.
+- **Dead `vibe/api` stubs & workspace scratch**: Removed empty `vibe/api` stub directory, tracked `.pyc` bytecode files, and temporary root artifacts.
 
 ### Changed
 - `memory.enabled` and `memory.wiki.auto_extract` now default to `true` (verified to construct with no optional dependencies).

@@ -99,7 +99,6 @@ vibe-agent/
 │   │   └── memory/             # Harness memory layer
 │   │       ├── trace_store.py  # Session persistence (SQLite/JSON/Memory)
 │   │       ├── eval_store.py   # Eval result storage
-│   │       ├── wiki.py         # LLMWiki markdown storage
 │   │       └── session_store.py
 │   ├── memory/                 # Tripartite memory system
 │   │   ├── extraction.py       # Async knowledge extraction
@@ -124,6 +123,7 @@ vibe-agent/
 │   │   └── cli.py              # `vibe evox run` command
 │   ├── tools/                  # Tool system + security
 │   │   ├── bash.py             # Sandboxed Bash (subprocess_exec, no shell)
+│   │   ├── browser.py          # Adaptive Dual-Tier Browser (static/Playwright)
 │   │   ├── file.py             # Jailed File operations
 │   │   ├── tool_system.py      # Tool registry and execution
 │   │   ├── git_shadow.py       # Shadow workspace manager
@@ -156,13 +156,12 @@ vibe-agent/
 │   │   ├── multi_model_runner.py / multi_provider_benchmark.py / model_registry.py
 │   │   ├── judge.py / regression.py / dashboard.py / observability.py
 │   │   └── builtin/            # 47 YAML eval case definitions
-│   ├── dashboard/              # FastAPI backend + React frontend
-│   │   ├── server.py           # FastAPI server (WebSocket, token auth)
-│   │   ├── api.py              # REST endpoint definitions
-│   │   ├── data.py             # Async wrappers around stores
-│   │   └── static/             # index.html, app.js, style.css (no build step)
-│   └── api/routes/             # Additional API route modules (currently stubs)
-├── tests/                      # ~1600 test functions across 150 files; mirrors vibe/ layout
+│   └── dashboard/              # FastAPI backend + React frontend
+│       ├── server.py           # FastAPI server (WebSocket, token auth)
+│       ├── api.py              # REST endpoint definitions
+│       ├── data.py             # Async wrappers around stores
+│       └── static/             # index.html, app.js, style.css (no build step)
+├── tests/                      # ~1855 test functions across 150+ files; mirrors vibe/ layout
 ├── scripts/
 │   ├── ci_eval_report.py       # CI regression check + markdown report
 │   └── validate_eval_tags.py   # Eval YAML schema validator
