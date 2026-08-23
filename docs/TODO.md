@@ -74,3 +74,54 @@
 - [LOW] Behavior change bundled in: `memory.enabled` / `auto_extract` flipped to `True` by default (`vibe/core/config.py:447,509`) — post-session LLM extraction now fires out of the box. Documented, but smuggled into a feature commit.
 - [LOW] Shipped without `highlight=False` in `safe_print_chunk` (fixed next commit, `334909f`).
 - Necessity: NEEDED except `get_session_cost()` + its 4 call sites (UNNEEDED in practice — `CostRouter` is constructed without `spend_tracker`, so it can never return a value) and the cosmetic Rich approval-banner rewrite in `human_approval.py` (QUESTIONABLE — loosely tied to the commit theme).
+
+---
+
+## Repo-Wide Cleanup & Consolidation Plan (Critique & Actions)
+
+### 1. Dual Dashboard Backend Consolidation
+- **Status**: Ready for execution.
+- **Context**: `vibe/dashboard/server.py` (~984 lines) is the production FastAPI + WebSocket server used by `vibe dashboard start`. `vibe/dashboard/api.py` and `vibe/dashboard/data.py` (~412 lines) duplicate dataclasses and provide an unreferenced secondary API.
+- **Critique & Safety**:
+  - `vibe/dashboard/__init__.py` currently imports `create_app` from `api.py`. Must be updated to export `app` from `server.py`.
+  - `tests/test_dashboard_api.py` already thoroughly tests `server.py`. `tests/dashboard/test_api.py` tests only the dead `api.py`.
+- **Action**:
+  - Delete `vibe/dashboard/api.py` and `vibe/dashboard/data.py`.
+  - Delete `tests/dashboard/test_api.py`.
+  - Update `vibe/dashboard/__init__.py` to export `app` from `server.py`.
+
+### 2. Duplicate Root Test Files Pruning
+- **Status**: Ready for execution.
+- **Context**: Root test files `tests/test_trace_store.py` (303 lines) and `tests/test_session_store.py` (220 lines) are legacy duplicates of `tests/harness/memory/test_trace_store.py` (422 lines) and `tests/harness/memory/test_session_store.py` (363 lines).
+- **Critique & Safety**:
+  - Diff verification confirms `tests/harness/memory/` test files are strict supersets with newer tests (`TestSimilarSessionsSuccessFilter`, `TestGetSessionSnippet`, TTL cleanup).
+  - Deleting root duplicates eliminates double execution in CI and conforms to the mirrored package layout.
+- **Action**:
+  - Delete `tests/test_trace_store.py` and `tests/test_session_store.py`.
+
+### 3. Secret Redaction Pattern Consolidation
+- **Status**: Ready for execution.
+- **Context**: `vibe/harness/security/redactor.py` (`SecretRedactor`) is active in runtime (`session_store.py`, `trace_store.py`), but only has 9 regex patterns. `vibe/tools/security/redaction.py` has 40+ rich patterns (AWS, Slack, GitHub, JWT, Stripe, SSH) but is disconnected from runtime.
+- **Critique & Safety**:
+  - Rather than blindly deleting `redaction.py` (which would throw away useful security patterns), migrate the comprehensive 40+ regex patterns into `vibe/harness/security/redactor.py`.
+  - This strengthens secret redaction across all stored session checkpoints and traces.
+- **Action**:
+  - Migrate patterns from `vibe/tools/security/redaction.py` into `vibe/harness/security/redactor.py`.
+  - Delete disconnected `vibe/tools/security/redaction.py` and its test once consolidated.
+
+### 4. Standalone SSRF / URL Safety Checker Consolidation
+- **Status**: Ready for execution.
+- **Context**: `SSRFGuard` in `vibe/tools/browser.py` is the hardened, actively tested SSRF layer. `vibe/tools/security/url_safety.py` (`URLSafetyChecker`) is a disconnected utility only used in its own test.
+- **Critique & Safety**:
+  - `SSRFGuard` already handles DNS resolution, IPv6-mapped addresses, private/loopback CIDRs, and redirect chains.
+  - Adding any remaining cloud metadata ranges (e.g. `100.100.100.200` Alibaba metadata) to `SSRFGuard` ensures zero coverage loss.
+- **Action**:
+  - Ensure `SSRFGuard` covers all cloud metadata IPs, then remove `vibe/tools/security/url_safety.py` and `tests/tools/security/test_url_safety.py`.
+
+### 5. Vector Index Upgrade Shim Pruning
+- **Status**: Ready for execution.
+- **Context**: `vibe/memory/vector_index_upgrade.py` (`UpgradedVectorIndex`) was a prototype shim before `get_vector_index()` in `vibe/memory/vector_index.py` was introduced.
+- **Critique & Safety**:
+  - `PageIndex`, `wiki.py`, and `query_loop_factory.py` all use `vibe/memory/vector_index.py`.
+- **Action**:
+  - Delete `vibe/memory/vector_index_upgrade.py` and `tests/memory/test_vector_index_upgrade.py`.
