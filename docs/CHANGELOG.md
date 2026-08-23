@@ -17,7 +17,8 @@ Research basis and consolidated plan: `docs/plans/2026-08-22-experience-learning
 - **EvoX harness target** (`vibe/evox/harness_target.py`, `vibe evox run --target harness`): bounded evolution of harness config knobs + prompt variants scored by the eval suite, with a >5% regression-gate acceptance and full JSONL provenance (Meta-Harness lineage).
 - **RLM failure relabeling** (`rlm.relabel_failures`): failed sessions are relabeled into achievable-goal training pairs (AgentHER-style, confidence-gated, provenance kept) instead of discarded.
 
-### Added — Deterministic Skill Scripts & CLI Rendering
+### Added — Deterministic Skill Scripts, Browser Tool & CLI Rendering
+- **Adaptive Dual-Tier Browser Tool** (`vibe/tools/browser.py`, tool: `browse`): Built-in browser tool supporting fast static HTTP extraction via Docling and stdlib HTML parser (Tier 1), alongside optional headless Playwright browser rendering and interaction (Tier 2). Includes SSRF protection (blocking loopback, RFC 1918, and metadata IPs) and context payload truncation.
 - **Skill script steps**: `script = "scripts/x.py"` steps executed through the sandboxed Bash tool with typed, `shlex`-quoted variables and path jailing; `json_has_keys` verification; validator scans script contents. `skills/stock-analysis` converted to an executable skill (Anthropic Agent Skills / CodeAct pattern).
 - **CLI rendering** (`vibe/cli/rendering.py`): markdown-rendered responses, structured tool panels (name/args/duration, truncated output), unified error panels, markup-safe streaming; tool metadata stamped on ToolResults.
 
@@ -40,7 +41,7 @@ Research basis and consolidated plan: `docs/plans/2026-08-22-experience-learning
 ### Changed
 - `memory.enabled` and `memory.wiki.auto_extract` now default to `true` (verified to construct with no optional dependencies).
 - `SkillParser` no longer drops `[[variables]]`; `Skill` carries `skill_dir`.
-- Test suite: 1647 → 1843 tests.
+- Test suite: 1647 → 1855 tests.
 
 ---
 

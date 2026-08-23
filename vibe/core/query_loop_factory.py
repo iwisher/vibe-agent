@@ -12,6 +12,7 @@ from vibe.harness.constraints import HookPipeline
 from vibe.harness.instructions import InstructionLoader, InstructionSet
 from vibe.harness.planner import HybridPlanner
 from vibe.tools.bash import BashSandbox, BashTool
+from vibe.tools.browser import BrowserTool
 from vibe.tools.file import ReadFileTool, WriteFileTool
 from vibe.tools.skill_install import SkillInstallExecutableTool, SkillListTool
 from vibe.tools.skill_install_prompt import PromptSkillInstallTool
@@ -122,6 +123,7 @@ class QueryLoopFactory:
         )
         tool_system.register_tool(ReadFileTool())
         tool_system.register_tool(WriteFileTool())
+        tool_system.register_tool(BrowserTool())
         tool_system.register_tool(SkillInstallExecutableTool())
         tool_system.register_tool(SkillListTool())
         tool_system.register_tool(PromptSkillInstallTool())
