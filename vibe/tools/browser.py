@@ -57,6 +57,24 @@ class SSRFGuard:
     ]
 
     @classmethod
+    def _is_ip_blocked(cls, ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+        """Check if an IP address is blocked."""
+        # Unmap IPv6-mapped IPv4 addresses (e.g. ::ffff:127.0.0.1 -> 127.0.0.1)
+        if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+            ip = ip.ipv4_mapped
+
+        if (
+            not ip.is_global
+            or ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_unspecified
+        ):
+            return True
+        return any(ip in net for net in cls.FORBIDDEN_NETWORKS)
+
+    @classmethod
     def is_safe(cls, url: str) -> bool:
         """Return True if URL is safe to fetch, False if blocked by SSRF policy."""
         try:
@@ -75,7 +93,7 @@ class SSRFGuard:
             # Check if host is direct IP address
             try:
                 ip = ipaddress.ip_address(hostname)
-                return not any(ip in net for net in cls.FORBIDDEN_NETWORKS)
+                return not cls._is_ip_blocked(ip)
             except ValueError:
                 pass  # Hostname is a domain name, resolve via DNS
 
@@ -85,13 +103,18 @@ class SSRFGuard:
             for _, _, _, _, sockaddr in addr_info:
                 ip_str = sockaddr[0]
                 ip = ipaddress.ip_address(ip_str)
-                if any(ip in net for net in cls.FORBIDDEN_NETWORKS):
+                if cls._is_ip_blocked(ip):
                     return False
 
             return True
         except Exception as e:
             logger.debug(f"SSRF validation error for {url}: {e}")
             return False
+
+    @classmethod
+    async def is_safe_async(cls, url: str) -> bool:
+        """Async version of is_safe wrapping DNS resolution in a worker thread."""
+        return await asyncio.to_thread(cls.is_safe, url)
 
 
 def is_safe_url(url: str) -> bool:
@@ -252,9 +275,9 @@ async def _run_playwright(url: str, action: str = "read", selector: str | None =
 class BrowserTool(Tool):
     """Adaptive Dual-Tier Browser Tool supporting fast static reads and dynamic actions."""
 
-    def __init__(self) -> None:
+    def __init__(self, name: str = "browse") -> None:
         super().__init__(
-            name="browse",
+            name=name,
             description=(
                 "Fetch, inspect, or interact with web pages and online documents "
                 "(HTML, Markdown) using fast static parsing or dynamic headless browser rendering "
@@ -262,6 +285,12 @@ class BrowserTool(Tool):
             ),
         )
         self._extractor = StaticHtmlExtractor()
+        self._docling_converter = None
+        if HAS_DOCLING and DocumentConverter is not None:
+            try:
+                self._docling_converter = DocumentConverter()
+            except Exception as e:
+                logger.debug(f"Failed to initialize shared Docling converter: {e}")
 
     def get_schema(self) -> dict[str, Any]:
         return {
@@ -321,6 +350,16 @@ class BrowserTool(Tool):
                 ),
             )
 
+        if mode == "static" and action == "click":
+            return ToolResult(
+                success=False,
+                content=None,
+                error=(
+                    "Cannot perform interactive 'click' action in 'static' mode. "
+                    "Use mode='dynamic' or mode='auto'."
+                ),
+            )
+
         # Step 2: Determine Tier
         use_dynamic = mode == "dynamic" or (mode == "auto" and action == "click")
 
@@ -363,29 +402,59 @@ class BrowserTool(Tool):
                             error=f"Playwright interaction error: {e}",
                         )
 
-        # Step 4: Static Execution (Tier 1)
+        # Step 4: Static Execution (Tier 1) with redirect SSRF validation
         try:
             headers = {
                 "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
             }
             async with httpx.AsyncClient(
                 timeout=15.0,
-                follow_redirects=True,
+                follow_redirects=False,
                 headers=headers,
             ) as client:
-                response = await client.get(url)
-                if response.status_code >= 400:
-                    phrase = response.reason_phrase or "Request failed"
+                current_url = url
+                redirect_count = 0
+                max_redirects = 5
+                response = None
+
+                while True:
+                    if not is_safe_url(current_url):
+                        return ToolResult(
+                            success=False,
+                            content=None,
+                            error=(
+                                f"Blocked by safety policy (SSRF): Redirect URL '{current_url}' "
+                                "resolves to a local/private network or disallowed scheme."
+                            ),
+                        )
+                    response = await client.get(current_url)
+                    if response.is_redirect and "location" in response.headers:
+                        redirect_count += 1
+                        if redirect_count > max_redirects:
+                            return ToolResult(
+                                success=False,
+                                content=None,
+                                error=f"Too many redirects (exceeded limit of {max_redirects})",
+                            )
+                        from urllib.parse import urljoin
+
+                        current_url = urljoin(current_url, response.headers["location"])
+                        continue
+                    break
+
+                if response is None or response.status_code >= 400:
+                    phrase = (response.reason_phrase if response else None) or "Request failed"
+                    status = response.status_code if response else 500
                     return ToolResult(
                         success=False,
                         content=None,
-                        error=f"HTTP {response.status_code}: {phrase}",
+                        error=f"HTTP {status}: {phrase}",
                     )
 
                 # Try Docling if available on fetched content stream
                 markdown_content: str = ""
                 parser_used = "stdlib"
-                if HAS_DOCLING and DocumentConverter is not None:
+                if self._docling_converter is not None:
                     try:
                         import io
 
@@ -393,8 +462,7 @@ class BrowserTool(Tool):
 
                         content_io = io.BytesIO(response.content)
                         stream = DocumentStream(name="page.html", stream=content_io)
-                        converter = DocumentConverter()
-                        conv_res = await asyncio.to_thread(converter.convert, stream)
+                        conv_res = await asyncio.to_thread(self._docling_converter.convert, stream)
                         markdown_content = conv_res.document.export_to_markdown()
                         parser_used = "docling"
                     except Exception as e:
@@ -414,10 +482,17 @@ class BrowserTool(Tool):
                     metadata={
                         "tier": "static",
                         "parser": parser_used,
-                        "url": url,
+                        "url": current_url,
                         "chars": len(markdown_content),
                         "duration_s": duration,
                     },
                 )
         except Exception as e:
             return ToolResult(success=False, content=None, error=f"Failed to fetch '{url}': {e}")
+
+
+class FetchUrlTool(BrowserTool):
+    """Alias for BrowserTool named 'fetch_url'."""
+
+    def __init__(self) -> None:
+        super().__init__(name="fetch_url")

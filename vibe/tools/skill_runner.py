@@ -263,8 +263,7 @@ class SkillRunnerTool(Tool):
             if var_name in variables:
                 return render(variables[var_name])
             if default is not None:
-                # Template-author-provided default: static content, not quoted.
-                return default
+                return render(default)
             # Not in variables and no default — leave as-is (may be shell env var)
             return match.group(0)
 

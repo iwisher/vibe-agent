@@ -363,8 +363,7 @@ class QueryLoop:
         # Per-run usage-feedback attribution starts empty
         self._injected_lesson_ids = []
         # Per-run pivotal retry bookkeeping starts empty (Workstream C).
-        # _pivotal_turn itself is intentionally NOT reset here: it is a sticky
-        # annotation consumed by post-run reflection, and may be set externally.
+        # _pivotal_turn is cleared after reflection consumes it.
         self._pivotal_failure_counts = {}
         self._pivotal_retry_counts = {}
         if self._session_id is None:
@@ -1574,12 +1573,14 @@ class QueryLoop:
                 list(getattr(self, "_injected_lesson_ids", None) or []), state
             )
             query = next((m.content for m in messages if m.role == "user" and m.content), "")
+            pivotal_turn = getattr(self, "_pivotal_turn", None)
+            self._pivotal_turn = None
             pages = await reflector.reflect(
                 query=query,
                 messages=messages,
                 state=state,
                 session_id=session_id,
-                pivotal_turn=getattr(self, "_pivotal_turn", None),
+                pivotal_turn=pivotal_turn,
             )
             if pages and self.logger:
                 self.logger.info(f"Trajectory reflection wrote {len(pages)} lesson page(s)")

@@ -124,6 +124,9 @@ class QueryLoopFactory:
         tool_system.register_tool(ReadFileTool())
         tool_system.register_tool(WriteFileTool())
         tool_system.register_tool(BrowserTool())
+        from vibe.tools.browser import FetchUrlTool
+
+        tool_system.register_tool(FetchUrlTool())
         tool_system.register_tool(SkillInstallExecutableTool())
         tool_system.register_tool(SkillListTool())
         tool_system.register_tool(PromptSkillInstallTool())
@@ -263,12 +266,13 @@ class QueryLoopFactory:
 
                     if not isinstance(sm_cfg, SkillMakerConfig):
                         sm_cfg = SkillMakerConfig(**(sm_cfg if isinstance(sm_cfg, dict) else {}))
+                    approval_gate = CLIApprovalGate()
                     skill_maker = SkillMakerPipeline(
                         config=sm_cfg,
                         wiki=wiki,
                         llm_client=llm,
-                        skill_installer=SkillInstaller(),
-                        approval_gate=CLIApprovalGate(),
+                        skill_installer=SkillInstaller(approval_gate=approval_gate),
+                        approval_gate=approval_gate,
                     )
                     kwargs["skill_maker"] = skill_maker
                 except Exception as e:

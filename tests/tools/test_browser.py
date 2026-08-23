@@ -206,10 +206,45 @@ async def test_browser_tool_dynamic_execution_with_mock_playwright():
                 assert result.metadata.get("tier") == "dynamic"
 
 
+def test_ssrf_guard_blocks_ipv6_mapped_ipv4():
+    # IPv6 mapped IPv4 loopback & private
+    assert not is_safe_url("http://[::ffff:127.0.0.1]/secret")
+    assert not is_safe_url("http://[::ffff:169.254.169.254]/latest/meta-data")
+    assert not is_safe_url("http://[::ffff:192.168.1.1]/admin")
+
+
+@pytest.mark.asyncio
+async def test_browser_tool_blocks_redirect_to_private_ip():
+    tool = BrowserTool()
+    # Initial request redirects to 169.254.169.254
+    with patch("httpx.AsyncClient.get") as mock_get:
+        redirect_response = MagicMock()
+        redirect_response.is_redirect = True
+        redirect_response.headers = {"location": "http://169.254.169.254/latest/meta-data"}
+        mock_get.return_value = redirect_response
+
+        # Allow initial URL but redirect should be blocked by SSRFGuard
+        with patch("socket.getaddrinfo") as mock_dns:
+            mock_dns.return_value = [(None, None, None, None, ("93.184.216.34", 80))]
+            result = await tool.execute(url="https://example.com/redirect-to-metadata")
+            assert not result.success
+            assert "Blocked by safety policy (SSRF)" in result.error
+
+
+@pytest.mark.asyncio
+async def test_browser_tool_static_mode_click_error():
+    tool = BrowserTool()
+    with patch("vibe.tools.browser.is_safe_url", return_value=True):
+        result = await tool.execute(url="https://example.com", mode="static", action="click")
+        assert not result.success
+        assert "Cannot perform interactive 'click' action in 'static' mode" in result.error
+
+
 def test_browser_tool_registered_in_factory():
-    """QueryLoopFactory must register 'browse' in default ToolSystem."""
+    """QueryLoopFactory must register 'browse' and 'fetch_url' in default ToolSystem."""
     from vibe.core.query_loop_factory import QueryLoopFactory
 
     factory = QueryLoopFactory(base_url="http://localhost:11434/v1", model="test-model")
     tool_system = factory.create_tool_system()
     assert "browse" in tool_system.list_tools()
+    assert "fetch_url" in tool_system.list_tools()

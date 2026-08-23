@@ -1416,13 +1416,21 @@ def wiki_edit(
     console.print(f"[green]✓[/green] Updated: [bold]{updated.title}[/bold]")
 
 
+def _get_pageindex() -> "Any":
+    """Get a configured PageIndex instance."""
+    from vibe.memory.pageindex import PageIndex
+
+    idx_path = "~/.vibe/memory/index.json"
+    if hasattr(DEFAULT_CONFIG, "memory") and hasattr(DEFAULT_CONFIG.memory, "pageindex"):
+        idx_path = getattr(DEFAULT_CONFIG.memory.pageindex, "index_path", idx_path)
+    return PageIndex(index_path=idx_path)
+
+
 @wiki_index_app.command("rebuild")
 def wiki_index_rebuild():
     """Rebuild the wiki page index (full rebuild)."""
-    from vibe.memory.pageindex import PageIndex
-
     wiki = _get_wiki()
-    pageindex = PageIndex(index_path="~/.vibe/memory/index.json")
+    pageindex = _get_pageindex()
     console.print("Rebuilding wiki index...")
     pageindex.rebuild(wiki, incremental=False)
     console.print("[green]✓[/green] Wiki index rebuilt.")
@@ -1456,10 +1464,9 @@ def wiki_compact():
 
     from vibe.core.query_loop_factory import QueryLoopFactory
     from vibe.memory.compaction import LessonCompactor
-    from vibe.memory.pageindex import PageIndex
 
     wiki = _get_wiki()
-    pageindex = PageIndex(index_path="~/.vibe/memory/index.json")
+    pageindex = _get_pageindex()
     # Reuse the factory to get an LLM client for synthesis
     factory = QueryLoopFactory(
         base_url=DEFAULT_CONFIG.llm.base_url,

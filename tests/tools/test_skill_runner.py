@@ -473,3 +473,9 @@ class TestStockAnalysisSkillIntegration:
 
         assert not result.success
         assert "Variable validation failed" in (result.error or "")
+
+    def test_substitute_vars_quotes_defaults_with_spaces(self):
+        # When quote=True, a default containing spaces should be safely quoted
+        cmd = "python run.py --title ${TITLE:-Default Title With Spaces}"
+        res = SkillRunnerTool._substitute_vars(cmd, {}, quote=True)
+        assert res == "python run.py --title 'Default Title With Spaces'"
