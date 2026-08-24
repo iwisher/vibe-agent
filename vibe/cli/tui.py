@@ -157,10 +157,10 @@ class VibeTUI:
     def __init__(self, history_path: str | None = None) -> None:
         self.lexer = TUIKeywordLexer()
 
-        # Display areas (read-only TextArea handles scrolling automatically)
+        # Display areas (read-only TextArea with scrolling and focus support)
         self.thinking_area = TextArea(
             read_only=True,
-            focusable=False,
+            focusable=True,
             wrap_lines=True,
             scrollbar=True,
             lexer=self.lexer,
@@ -168,7 +168,7 @@ class VibeTUI:
         )
         self.log_area = TextArea(
             read_only=True,
-            focusable=False,
+            focusable=True,
             wrap_lines=True,
             scrollbar=True,
             lexer=self.lexer,
@@ -226,7 +226,7 @@ class VibeTUI:
                 Window(
                     FormattedTextControl(
                         " 🚪 [Ctrl-C] Exit  │  📜 [↑/↓] History  │  🧹 [/clear] Reset  │"
-                        "  🔍 [/verbose]  │  ⚙️ [/bg]  │  ⤢ [Ctrl-T] Expand "
+                        "  ⤢ [Ctrl-T] Expand  │  📜 [PgUp/PgDn] Log  │  💭 [Alt-PgUp/PgDn] Thinking"
                     ),
                     height=1,
                     style="class:header.shortcuts",
@@ -261,6 +261,26 @@ class VibeTUI:
     def _toggle_input_expanded(self) -> None:
         """Toggle the input area between 1 line and half-screen height."""
         self._input_expanded = not self._input_expanded
+        self._invalidate()
+
+    def scroll_log_up(self, count: int = 10) -> None:
+        """Scroll the working log area upwards."""
+        self.log_area.buffer.cursor_up(count=count)
+        self._invalidate()
+
+    def scroll_log_down(self, count: int = 10) -> None:
+        """Scroll the working log area downwards."""
+        self.log_area.buffer.cursor_down(count=count)
+        self._invalidate()
+
+    def scroll_thinking_up(self, count: int = 10) -> None:
+        """Scroll the agent thinking area upwards."""
+        self.thinking_area.buffer.cursor_up(count=count)
+        self._invalidate()
+
+    def scroll_thinking_down(self, count: int = 10) -> None:
+        """Scroll the agent thinking area downwards."""
+        self.thinking_area.buffer.cursor_down(count=count)
         self._invalidate()
 
     def _history_backward(self) -> None:
@@ -302,12 +322,73 @@ class VibeTUI:
         @kb.add("up")
         @kb.add("c-p")
         def _(event: Any) -> None:
-            self._history_backward()
+            if self.layout.has_focus(self.log_area):
+                self.scroll_log_up(count=1)
+            elif self.layout.has_focus(self.thinking_area):
+                self.scroll_thinking_up(count=1)
+            else:
+                self._history_backward()
 
         @kb.add("down")
         @kb.add("c-n")
         def _(event: Any) -> None:
-            self._history_forward()
+            if self.layout.has_focus(self.log_area):
+                self.scroll_log_down(count=1)
+            elif self.layout.has_focus(self.thinking_area):
+                self.scroll_thinking_down(count=1)
+            else:
+                self._history_forward()
+
+        @kb.add("pageup")
+        def _(event: Any) -> None:
+            if self.layout.has_focus(self.thinking_area):
+                self.scroll_thinking_up(count=10)
+            else:
+                self.scroll_log_up(count=10)
+
+        @kb.add("pagedown")
+        def _(event: Any) -> None:
+            if self.layout.has_focus(self.thinking_area):
+                self.scroll_thinking_down(count=10)
+            else:
+                self.scroll_log_down(count=10)
+
+        @kb.add("s-pageup")
+        @kb.add("c-pageup")
+        @kb.add("escape", "pageup")
+        @kb.add("c-u")
+        def _(event: Any) -> None:
+            self.scroll_thinking_up(count=10)
+
+        @kb.add("s-pagedown")
+        @kb.add("c-pagedown")
+        @kb.add("escape", "pagedown")
+        @kb.add("c-d")
+        def _(event: Any) -> None:
+            self.scroll_thinking_down(count=10)
+
+        @kb.add("tab")
+        def _(event: Any) -> None:
+            if self.layout.has_focus(self.input_area):
+                self.layout.focus(self.log_area)
+            elif self.layout.has_focus(self.log_area):
+                self.layout.focus(self.thinking_area)
+            else:
+                self.layout.focus(self.input_area)
+
+        @kb.add("s-tab")
+        def _(event: Any) -> None:
+            if self.layout.has_focus(self.input_area):
+                self.layout.focus(self.thinking_area)
+            elif self.layout.has_focus(self.thinking_area):
+                self.layout.focus(self.log_area)
+            else:
+                self.layout.focus(self.input_area)
+
+        @kb.add("escape")
+        def _(event: Any) -> None:
+            if not self.layout.has_focus(self.input_area):
+                self.layout.focus(self.input_area)
 
         @kb.add("c-t")
         def _(event: Any) -> None:
@@ -315,6 +396,9 @@ class VibeTUI:
 
         @kb.add("enter")
         def _(event: Any) -> None:
+            if not self.layout.has_focus(self.input_area):
+                self.layout.focus(self.input_area)
+                return
             text = self.input_area.text.strip()
             self._history_index = None
             self._current_input = ""
@@ -326,7 +410,7 @@ class VibeTUI:
         @kb.add("escape", "enter")
         def _(event: Any) -> None:
             # Alt-Enter inserts a newline while the input area is expanded.
-            if self._input_expanded:
+            if self._input_expanded and self.layout.has_focus(self.input_area):
                 self.input_area.buffer.insert_text("\n")
 
         return kb

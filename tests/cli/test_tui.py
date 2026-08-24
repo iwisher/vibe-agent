@@ -512,10 +512,23 @@ def test_vibe_tui_history_navigation_shortcuts():
 
 
 def _find_binding(tui, *key_values):
+    aliases = {
+        "tab": ("tab", "c-i"),
+        "s-tab": ("s-tab", "c-y", "backtab"),
+        "enter": ("enter", "c-m"),
+    }
     kb = tui.container.key_bindings
     for b in kb.bindings:
         keys = tuple(k.value for k in b.keys)
-        if keys == key_values:
+        if len(keys) != len(key_values):
+            continue
+        matched = True
+        for k_val, req in zip(keys, key_values):
+            req_set = aliases.get(req, (req,))
+            if k_val != req and k_val not in req_set:
+                matched = False
+                break
+        if matched:
             return b
     return None
 
@@ -599,3 +612,108 @@ def test_vibe_tui_footer_mentions_expand_shortcut():
     tui = VibeTUI()
     footer = tui.container.children[-1]
     assert "Ctrl-T" in footer.content.text
+    assert "PgUp/PgDn" in footer.content.text
+
+
+# ---------------------------------------------------------------------------
+# Section scrolling and focus navigation (PageUp / PageDown / Tab)
+# ---------------------------------------------------------------------------
+
+
+def test_vibe_tui_scroll_log_up_down():
+    tui = VibeTUI()
+    for i in range(30):
+        tui.append_log(f"log line {i}")
+    bottom_pos = tui.log_area.buffer.cursor_position
+    assert bottom_pos > 0
+
+    # Scroll up moves cursor position backwards
+    tui.scroll_log_up(count=10)
+    assert tui.log_area.buffer.cursor_position < bottom_pos
+    scrolled_pos = tui.log_area.buffer.cursor_position
+
+    # Scroll down moves cursor position forwards
+    tui.scroll_log_down(count=5)
+    assert tui.log_area.buffer.cursor_position > scrolled_pos
+
+
+def test_vibe_tui_scroll_thinking_up_down():
+    tui = VibeTUI()
+    for i in range(30):
+        tui.append_thinking(f"thinking trace {i}\n")
+    bottom_pos = tui.thinking_area.buffer.cursor_position
+    assert bottom_pos > 0
+
+    # Scroll up moves cursor position backwards
+    tui.scroll_thinking_up(count=10)
+    assert tui.thinking_area.buffer.cursor_position < bottom_pos
+    scrolled_pos = tui.thinking_area.buffer.cursor_position
+
+    # Scroll down moves cursor position forwards
+    tui.scroll_thinking_down(count=5)
+    assert tui.thinking_area.buffer.cursor_position > scrolled_pos
+
+
+def test_vibe_tui_pageup_pagedown_keybindings():
+    tui = VibeTUI()
+    for i in range(30):
+        tui.append_log(f"log entry {i}")
+
+    pageup = _find_binding(tui, "pageup")
+    pagedown = _find_binding(tui, "pagedown")
+    assert pageup is not None
+    assert pagedown is not None
+
+    bottom_pos = tui.log_area.buffer.cursor_position
+    pageup.handler(None)
+    assert tui.log_area.buffer.cursor_position < bottom_pos
+
+    scrolled_pos = tui.log_area.buffer.cursor_position
+    pagedown.handler(None)
+    assert tui.log_area.buffer.cursor_position > scrolled_pos
+
+
+def test_vibe_tui_thinking_scroll_keybindings():
+    tui = VibeTUI()
+    for i in range(30):
+        tui.append_thinking(f"thought {i}\n")
+
+    alt_pageup = _find_binding(tui, "escape", "pageup")
+    assert alt_pageup is not None
+
+    bottom_pos = tui.thinking_area.buffer.cursor_position
+    alt_pageup.handler(None)
+    assert tui.thinking_area.buffer.cursor_position < bottom_pos
+
+
+def test_vibe_tui_tab_focus_cycle_and_escape():
+    tui = VibeTUI()
+    tab = _find_binding(tui, "tab")
+    s_tab = _find_binding(tui, "s-tab")
+    escape = _find_binding(tui, "escape")
+    assert tab is not None
+    assert s_tab is not None
+    assert escape is not None
+
+    # Initial focus is input_area
+    assert tui.layout.has_focus(tui.input_area)
+
+    # Tab: input -> log
+    tab.handler(None)
+    assert tui.layout.has_focus(tui.log_area)
+
+    # Tab: log -> thinking
+    tab.handler(None)
+    assert tui.layout.has_focus(tui.thinking_area)
+
+    # Tab: thinking -> input
+    tab.handler(None)
+    assert tui.layout.has_focus(tui.input_area)
+
+    # Shift-Tab: input -> thinking
+    s_tab.handler(None)
+    assert tui.layout.has_focus(tui.thinking_area)
+
+    # Escape: returns immediately to input
+    escape.handler(None)
+    assert tui.layout.has_focus(tui.input_area)

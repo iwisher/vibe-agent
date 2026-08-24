@@ -80,9 +80,11 @@
   - `🚪 [Ctrl-C] Exit`
   - `📜 [↑/↓] History`
   - `🧹 [/clear] Reset`
-  - `🔍 [/verbose] Details`
-  - `⚙️ [/bg] Background`
   - `⤢ [Ctrl-T] Expand/Collapse` input tile (max 50% of screen height)
+  - `📜 [PgUp/PgDn] Scroll Log` (scrolls working log history)
+  - `💭 [Alt-PgUp/PgDn] Scroll Thinking` (or `Shift-PgUp/PgDn`, `Ctrl-U`/`Ctrl-D`)
+  - `⇥ [Tab / Shift-Tab] Focus Pane` (cycle focus between input, log, and thinking panes)
+  - `⎋ [Escape] Focus Input` (instantly return focus to user prompt)
   - `⏎ [Alt-Enter] Newline` while input is expanded
 
 ---
@@ -98,11 +100,11 @@ Custom prompt_toolkit `Lexer` that returns token styling tuples `(style_str, tex
 
 ### 4.2 TUI Structure (`VibeTUI`)
 - `top_system_bar`: Dynamic FormattedTextControl showing App Title, Model, State, Tokens/Speed.
-- `thinking_area`: `TextArea` with `TUIKeywordLexer` and violet header.
+- `thinking_area`: `TextArea` with `TUIKeywordLexer`, violet header, scroll support (`scroll_thinking_up`/`down`), and focusable navigation.
 - Labeled section dividers (`╞══ … ══╡`): the log divider is static; the input divider
   is dynamic (status, queue preview, expand/collapse hint). Each seam between tiles is a
   labeled divider, so section boundaries survive long sessions.
-- `log_area`: `TextArea` with `TUIKeywordLexer` and cyan/emerald divider.
+- `log_area`: `TextArea` with `TUIKeywordLexer`, cyan/emerald divider, scroll support (`scroll_log_up`/`down`), and focusable navigation.
 - `input_area`: multiline `TextArea` with prompt `❯ ` and amber divider. Height is a
   callable (`_input_height`) re-evaluated every render: 1 line collapsed, half the
   terminal rows when expanded via `Ctrl-T` (never more than 50% of the screen).
@@ -114,12 +116,14 @@ Custom prompt_toolkit `Lexer` that returns token styling tuples `(style_str, tex
 ## 5. Experience Changelog & Versioning
 
 - **v0.5.2**:
+  - Full scrolling support for thinking and log histories: `PgUp`/`PgDn` scrolls the working log; `Alt-PgUp`/`Alt-PgDn` (or `Shift-PgUp`/`Shift-PgDn`, `Ctrl-U`/`Ctrl-D`) scrolls agent thinking.
+  - Tab focus navigation: `Tab` / `Shift-Tab` cycles active focus across Input, Log, and Thinking panes; `Escape` returns focus to input prompt.
   - Section seams are now labeled unicode dividers (`╞══ ⚡ 🛠️ WORKING LOG … ══╡`),
     merging the old separate header + plain border lines so boundaries stay obvious
     after long sessions.
   - Input tile is expandable: `Ctrl-T` toggles between 1 line and 50% of the screen
     height (dynamic, tracks resizes); `Alt-Enter` inserts newlines while expanded.
-  - Footer shortcut guide now includes the expand toggle.
+  - Footer shortcut guide updated with expand toggle and pane scroll shortcuts.
 - **v0.5.1**:
   - Modernized TUI with full Obsidian Blue theme.
   - Added emoji-rich top status bar and bottom shortcut guide.

@@ -26,7 +26,8 @@ All notable changes to Vibe Agent will be documented in this file.
 
 ### TUI
 - **Expandable Input Area** (`vibe/cli/tui.py`): The prompt tile is now multiline and expands on demand — `Ctrl-T` toggles between 1 line and 50% of the terminal height (recomputed every render, so it tracks resizes); `Alt-Enter` inserts a newline while expanded; `Enter` always submits.
-- **Labeled Section Dividers**: Replaced separate header lines + plain `═` borders with labeled unicode dividers (`╞══ ⚡ 🛠️ WORKING LOG & TOOL ACTIONS ══╡`, `╞══ ⌨️ 💬 USER PROMPT │ status │ queue ══╡`), keeping section boundaries unmistakable after long sessions while saving 2 lines of chrome. Footer shortcut guide now includes the expand toggle.
+- **Section History Scrolling & Focus Navigation**: Added full keyboard navigation to scroll previous outputs — `PgUp`/`PgDn` scrolls the working log pane, `Alt-PgUp`/`Alt-PgDn` (or `Shift-PgUp`/`Shift-PgDn`, `Ctrl-U`/`Ctrl-D`) scrolls the agent thinking stream, `Tab`/`Shift-Tab` cycles active focus across all panes, and `Escape` immediately returns focus to the prompt.
+- **Labeled Section Dividers**: Replaced separate header lines + plain `═` borders with labeled unicode dividers (`╞══ ⚡ 🛠️ WORKING LOG & TOOL ACTIONS ══╡`, `╞══ ⌨️ 💬 USER PROMPT │ status │ queue ══╡`), keeping section boundaries unmistakable after long sessions while saving 2 lines of chrome. Footer shortcut guide now includes expand and scroll hints.
 
 ---
 
