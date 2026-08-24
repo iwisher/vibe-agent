@@ -18,6 +18,8 @@ from vibe.cli.rendering import (
     format_shortcuts_help,
     format_tool_result_text,
     get_session_cost,
+    populate_console_from_messages,
+    populate_tui_from_messages,
     render_error,
     render_response,
     render_tool_result_from_metadata,
@@ -153,6 +155,16 @@ async def interactive_mode(controller: Any) -> None:
         console.print(
             "[bold green]Vibe Agent[/bold green] ready. Type /exit to quit, /clear to reset."
         )
+        if getattr(query_loop, "messages", None):
+            non_sys = [m for m in query_loop.messages if getattr(m, "role", "") != "system"]
+            if non_sys:
+                state_name = query_loop.state.name
+                it_num = query_loop._iteration
+                console.print(
+                    f"[green]── 🔄 Restored Session ({len(non_sys)} previous events, "
+                    f"state: {state_name}, iteration: {it_num}) ──[/green]"
+                )
+                populate_console_from_messages(console, query_loop.messages)
         while True:
             try:
                 console.print("[bold bright_blue]❯ [/bold bright_blue]", end="")
@@ -329,6 +341,20 @@ async def interactive_mode(controller: Any) -> None:
                 _output_consumer(controller, prompt_session is not None)
             )
 
+            # Replay restored session history if resuming
+            if getattr(controller.main_loop, "messages", None):
+                non_sys = [
+                    m for m in controller.main_loop.messages if getattr(m, "role", "") != "system"
+                ]
+                if non_sys:
+                    console.print(
+                        f"[green]── 🔄 Restored Session ({len(non_sys)} previous events, "
+                        f"state: {controller.main_loop.state.name}, "
+                        f"iteration: {controller.main_loop._iteration}) ──[/green]"
+                    )
+                    populate_console_from_messages(console, controller.main_loop.messages)
+                    console.print()
+
             while True:
                 try:
                     user_input = (await prompt_input("❯ ", prompt_session)).strip()
@@ -466,6 +492,19 @@ async def interactive_mode(controller: Any) -> None:
 async def interactive_mode_tui(controller: SessionController) -> None:
     """Tiled TUI interactive mode with separate thinking/log/input windows."""
     tui = VibeTUI(history_path=str(_HISTORY_FILE))
+
+    # Populate restored session history if resuming an existing session
+    if getattr(controller.main_loop, "messages", None):
+        populate_tui_from_messages(tui, controller.main_loop.messages)
+        if controller.main_loop.llm:
+            tui.set_model(controller.main_loop.llm.model)
+        non_sys = [m for m in controller.main_loop.messages if getattr(m, "role", "") != "system"]
+        if non_sys:
+            tui.append_log(
+                f"── 🔄 Restored Session ({len(non_sys)} previous events, "
+                f"state: {controller.main_loop.state.name}, "
+                f"iteration: {controller.main_loop._iteration}) ──\n"
+            )
 
     # Handle user input submission
     def on_submit(text: str) -> None:
@@ -687,10 +726,14 @@ async def _resume_session(controller: SessionController, tui: VibeTUI) -> None:
         # Stop the in-flight turn before swapping the loop.
         controller.main_loop.stop()
         controller.main_loop = await QueryLoop.resume(session_id, store, factory)
+        populate_tui_from_messages(tui, controller.main_loop.messages)
+        if controller.main_loop.llm:
+            tui.set_model(controller.main_loop.llm.model)
+        non_sys = [m for m in controller.main_loop.messages if getattr(m, "role", "") != "system"]
         tui.append_log(
-            f"Resumed session {session_id[:16]}... "
-            f"(state: {controller.main_loop.state.name}, "
-            f"iteration: {controller.main_loop._iteration})"
+            f"── 🔄 Resumed Session {session_id[:16]}... "
+            f"({len(non_sys)} previous events, state: {controller.main_loop.state.name}, "
+            f"iteration: {controller.main_loop._iteration}) ──\n"
         )
     except ValueError as e:
         tui.append_log(f"Failed to resume: {e}")

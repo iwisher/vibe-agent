@@ -10,6 +10,8 @@ from vibe.cli.rendering import (
     format_shortcuts_help,
     format_tool_result_text,
     get_session_cost,
+    populate_console_from_messages,
+    populate_tui_from_messages,
     render_error,
     render_response,
     render_tool_result_from_metadata,
@@ -237,3 +239,64 @@ def test_format_shortcuts_help():
     assert "Ctrl-T" in help_text
     assert "/shortcuts" in help_text
     assert "/clear" in help_text
+
+
+def test_populate_tui_from_messages():
+    from vibe.cli.tui import VibeTUI
+    from vibe.core.query_loop import Message
+
+    tui = VibeTUI()
+    messages = [
+        Message(role="system", content="System instruction"),
+        Message(role="user", content="List all files"),
+        Message(
+            role="assistant",
+            content="<think>Thinking about running ls</think>Running the command now.",
+            tool_calls=[
+                {
+                    "id": "call_1",
+                    "function": {"name": "bash", "arguments": '{"command": "ls -la"}'},
+                }
+            ],
+        ),
+        Message(
+            role="tool",
+            content="file1.txt\nfile2.txt",
+            tool_call_id="call_1",
+            metadata={"tool_name": "bash"},
+        ),
+        Message(role="assistant", content="Found 2 files: file1.txt, file2.txt"),
+    ]
+
+    populate_tui_from_messages(tui, messages)
+
+    # Verify thinking area received thinking content
+    assert "Thinking about running ls" in tui.thinking_area.text
+
+    # Verify log area received user prompt, tool call, tool result, and assistant answers
+    log_text = tui.log_area.text
+    assert "❯ List all files" in log_text
+    assert "💬 Running the command now." in log_text
+    assert "[TOOL:bash] command=ls -la" in log_text
+    assert "✨ ✔ [TOOL:bash] file1.txt" in log_text
+    assert "💬 Found 2 files: file1.txt, file2.txt" in log_text
+
+
+def test_populate_console_from_messages():
+    from vibe.core.query_loop import Message
+
+    console = _make_console()
+    messages = [
+        Message(role="system", content="System instruction"),
+        Message(role="user", content="What is 2+2?"),
+        Message(
+            role="assistant",
+            content="<think>Simple arithmetic</think>The answer is **4**.",
+        ),
+    ]
+
+    populate_console_from_messages(console, messages)
+    out = _output(console)
+    assert "What is 2+2?" in out
+    assert "The answer is" in out
+    assert "4" in out

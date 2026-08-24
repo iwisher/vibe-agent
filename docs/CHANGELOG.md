@@ -25,9 +25,10 @@ All notable changes to Vibe Agent will be documented in this file.
 - **Dashboard Backend Consolidation**: Unified the dashboard on `vibe/dashboard/server.py` and purged legacy secondary files `api.py` and `data.py`.
 - **Duplicate Test & Shim Purge**: Merged 17 CRUD/similarity test cases into canonical harness test suites and deleted root test duplicates (`tests/test_trace_store.py`, `tests/test_session_store.py`) alongside obsolete prototypes (`vector_index_upgrade.py`, `url_safety.py`, `redaction.py`).
 - **Litter & Stray Artifacts**: Untracked `.tmp/` prompt drafts from git and purged local working tree artifacts.
-- Test suite: **1,842 tests passing**.
+- Test suite: **1,844 tests passing**.
 
 ### TUI
+- **Restored Session History Replay** (`vibe/cli/rendering.py`, `vibe/cli/main.py`): When resuming previous sessions on startup or via `/resume`, past user prompts, tool executions, tool result snippets, assistant responses, and thinking traces are now replayed and filled into the TUI's Working Log and Agent Thinking areas (and readline console).
 - **Expandable Input Area** (`vibe/cli/tui.py`): The prompt tile is now multiline and expands on demand — `Ctrl-T` toggles between 1 line and 50% of the terminal height (recomputed every render, so it tracks resizes); `Alt-Enter` inserts a newline while expanded; `Enter` always submits.
 - **Section History Scrolling & Focus Navigation**: Added full keyboard navigation to scroll previous outputs — `PgUp`/`PgDn` scrolls the working log pane, `Alt-PgUp`/`Alt-PgDn` (or `Shift-PgUp`/`Shift-PgDn`, `Ctrl-U`/`Ctrl-D`) scrolls the agent thinking stream, `Tab`/`Shift-Tab` cycles active focus across all panes, and `Escape` immediately returns focus to the prompt.
 - **Keyboard Shortcuts & Commands Cheat Sheet** (`/shortcuts`, `/help`, `/keys`): Added built-in command displaying formatted reference of navigation, scrolling, editing, control, and slash commands across TUI and readline modes.

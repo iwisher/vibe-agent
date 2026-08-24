@@ -326,3 +326,137 @@ Slash Commands:
   • /btw <query>                 Ask a side-question without interrupting task
   • /queue <prompt>              Queue a follow-up prompt
   • /exit, exit, quit            Exit session"""
+
+
+def populate_tui_from_messages(tui: Any, messages: list[Any]) -> None:
+    """Populate VibeTUI thinking and log buffers from restored session messages."""
+    if not messages:
+        return
+
+    import re
+
+    think_pattern = re.compile(r"<think>(.*?)</think>", re.DOTALL)
+    pending_tool_calls: dict[str, dict[str, Any]] = {}
+
+    for msg in messages:
+        role = getattr(msg, "role", "")
+        content = getattr(msg, "content", "") or ""
+        tool_calls = getattr(msg, "tool_calls", None)
+        tool_call_id = getattr(msg, "tool_call_id", None)
+        metadata = getattr(msg, "metadata", None) or {}
+
+        if role == "user":
+            tui.append_log(f"❯ {content}")
+
+        elif role == "assistant":
+            # Extract thinking tags if present in content
+            if "<think>" in content and "</think>" in content:
+                thoughts = think_pattern.findall(content)
+                for thought in thoughts:
+                    tui.append_thinking(thought.strip() + "\n\n")
+                clean_content = think_pattern.sub("", content).strip()
+                if clean_content:
+                    tui.append_log(f"💬 {clean_content}")
+            elif content.strip():
+                tui.append_log(f"💬 {content.strip()}")
+
+            if tool_calls:
+                for call in tool_calls:
+                    if isinstance(call, dict):
+                        cid = call.get("id") or ""
+                        fn = call.get("function")
+                        if isinstance(fn, dict):
+                            tname = fn.get("name", "tool")
+                            targs = fn.get("arguments", {})
+                        else:
+                            tname = call.get("name", "tool")
+                            targs = call.get("arguments", {})
+                    else:
+                        cid = getattr(call, "id", "") or ""
+                        tname = getattr(call, "name", "tool")
+                        targs = getattr(call, "arguments", {})
+
+                    if isinstance(targs, str):
+                        try:
+                            targs = json.loads(targs)
+                        except Exception:
+                            pass
+
+                    args_str = _args_summary(targs) if isinstance(targs, dict) else str(targs)
+                    tui.append_log(f"⚡ [TOOL:{tname}] {args_str}".strip())
+                    if cid:
+                        pending_tool_calls[cid] = {"name": tname, "args": targs}
+
+        elif role == "tool":
+            tname = metadata.get("tool_name")
+            if not tname and tool_call_id in pending_tool_calls:
+                tname = pending_tool_calls[tool_call_id].get("name")
+            tname = tname or "tool"
+
+            out_preview = truncate_output(stringify_content(content), max_chars=300)
+            tui.append_log(f"✨ ✔ [TOOL:{tname}] {out_preview}")
+
+        elif role == "system":
+            if content and content.startswith("Model switched to"):
+                tui.append_log(f"🤖 {content}")
+
+
+def populate_console_from_messages(console: Console, messages: list[Any]) -> None:
+    """Print restored conversation history to Rich console in readline mode."""
+    if not messages:
+        return
+
+    import re
+
+    think_pattern = re.compile(r"<think>(.*?)</think>", re.DOTALL)
+    pending_tool_calls: dict[str, dict[str, Any]] = {}
+
+    for msg in messages:
+        role = getattr(msg, "role", "")
+        content = getattr(msg, "content", "") or ""
+        tool_calls = getattr(msg, "tool_calls", None)
+        tool_call_id = getattr(msg, "tool_call_id", None)
+        metadata = getattr(msg, "metadata", None) or {}
+
+        if role == "user":
+            console.print(
+                f"[bold bright_blue]❯ [/bold bright_blue]{escape(content)}", highlight=False
+            )
+
+        elif role == "assistant":
+            if "<think>" in content and "</think>" in content:
+                clean_content = think_pattern.sub("", content).strip()
+                if clean_content:
+                    render_response(console, clean_content)
+            elif content.strip():
+                render_response(console, content.strip())
+
+            if tool_calls:
+                for call in tool_calls:
+                    if isinstance(call, dict):
+                        cid = call.get("id") or ""
+                        fn = call.get("function")
+                        if isinstance(fn, dict):
+                            tname = fn.get("name", "tool")
+                            targs = fn.get("arguments", {})
+                        else:
+                            tname = call.get("name", "tool")
+                            targs = call.get("arguments", {})
+                    else:
+                        cid = getattr(call, "id", "") or ""
+                        tname = getattr(call, "name", "tool")
+                        targs = getattr(call, "arguments", {})
+                    if cid:
+                        pending_tool_calls[cid] = {"name": tname, "args": targs}
+
+        elif role == "tool":
+            tname = metadata.get("tool_name")
+            if not tname and tool_call_id in pending_tool_calls:
+                tname = pending_tool_calls[tool_call_id].get("name")
+            tname = tname or "tool"
+            args = pending_tool_calls.get(tool_call_id, {}).get("args") if tool_call_id else None
+            render_tool_result(console, name=tname, args=args, content=content, is_error=False)
+
+        elif role == "system":
+            if content and content.startswith("Model switched to"):
+                console.print(f"[dim]🤖 {content}[/dim]")
