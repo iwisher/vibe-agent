@@ -116,6 +116,7 @@ Custom prompt_toolkit `Lexer` that returns token styling tuples `(style_str, tex
 ## 5. Experience Changelog & Versioning
 
 - **v0.5.2**:
+  - Added `/shortcuts` command (aliases: `/help`, `/keys`) displaying the full keyboard shortcut reference table in both TUI and readline interactive modes.
   - Full scrolling support for thinking and log histories: `PgUp`/`PgDn` scrolls the working log; `Alt-PgUp`/`Alt-PgDn` (or `Shift-PgUp`/`Shift-PgDn`, `Ctrl-U`/`Ctrl-D`) scrolls agent thinking.
   - Tab focus navigation: `Tab` / `Shift-Tab` cycles active focus across Input, Log, and Thinking panes; `Escape` returns focus to input prompt.
   - Section seams are now labeled unicode dividers (`╞══ ⚡ 🛠️ WORKING LOG … ══╡`),
