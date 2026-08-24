@@ -7,6 +7,7 @@ from rich.console import Console
 from vibe.cli.rendering import (
     MAX_TOOL_OUTPUT_CHARS,
     format_metrics_line,
+    format_shortcuts_help,
     format_tool_result_text,
     get_session_cost,
     render_error,
@@ -227,3 +228,12 @@ def test_get_session_cost_reads_spend_tracker():
         cost_router = FakeRouter()
 
     assert get_session_cost(FakeLoop()) == 0.5
+
+
+def test_format_shortcuts_help():
+    help_text = format_shortcuts_help()
+    assert "PageUp / PageDown" in help_text
+    assert "Alt-PageUp / Alt-PageDown" in help_text
+    assert "Ctrl-T" in help_text
+    assert "/shortcuts" in help_text
+    assert "/clear" in help_text

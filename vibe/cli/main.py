@@ -15,6 +15,7 @@ from rich.table import Table
 from vibe.cli.input_buffer import get_patch_stdout, get_prompt_session, prompt_input
 from vibe.cli.rendering import (
     format_metrics_line,
+    format_shortcuts_help,
     format_tool_result_text,
     get_session_cost,
     render_error,
@@ -340,6 +341,13 @@ async def interactive_mode(controller: Any) -> None:
                 if user_input.lower() in ("/exit", "exit", "quit"):
                     break
 
+                if user_input.lower() in ("/shortcuts", "/help", "/keys", "help"):
+                    console.print(format_shortcuts_help())
+                    if controller.queue.pending_count == 0 and not controller.prompt_shown:
+                        console.print("[bold bright_blue]❯ [/bold bright_blue]", end="")
+                        controller.prompt_shown = True
+                    continue
+
                 if user_input.lower() == "/clear":
                     controller.main_loop.clear_history()
                     console.print("History cleared.")
@@ -462,6 +470,9 @@ async def interactive_mode_tui(controller: SessionController) -> None:
             return
         if text.lower() in ("/exit", "exit", "quit"):
             tui.exit()
+            return
+        if text.lower() in ("/shortcuts", "/help", "/keys", "help"):
+            tui.append_log(format_shortcuts_help())
             return
         if text.lower() == "/clear":
             controller.main_loop.clear_history()

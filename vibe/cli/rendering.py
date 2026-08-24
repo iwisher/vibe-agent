@@ -293,3 +293,36 @@ def get_session_cost(query_loop: Any) -> float | None:
         return float(spend.get("total_cost", 0.0))
     except Exception:
         return None
+
+
+def format_shortcuts_help() -> str:
+    """Return a formatted reference of all keyboard shortcuts and slash commands."""
+    return """⌨️  VIBE AGENT SHORTCUTS & COMMANDS REFERENCE
+
+Navigation & History:
+  • PageUp / PageDown            Scroll Working Log history (10 lines)
+  • Alt-PageUp / Alt-PageDown    Scroll Agent Thinking stream (10 lines)
+    (or Shift-PageUp/Down, Ctrl-U/D)
+  • Tab / Shift-Tab              Cycle focus between Input ↔ Log ↔ Thinking
+  • Up / Down (in pane)          Line-by-line scroll in focused pane
+  • Escape / Enter (in pane)     Return focus to user prompt
+
+Input & Editing:
+  • Ctrl-T                       Expand / Collapse prompt tile (up to 50% screen)
+  • Alt-Enter                    Insert newline while prompt is expanded
+  • Up / Down (in prompt)        Browse command history (Ctrl-P / Ctrl-N)
+  • Enter (in prompt)            Submit prompt to agent
+
+Control:
+  • Ctrl-C / Ctrl-Q              Exit application
+
+Slash Commands:
+  • /shortcuts, /help, /keys     Display this cheat sheet
+  • /clear                       Clear session history and reset buffers
+  • /verbose                     Toggle verbose metrics and debug traces
+  • /reasoning                   Toggle streaming of thinking tokens
+  • /resume                      Resume the latest saved session checkpoint
+  • /bg <query>                  Execute a sub-query in background
+  • /btw <query>                 Ask a side-question without interrupting task
+  • /queue <prompt>              Queue a follow-up prompt
+  • /exit, exit, quit            Exit session"""
