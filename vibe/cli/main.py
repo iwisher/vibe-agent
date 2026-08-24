@@ -133,6 +133,7 @@ def _make_pt_approval_hook():
         try:
             return fut.result(timeout=timeout_seconds + 10)
         except Exception:
+            fut.cancel()
             return "timeout"  # fail closed; never fall back to legacy mid-prompt
 
     return hook
@@ -302,29 +303,32 @@ async def interactive_mode(controller: Any) -> None:
 
     prompt_session = get_prompt_session(str(_HISTORY_FILE))
     controller.prompt_shown = True
-    if not prompt_session:
-        console.print("[bold bright_blue]❯ [/bold bright_blue]", end="")
-    elif getattr(prompt_session, "app", None) is not None:
-        # Route approval prompts through prompt_toolkit so they suspend and
-        # redraw the prompt instead of overlapping the input area.
-        _approval_ctx["app"] = prompt_session.app
-        _approval_ctx["loop"] = asyncio.get_running_loop()
-        set_approval_ui_hook(_make_pt_approval_hook())
-
-    pt_ctx = get_patch_stdout()
     original_console_file = None
+    output_task: asyncio.Task[None] | None = None
 
-    with pt_ctx:
-        if prompt_session:
-            import sys
+    try:
+        if not prompt_session:
+            console.print("[bold bright_blue]❯ [/bold bright_blue]", end="")
+        elif getattr(prompt_session, "app", None) is not None:
+            # Route approval prompts through prompt_toolkit so they suspend and
+            # redraw the prompt instead of overlapping the input area.
+            _approval_ctx["app"] = prompt_session.app
+            _approval_ctx["loop"] = asyncio.get_running_loop()
+            set_approval_ui_hook(_make_pt_approval_hook())
 
-            original_console_file = console.file
-            console.file = sys.stdout
+        pt_ctx = get_patch_stdout()
+        with pt_ctx:
+            if prompt_session:
+                import sys
 
-        # Start output consumer
-        output_task = asyncio.create_task(_output_consumer(controller, prompt_session is not None))
+                original_console_file = console.file
+                console.file = sys.stdout
 
-        try:
+            # Start output consumer
+            output_task = asyncio.create_task(
+                _output_consumer(controller, prompt_session is not None)
+            )
+
             while True:
                 try:
                     user_input = (await prompt_input("❯ ", prompt_session)).strip()
@@ -446,17 +450,17 @@ async def interactive_mode(controller: Any) -> None:
                     console.print("[bold bright_blue]❯ [/bold bright_blue]", end="")
                     controller.prompt_shown = True
 
-        finally:
-            reset_approval_ui_hook()
-            _approval_ctx["app"] = None
-            _approval_ctx["loop"] = None
-            if original_console_file is not None:
-                console.file = original_console_file
-            if prompt_session is None:
-                _save_readline_history()
-            await controller.shutdown()
-            if not output_task.done():
-                output_task.cancel()
+    finally:
+        reset_approval_ui_hook()
+        _approval_ctx["app"] = None
+        _approval_ctx["loop"] = None
+        if original_console_file is not None:
+            console.file = original_console_file
+        if prompt_session is None:
+            _save_readline_history()
+        await controller.shutdown()
+        if output_task is not None and not output_task.done():
+            output_task.cancel()
 
 
 async def interactive_mode_tui(controller: SessionController) -> None:

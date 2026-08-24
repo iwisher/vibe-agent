@@ -7,13 +7,24 @@
 
 ---
 
-## Done (landed in `d3d0a49` and verified in code)
+## Done (executed and verified in code)
 
 - Browser SSRF hardening: manual redirect loop with per-hop `is_safe_url` validation,
   `urljoin` for relative redirects, 5-redirect cap (`vibe/tools/browser.py:405-445`);
   IPv6-mapped IPv4 normalized via `ipv4_mapped` + `is_global` allowlist
   (`browser.py:63-67`); `DocumentConverter` cached per tool instance; `mode="static"`
   + `action="click"` now errors instead of silently ignoring the click.
+- Playwright tier (Tier 2) SSRF protection: intercepted all page navigation and subresource
+  requests via `page.route("**/*")` validating each URL with `is_safe_url` and aborting
+  unsafe targets with `blockedbyclient` (`vibe/tools/browser.py:259-267`).
+- Security approval UI hook hygiene:
+  - `_map_choice("view")` now skips direct background console printing when a UI hook
+    is active (`vibe/tools/security/human_approval.py:358`).
+  - Approval hook timeout now cancels the orphaned `ask()` future (`vibe/cli/main.py:136`).
+  - Readline interactive mode encloses `set_approval_ui_hook` in a `try...finally` block,
+    guaranteeing `reset_approval_ui_hook` on any startup or runtime failure (`vibe/cli/main.py:307-463`).
+- Lesson compaction supersedes lineage: structured `supersedes` parameter in `_render_lesson_content`
+  and added `_read_supersedes` parser helper (`vibe/memory/reflection.py:110-135`).
 - `FetchUrlTool` alias added and registered (`vibe/core/query_loop_factory.py:127-129`).
 - `_pivotal_turn` cleared after trajectory reflection consumes it
   (`vibe/core/query_loop.py:1576-1577`) — iteration-index semantics kept (see Decisions).
@@ -37,21 +48,7 @@
 
 ## Open
 
-1. [MED] Playwright tier (Tier 2) follows redirects inside Chromium without SSRF
-   re-validation — only the static tier got the per-hop loop. Mitigation: intercept
-   requests via Playwright routing and validate each target, or document the gap.
-2. [LOW] `vibe/tools/security/human_approval.py:358` — the `view` branch prints directly
-   from the security worker thread while prompt_toolkit owns the terminal (display-only
-   overlap; the re-prompt itself goes through the hook).
-3. [LOW] `vibe/cli/main.py:131` — on approval-hook timeout the orphaned `ask()`
-   coroutine is never cancelled and keeps blocking on stdin, racing prompt_toolkit.
-   Rare (requires the CLI loop stalled >70s).
-4. [LOW] `vibe/cli/main.py` — console-mode approval-hook registration sits before its
-   `try/finally`; an exception in between leaks the registration for the process
-   lifetime.
-5. [LOW] `vibe/memory/compaction.py` — writes a `supersedes: <ids>` content line that
-   nothing parses; either parse it on read or drop the line (the `superseded` citation
-   is the real mechanism).
+None — all items resolved and verified.
 
 ---
 

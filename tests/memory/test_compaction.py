@@ -18,7 +18,7 @@ from vibe.core.config import ReflectionConfig
 from vibe.memory import compaction as compaction_mod
 from vibe.memory.compaction import LessonCompactor
 from vibe.memory.pageindex import PageIndex
-from vibe.memory.reflection import _read_counter, _read_generality
+from vibe.memory.reflection import _read_counter, _read_generality, _read_supersedes
 from vibe.memory.wiki import LLMWiki, is_page_injectable
 
 # ---------------------------------------------------------------------------
@@ -162,6 +162,7 @@ async def test_compact_merges_cluster(compactor, wiki, llm):
     for member in members:
         assert member.id in merged.content
     assert "supersedes:" in merged.content
+    assert set(_read_supersedes(merged.content)) == {p.id for p in members}
     # Tags: lesson + merged kind + topic tags
     assert "lesson" in merged.tags
     assert "procedure" in merged.tags
@@ -345,3 +346,21 @@ async def test_compact_never_raises_on_wiki_error(pageindex, llm):
     assert report.lesson_pages == 0
     assert report.clusters_found == 0
     assert report.errors != []
+
+
+def test_read_and_render_supersedes():
+    from vibe.memory.reflection import _render_lesson_content
+
+    # Render with list of superseded IDs
+    content = _render_lesson_content(
+        {"lesson": "Test lesson", "kind": "tip", "generality": 4},
+        helpful=3,
+        harmful=0,
+        supersedes=["page-1", "page-2"],
+    )
+    assert "supersedes: page-1, page-2" in content
+    assert _read_supersedes(content) == ["page-1", "page-2"]
+
+    # Empty / absent supersedes
+    assert _read_supersedes(None) == []
+    assert _read_supersedes("plain content without supersedes") == []

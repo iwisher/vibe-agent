@@ -251,3 +251,51 @@ def test_browser_tool_registered_in_factory():
     tool_system = factory.create_tool_system()
     assert "browse" in tool_system.list_tools()
     assert "fetch_url" in tool_system.list_tools()
+
+
+@pytest.mark.asyncio
+async def test_playwright_route_interception_aborts_unsafe_requests():
+    from vibe.tools.browser import _run_playwright
+
+    mock_page = AsyncMock()
+    mock_page.content.return_value = "<html><body>Clean</body></html>"
+    mock_context = AsyncMock()
+    mock_context.new_page.return_value = mock_page
+    mock_browser = AsyncMock()
+    mock_browser.new_context.return_value = mock_context
+
+    intercepted_handler = None
+
+    async def mock_route(pattern, handler):
+        nonlocal intercepted_handler
+        intercepted_handler = handler
+
+    mock_page.route = AsyncMock(side_effect=mock_route)
+
+    mock_p = MagicMock()
+    mock_p.chromium.launch = AsyncMock(return_value=mock_browser)
+
+    class MockAsyncPlaywright:
+        async def __aenter__(self):
+            return mock_p
+
+        async def __aexit__(self, *args):
+            pass
+
+    with patch("playwright.async_api.async_playwright", return_value=MockAsyncPlaywright()):
+        content = await _run_playwright("https://example.com/app")
+        assert content == "<html><body>Clean</body></html>"
+        assert intercepted_handler is not None
+
+        # Test route handler aborts unsafe request
+        unsafe_route = AsyncMock()
+        unsafe_req = MagicMock(url="http://169.254.169.254/latest/meta-data")
+        await intercepted_handler(unsafe_route, unsafe_req)
+        unsafe_route.abort.assert_awaited_once_with("blockedbyclient")
+
+        # Test route handler allows safe request
+        safe_route = AsyncMock()
+        safe_req = MagicMock(url="https://example.com/assets/app.js")
+        with patch("vibe.tools.browser.is_safe_url", return_value=True):
+            await intercepted_handler(safe_route, safe_req)
+            safe_route.continue_.assert_awaited_once()

@@ -107,16 +107,33 @@ def _read_generality(content: str | None) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def _read_supersedes(content: str | None) -> list[str]:
+    """Read the list of superseded page IDs from a merged lesson body."""
+    if not content:
+        return []
+    match = re.search(r"^supersedes:\s*(.+)$", content, re.MULTILINE)
+    if not match:
+        return []
+    return [pid.strip() for pid in match.group(1).split(",") if pid.strip()]
+
+
 def _strip_counters(content: str | None) -> str:
     """Remove trailing counter lines so the body can be re-rendered."""
     return _COUNTER_LINE_RE.sub("", content or "").rstrip()
 
 
-def _render_lesson_content(lesson: dict, *, helpful: int, harmful: int) -> str:
+def _render_lesson_content(
+    lesson: dict,
+    *,
+    helpful: int,
+    harmful: int,
+    supersedes: list[str] | None = None,
+) -> str:
     """Render the structured body of a lesson page (counters at the bottom).
 
     The generality score (when the LLM provided one) is persisted as a
     ``generality: N`` line — compaction and skill promotion read it back.
+    When present, ``supersedes: id1, id2`` records superseded page IDs.
     """
     parts = [lesson["lesson"], ""]
     if lesson.get("applies_when"):
@@ -125,6 +142,12 @@ def _render_lesson_content(lesson: dict, *, helpful: int, harmful: int) -> str:
     generality = _parse_generality(lesson.get("generality"))
     if generality is not None:
         parts.append(f"generality: {generality}")
+    superseded_ids = supersedes or lesson.get("supersedes")
+    if superseded_ids:
+        if isinstance(superseded_ids, (list, tuple, set)):
+            parts.append(f"supersedes: {', '.join(str(s) for s in superseded_ids)}")
+        else:
+            parts.append(f"supersedes: {superseded_ids}")
     parts.append("")
     parts.append(f"helpful: {helpful}")
     parts.append(f"harmful: {harmful}")

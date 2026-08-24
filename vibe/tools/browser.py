@@ -245,7 +245,7 @@ class StaticHtmlExtractor:
 
 
 async def _run_playwright(url: str, action: str = "read", selector: str | None = None) -> str:
-    """Execute dynamic browser navigation and actions via Playwright."""
+    """Execute dynamic browser navigation and actions via Playwright with SSRF checks."""
     from playwright.async_api import async_playwright
 
     async with async_playwright() as p:
@@ -256,6 +256,16 @@ async def _run_playwright(url: str, action: str = "read", selector: str | None =
                 viewport={"width": 1280, "height": 800},
             )
             page = await context.new_page()
+
+            # Intercept all navigation and subresource requests to enforce SSRF policy per hop
+            async def _intercept_route(route: Any, request: Any) -> None:
+                if not is_safe_url(request.url):
+                    logger.warning("Playwright blocked unsafe URL request: %s", request.url)
+                    await route.abort("blockedbyclient")
+                else:
+                    await route.continue_()
+
+            await page.route("**/*", _intercept_route)
             await page.goto(url, wait_until="domcontentloaded", timeout=15000)
 
             if action == "click" and selector:

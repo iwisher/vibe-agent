@@ -355,7 +355,8 @@ class HumanApprover:
                 pattern_id=pattern_id,
             )
         elif choice_str in ("v", "view"):
-            _console.print(f"\nFull command:\n{command}\n", markup=False)
+            if _ui_hook is None:
+                _console.print(f"\nFull command:\n{command}\n", markup=False)
             # Re-prompt
             return self._interactive_prompt(command, pattern_id, description, severity, cwd)
         else:

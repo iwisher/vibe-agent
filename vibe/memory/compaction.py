@@ -237,12 +237,11 @@ class LessonCompactor:
                     "applies_when": synthesis.get("applies_when", ""),
                     "kind": kind,
                     "generality": generality,
+                    "supersedes": member_ids,
                 },
                 helpful=helpful,
                 harmful=harmful,
             )
-            # Record which pages this merged lesson supersedes
-            content += f"\nsupersedes: {', '.join(member_ids)}"
 
             tags = ["lesson", kind]
             for tag in _topic_tags(synthesis["title"]):

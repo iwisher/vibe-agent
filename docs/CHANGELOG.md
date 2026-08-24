@@ -8,10 +8,13 @@ All notable changes to Vibe Agent will be documented in this file.
 
 ### Security & Hardening
 - **SSRF Redirect & Cloud Metadata Protection** (`vibe/tools/browser.py`): Replaced blind redirect following with a manual redirect resolution loop validating `is_safe_url()` against the SSRF policy on every redirect hop (`Location`). Normalized IPv6-mapped IPv4 addresses (`::ffff:...`), and expanded CIDR blocklists to include Carrier-Grade NAT (`100.64.0.0/10`) and Alibaba Cloud metadata (`100.100.100.200/32`).
+- **Playwright Dynamic Tier SSRF Interception** (`vibe/tools/browser.py`): Added route interception (`page.route("**/*")`) to validate every page navigation and subresource load against `is_safe_url()`, aborting unsafe requests with `blockedbyclient`.
+- **Approval Hook UI Safety & Lifecycle** (`vibe/tools/security/human_approval.py`, `vibe/cli/main.py`): Suppressed background thread console printing in `view` choice when a UI hook is active; cancelled orphaned `ask()` futures on timeout; wrapped console-mode approval hook registration in a `try...finally` block to prevent lifetime hook leakage.
 - **Secret Redaction Consolidation** (`vibe/harness/security/redactor.py`): Consolidated comprehensive secret detection patterns (Slack tokens/webhooks, Google API keys, Stripe live/test keys, JWTs, Discord tokens/webhooks, basic auth, URL query secret params) into `SecretRedactor` to protect all stored session checkpoints, traces, and logs.
 - **Browser Tool Alias & Interaction Safety**: Registered `FetchUrlTool` (`fetch_url`) alias in `QueryLoopFactory` and added explicit error handling when interactive click actions are attempted in static mode.
 
 ### Fixed & Refactored
+- **Lesson Compaction Supersedes Lineage** (`vibe/memory/compaction.py`, `vibe/memory/reflection.py`): Structured `supersedes` parameter in `_render_lesson_content` and added defensive `_read_supersedes` parser helper to track principle-level lesson inheritance.
 - **SmartApprover Async LLM Client** (`vibe/tools/security/smart_approver.py`): Async LLM clients (e.g. `ModelGateway.complete`) were called synchronously, producing an unawaited-coroutine `RuntimeWarning` that corrupted the TUI frame and silently disabling LLM risk assessment (always falling back to heuristics). Awaitables are now resolved on a private loop from worker threads, closed cleanly on the event-loop thread, and fallback logs at debug level.
 - **Pivotal Turn Lifecycle & Reflection**: Cleared `_pivotal_turn` upon trajectory reflection consumption to prevent failure index leakage into subsequent interactive turns.
 - **SkillMaker Double Approval Gate & Event Loop**: Unified `CLIApprovalGate` across `SkillInstaller` and `SkillMakerPipeline`, and wrapped `approval_gate.approve()` in `asyncio.to_thread` to prevent interactive `input()` from freezing the asyncio event loop.
@@ -22,7 +25,7 @@ All notable changes to Vibe Agent will be documented in this file.
 - **Dashboard Backend Consolidation**: Unified the dashboard on `vibe/dashboard/server.py` and purged legacy secondary files `api.py` and `data.py`.
 - **Duplicate Test & Shim Purge**: Merged 17 CRUD/similarity test cases into canonical harness test suites and deleted root test duplicates (`tests/test_trace_store.py`, `tests/test_session_store.py`) alongside obsolete prototypes (`vector_index_upgrade.py`, `url_safety.py`, `redaction.py`).
 - **Litter & Stray Artifacts**: Untracked `.tmp/` prompt drafts from git and purged local working tree artifacts.
-- Test suite: **1,823 tests passing**.
+- Test suite: **1,842 tests passing**.
 
 ### TUI
 - **Expandable Input Area** (`vibe/cli/tui.py`): The prompt tile is now multiline and expands on demand — `Ctrl-T` toggles between 1 line and 50% of the terminal height (recomputed every render, so it tracks resizes); `Alt-Enter` inserts a newline while expanded; `Enter` always submits.
