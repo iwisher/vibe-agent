@@ -1,0 +1,19 @@
+id: skill-script-001
+tags: [skills, script, execution, tool_use]
+subsystem: tool_system
+difficulty: medium
+category: tool_use
+input:
+  prompt: |
+    Execute the local stock-analysis skill using the skill_runner tool for the ticker AAPL.
+  preconditions: []
+expected:
+  tool_called: "skill_runner"
+  response_contains_any:
+    - "AAPL"
+    - "stock"
+    - "analysis"
+    - "price"
+    - "success"
+optimization_set: true
+holdout_set: false

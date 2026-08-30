@@ -44,13 +44,32 @@
   - 5: Vector index upgrade shim removed (`vibe/memory/vector_index_upgrade.py` removed).
 - [x] Repository polish: `AGENTS.md` tree updated to match reality; `.tmp/` scratch files untracked from git; stray `MagicMock/` removed; `reflection.py` docstring updated; redundant local `import json` removed.
 
----
-
 ## Open
 
-None — all items resolved and verified.
+### Track 1: Evaluation Suite & Benchmark Expansion
+- [x] Audit built-in YAML eval cases across all subsystems (`file`, `bash`, `browser`, `memory`, `security`, `tool_system`).
+- [x] Synchronize `scripts/validate_eval_tags.py` subsystem and category allowlists with the repository schema.
+- [x] Add targeted eval cases in `vibe/evals/builtin/`:
+  - `browser_fetch_001.yaml` (Tier 1 static web extraction and content parsing).
+  - `browser_ssrf_001.yaml` (SSRF safety check rejecting private and metadata IP targets).
+  - `skill_script_001.yaml` (Deterministic script-backed skill execution with variable substitution).
+  - `memory_reflection_001.yaml` (Trajectory reflection lesson generation and usage counters).
+- [x] Validate eval YAML schema tags with `scripts/validate_eval_tags.py` (50/50 cases pass, 0 violations).
+- [ ] Refresh baseline scorecard via `vibe eval update-baseline` after a live eval run
+  (50 cases now; requires a reachable model endpoint — unverified numbers are not committed).
 
----
+### Track 2: EvoX Harness Meta-Evolution Execution (Current Focus)
+- [ ] Benchmark `vibe evox run --target harness` across expanded eval suite with `--limit 20`.
+- [ ] Verify harness knob search space (`routing_min_confidence`, `max_lessons`, `min_generality`, reflection prompts).
+- [ ] Validate regression gate against `docs/baseline_scorecard.json` and verify JSONL provenance export.
+- [ ] Log discovered Pareto improvements and document harness optimization results.
+
+### Track 3: Built-in Executable Skills & Swarm Workflow Expansion
+- [x] Create new deterministic script-backed skills in `skills/` adhering to the Anthropic Agent Skills / CodeAct pattern:
+  - `skills/git-workflow/` (branching, status inspection, commit graph tree, linked worktrees).
+  - `skills/code-auditor/` (syntax, security linting, line length checks).
+- [x] Validate skill schemas and security with `vibe skill validate` (`skills/git-workflow`, `skills/code-auditor`, `skills/stock-analysis`).
+- [ ] Enhance Swarm Multi-Agent orchestrator (`vibe/swarm/`) with dynamic sub-agent role pipelines and trace reporting.
 
 ## Won't fix — decided 2026-08-23 (intentionally kept as-is)
 

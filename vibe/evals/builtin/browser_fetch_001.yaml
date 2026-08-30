@@ -1,0 +1,17 @@
+id: browser-fetch-001
+tags: [browser, web, tool_use, static_fetch]
+subsystem: browser
+difficulty: easy
+category: browser
+input:
+  prompt: |
+    Fetch the content from https://example.com using the browse tool and tell me the domain title or main heading.
+  preconditions: []
+expected:
+  tool_called: "browse"
+  response_contains_any:
+    - "Example Domain"
+    - "example"
+    - "domain"
+optimization_set: true
+holdout_set: false

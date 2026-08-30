@@ -282,7 +282,15 @@ async def test_playwright_route_interception_aborts_unsafe_requests():
         async def __aexit__(self, *args):
             pass
 
-    with patch("playwright.async_api.async_playwright", return_value=MockAsyncPlaywright()):
+    mock_playwright_mod = MagicMock()
+    mock_playwright_mod.async_api.async_playwright = MagicMock(return_value=MockAsyncPlaywright())
+    with patch.dict(
+        "sys.modules",
+        {
+            "playwright": mock_playwright_mod,
+            "playwright.async_api": mock_playwright_mod.async_api,
+        },
+    ):
         content = await _run_playwright("https://example.com/app")
         assert content == "<html><body>Clean</body></html>"
         assert intercepted_handler is not None

@@ -1,0 +1,19 @@
+id: memory-reflection-001
+tags: [memory, reflection, lesson, learning]
+subsystem: memory
+difficulty: medium
+category: reflection
+input:
+  prompt: |
+    Query the memory system to check for recorded lesson pages and explain what helpful or harmful counters represent in trajectory reflection.
+  preconditions: []
+expected:
+  response_contains_any:
+    - "lesson"
+    - "reflection"
+    - "helpful"
+    - "harmful"
+    - "counter"
+    - "trajectory"
+optimization_set: true
+holdout_set: false

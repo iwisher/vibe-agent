@@ -12,7 +12,6 @@ from pathlib import Path
 
 import yaml
 
-
 EVAL_DIR = Path(__file__).parent.parent / "vibe" / "evals" / "builtin"
 REQUIRED_KEYS = {"id", "tags", "subsystem", "difficulty", "category", "input", "expected"}
 VALID_DIFFICULTIES = {"easy", "medium", "hard"}
@@ -24,6 +23,12 @@ VALID_SUBSYSTEMS = {
     "mcp_bridge",
     "error_recovery",
     "tool_system",
+    "tools",
+    "memory",
+    "evals",
+    "model_gateway",
+    "security",
+    "browser",
 }
 VALID_CATEGORIES = {
     "bash",
@@ -36,6 +41,19 @@ VALID_CATEGORIES = {
     "tool_use",
     "meta",
     "general",
+    "stability",
+    "context_management",
+    "classification",
+    "governance",
+    "security",
+    "persistence",
+    "resilience",
+    "observability",
+    "routing",
+    "configuration",
+    "registration",
+    "browser",
+    "reflection",
 }
 
 
@@ -79,21 +97,30 @@ def validate() -> int:
         difficulty = data.get("difficulty")
         if difficulty and difficulty not in VALID_DIFFICULTIES:
             violations.append(
-                (filepath.name, f"Invalid difficulty '{difficulty}', must be one of {VALID_DIFFICULTIES}")
+                (
+                    filepath.name,
+                    f"Invalid difficulty '{difficulty}', must be one of {VALID_DIFFICULTIES}",
+                )
             )
 
         # Subsystem
         subsystem = data.get("subsystem")
         if subsystem and subsystem not in VALID_SUBSYSTEMS:
             violations.append(
-                (filepath.name, f"Unrecognized subsystem '{subsystem}', expected one of {VALID_SUBSYSTEMS}")
+                (
+                    filepath.name,
+                    f"Unrecognized subsystem '{subsystem}', expected one of {VALID_SUBSYSTEMS}",
+                )
             )
 
         # Category
         category = data.get("category")
         if category and category not in VALID_CATEGORIES:
             violations.append(
-                (filepath.name, f"Unrecognized category '{category}', expected one of {VALID_CATEGORIES}")
+                (
+                    filepath.name,
+                    f"Unrecognized category '{category}', expected one of {VALID_CATEGORIES}",
+                )
             )
 
         # Tags
@@ -102,7 +129,7 @@ def validate() -> int:
             violations.append((filepath.name, f"'tags' must be a list, got {type(tags).__name__}"))
 
     # Report
-    print(f"Eval Suite Validation Report")
+    print("Eval Suite Validation Report")
     print(f"{'=' * 50}")
     print(f"Files checked: {len(yaml_files)}")
     print(f"Violations:    {len(violations)}")
