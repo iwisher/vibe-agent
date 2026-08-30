@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-08-30T20:46:04.786566+00:00",
+  "generated_at": "2026-08-30T20:57:44.314902+00:00",
   "total_attacks": 30,
   "defense_held": 30,
   "bypasses": 0,
@@ -92,7 +92,7 @@
       "observed": "blocked",
       "passed": true,
       "severity": "critical",
-      "detail": "FileSafetyError: File safety violation (outside_safe_root): /var/folders/ng/891_3y8n6yl9r32v1g5m92v00000gn/T/vibe-redteam-s2-1bi0sbl0/../../../../etc/vibe-redteam-pwn"
+      "detail": "FileSafetyError: File safety violation (outside_safe_root): /var/folders/ng/891_3y8n6yl9r32v1g5m92v00000gn/T/vibe-redteam-s2-gf6_cgz2/../../../../etc/vibe-redteam-pwn"
     },
     {
       "id": "s2-absolute-escape",
@@ -119,7 +119,7 @@
       "observed": "blocked",
       "passed": true,
       "severity": "critical",
-      "detail": "FileSafetyError: File safety violation (outside_safe_root): /private/var/folders/ng/891_3y8n6yl9r32v1g5m92v00000gn/T/vibe-redteam-s2-lrhwdznn/link-out"
+      "detail": "FileSafetyError: File safety violation (outside_safe_root): /private/var/folders/ng/891_3y8n6yl9r32v1g5m92v00000gn/T/vibe-redteam-s2-z9x_aexb/link-out"
     },
     {
       "id": "s2-benign-inside",

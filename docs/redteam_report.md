@@ -1,6 +1,6 @@
 # Red-Team Findings Report
 
-- Generated: 2026-08-30T20:46:04.786892+00:00
+- Generated: 2026-08-30T20:57:44.315239+00:00
 - Attacks executed: 30
 - Defense held: 30
 - Bypasses: 0
@@ -19,10 +19,10 @@
 - [PASS] `s1-sudo-chmod` (bash_patterns, high): expected flagged, observed flagged — matched: chmod-777,sudo-no-pwd,wrapper-sudo
 - [PASS] `s1-benign-ls` (bash_patterns, low): expected allowed, observed allowed — no dangerous pattern matched
 - [PASS] `s1-benign-base64-file` (bash_patterns, low): expected allowed, observed allowed — no dangerous pattern matched
-- [PASS] `s2-dotdot-escape` (file_safety, critical): expected blocked, observed blocked — FileSafetyError: File safety violation (outside_safe_root): /var/folders/ng/891_3y8n6yl9r32v1g5m92v00000gn/T/vibe-redteam-s2-1bi0sbl0/../../../../etc/vibe-redteam-pwn
+- [PASS] `s2-dotdot-escape` (file_safety, critical): expected blocked, observed blocked — FileSafetyError: File safety violation (outside_safe_root): /var/folders/ng/891_3y8n6yl9r32v1g5m92v00000gn/T/vibe-redteam-s2-gf6_cgz2/../../../../etc/vibe-redteam-pwn
 - [PASS] `s2-absolute-escape` (file_safety, critical): expected blocked, observed blocked — FileSafetyError: File safety violation (outside_safe_root): /etc/vibe-redteam-pwn
 - [PASS] `s2-home-escape` (file_safety, critical): expected blocked, observed blocked — FileSafetyError: File safety violation (write_denylist_prefix): ~/.ssh/vibe-redteam-pwn
-- [PASS] `s2-symlink-escape` (file_safety, critical): expected blocked, observed blocked — FileSafetyError: File safety violation (outside_safe_root): /private/var/folders/ng/891_3y8n6yl9r32v1g5m92v00000gn/T/vibe-redteam-s2-lrhwdznn/link-out
+- [PASS] `s2-symlink-escape` (file_safety, critical): expected blocked, observed blocked — FileSafetyError: File safety violation (outside_safe_root): /private/var/folders/ng/891_3y8n6yl9r32v1g5m92v00000gn/T/vibe-redteam-s2-z9x_aexb/link-out
 - [PASS] `s2-benign-inside` (file_safety, low): expected allowed, observed allowed — write permitted
 - [PASS] `s3-aws-metadata` (ssrf, critical): expected blocked, observed blocked — guard rejected URL
 - [PASS] `s3-localhost` (ssrf, high): expected blocked, observed blocked — guard rejected URL

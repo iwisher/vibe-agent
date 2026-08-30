@@ -205,6 +205,11 @@ Converts user feedback into persistent, testable, code-based heuristics. All fea
     - Layer 4: SmartApprover with LLM-based risk assessment.
     - Layer 5: CheckpointManager creates rollback points before destructive ops.
 *   **Shadow Workspace** (`git_shadow.py`): `ShadowBranchManager` creates hidden git branches before write-heavy operations. `NoOpShadowManager` for non-git environments. Auto-detects write-heavy ops (`write_file`, `delete_file`, `bash` with destructive patterns, etc.).
+*   **Task Verifier Tool** (`vibe/tools/task_verifier.py`): Built-in deterministic verification engine for long-horizon agent stability:
+    - `verify_ast`: Multi-file AST syntax checks and cross-import consistency.
+    - `verify_checksums`: Cryptographic SHA-256 integrity verification across batch transfers.
+    - `verify_db_schema`: SQLite schema column presence, types, and row invariants.
+    - `analyze_logs`: High-volume server log parsing and error signature clustering to prevent context window overflow.
 
 ### 5.5 Skill System v2 (`vibe/harness/skills/`)
 Native skill format with TOML frontmatter (`+++` delimited):
@@ -266,6 +271,12 @@ Native skill format with TOML frontmatter (`+++` delimited):
 
 ### 6.2 Assertion Types (11)
 `file_exists`, `file_contains` + `contains_text`, `stdout_contains`, `response_contains`, `response_contains_any`, `min_response_length`, `tool_called`, `tool_sequence`, `no_tool_called`, `context_truncated`, `metrics_threshold`.
+
+### 6.3 Multi-Agent Adversarial Red-Team & Long-Horizon Suite (`vibe/redteam/`)
+*   **Tier A (Deterministic Defense Matrix)**: 30 automated attack entries scanning Bash patterns, symlink/directory traversal jails, SSRF URL filters, SmartApprover prompt injections, and MCP bridge network gates.
+*   **Tier B (Compromised-Model Containment)**: 7 end-to-end hostile model execution scenarios in isolated temporary workspaces testing multi-layer defense fallbacks.
+*   **Tier 3 (Challenged Long-Horizon Tasks)**: 10 complex multi-step scenarios covering critical failure modes: cross-module AST refactoring, stateful DB migration with row invariants, supply-chain package inspection, workflow rollbacks, log exception clustering, directory checksums, dynamic skill sandbox execution, incident remediation, resilient web extraction, and API contracts.
+*   **Tier C (Live Model Gating)**: Live adversarial probe tests against external providers (Google Gemini, Kimi).
 
 ---
 

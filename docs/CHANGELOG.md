@@ -4,6 +4,34 @@ All notable changes to Vibe Agent will be documented in this file.
 
 ---
 
+## [0.6.0-alpha] — 2026-08-30
+
+### Security & Multi-Agent Adversarial Red-Team
+- **Adversarial Red-Team Harness** (`vibe/redteam/`, `scripts/run_redteam.py`): Built-in multi-tier adversarial security testing framework with YAML attack corpus definitions, deterministic pass/fail oracles, and Markdown/JSON report synthesis (`docs/redteam_report.md`).
+- **Tier A (Defense-Layer Matrices)**: 30 deterministic attack vectors across Bash command normalization & evasion, path traversal/symlink jail escapes, SSRF filter bypasses, SmartApprover prompt injection, skill supply-chain integrity, and MCP bridge network gates.
+- **Tier B (Hostile-Model Containment)**: 7 scripted compromised-model scenarios executing in an isolated temporary workspace with strict jail containment and shadow-branch leak prevention.
+- **Tier 3 (Long-Horizon Challenged Tasks)**: 10 complex multi-step scenarios covering the top autonomous agent runtime failure modes: multi-file cross-module AST preservation, stateful SQLite schema migration with non-destructive backfill and rollback, unencrypted HTTP supply-chain detection, atomic workflow deployment rollback, deep log exception clustering, directory checksum sync, dynamic skill sandbox synthesis, incident parameter remediation, resilient web extraction under SSRF policy, and microservice API contract validation.
+- **Tier C (Live-Model Gating)**: Live adversarial probe tests against reachable LLM provider endpoints (`--live --provider gemini --model gemini-flash-latest`), verifying model refusal and zero dangerous tool execution.
+- **Security Defenses & Remediations**:
+  - Remediated S7 MCP Bridge HTTP SSRF gap with async `SSRFGuard.is_safe_async(url)` check and disabled redirects in `MCPBridge._invoke_http`.
+  - Remediated S4 SmartApprover prompt injection using `UNTRUSTED_*` prompt fences and fence-marker anti-spoofing in `SmartApprover._llm_risk_assessment`.
+  - Added critical `base64-pipe-sh` pattern to `BUILTIN_PATTERNS` in `vibe/tools/security/patterns.py`.
+
+### Built-in Tools & Deterministic Skills
+- **`task_verifier` Tool** (`vibe/tools/task_verifier.py`, `TaskVerifierTool`): High-reliability verification engine for AST syntax/import parsing, SHA-256 file checksums, SQLite schema/row invariants, and structured error signature log clustering.
+- **Deterministic Skills**:
+  - `skills/refactor-verifier/`: Python AST integrity and cross-import contract validation.
+  - `skills/db-migrator/`: SQLite database schema migration with automatic snapshot backup, invariant check, and rollback.
+  - `skills/log-analyst/`: Deep log triage clustering unique error signatures to eliminate context rot.
+  - `skills/dependency-auditor/`: Supply-chain security scanning for unencrypted and obfuscated dependency declarations.
+
+### Provider Integration & Resiliency
+- **Google Gemini Integration**: Configured OpenAI-compatible adapter for Gemini endpoints (`https://generativelanguage.googleapis.com/v1beta/openai/`) with support for models like `gemini-flash-latest` and `gemini-2.0-flash-001`.
+- **Interactive Chat Fixes**: Fixed stream chunk processing to ensure prompt and thought token streaming works seamlessly in both TUI and interactive CLI modes.
+- Test suite: **1,937 tests passing**.
+
+---
+
 ## [0.5.1-alpha] — 2026-08-23
 
 ### Security & Hardening
