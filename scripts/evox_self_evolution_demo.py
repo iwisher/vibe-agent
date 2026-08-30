@@ -12,7 +12,6 @@ import json
 
 from vibe.evox.circle_packing import CirclePackingMockGenerator, circle_packing_evaluator
 from vibe.evox.evaluators import (
-    expression_evaluator,
     keyword_coverage_evaluator,
     string_match_evaluator,
 )
@@ -112,10 +111,12 @@ async def main():
         print()
         print("  Strategy evolution timeline:")
         for i, strat in enumerate(case["strategies"], 1):
-            print(f"    [{i}] deployed_at={strat['deployed_at']} "
-                  f"window={strat['window_size']} "
-                  f"delta={strat['delta']:.4f} "
-                  f"J(S)={strat['score_signal']:.4f}")
+            print(
+                f"    [{i}] deployed_at={strat['deployed_at']} "
+                f"window={strat['window_size']} "
+                f"delta={strat['delta']:.4f} "
+                f"J(S)={strat['score_signal']:.4f}"
+            )
             for line in strat["code"].strip().splitlines():
                 print(f"        {line}")
             print()

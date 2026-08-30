@@ -73,9 +73,7 @@ def audit_path(target_path: str, max_line_length: int = 100) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Audit Python source files.")
     parser.add_argument("path", nargs="?", default=".", help="Path to file or directory to audit")
-    parser.add_argument(
-        "--max-line-length", type=int, default=100, help="Max allowed line length"
-    )
+    parser.add_argument("--max-line-length", type=int, default=100, help="Max allowed line length")
     args = parser.parse_args()
     return audit_path(args.path, args.max_line_length)
 

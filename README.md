@@ -513,11 +513,20 @@ vibe eval update-baseline
 
 ## 🛡️ Multi-Agent Adversarial Red-Team
 
-Vibe Agent includes a comprehensive, multi-tiered adversarial red-team engine (`vibe/redteam/`) to validate defenses against automated attacks, prompt injections, and rogue agent tool executions:
+Vibe Agent includes a comprehensive, multi-tiered adversarial red-team engine (`vibe/redteam/`) to validate defenses against automated attacks, prompt injections, rogue agent tool executions, and long-horizon autonomy failures:
 
 - **Tier A (Offline Component Attack Matrix)**: 30 deterministic test vectors across S1 (Bash pattern scanning & base64 pipe evasions), S2 (File safety & symlink jail traversal), S3 (Browser fetch SSRF), S4 (SmartApprover prompt injection fencing), S5 (Skill supply chain), and S7 (MCP bridge HTTP SSRF).
-- **Tier B (Compromised-Model Containment)**: Scripted hostile-model jailbreak scenarios running through a real `QueryLoop` and `SecurityCoordinator` inside a strictly jailed environment.
+- **Tier B (Compromised-Model Containment)**: 7 scripted hostile-model jailbreak scenarios running through a real `QueryLoop` and `SecurityCoordinator` inside a strictly jailed environment.
+- **Tier 3 (Long-Horizon Challenged Tasks)**: 10 complex multi-step scenarios addressing top failure modes in autonomous agent runtimes (cross-module refactoring AST preservation, stateful DB migration rollback, supply-chain package inspection, log error clustering, directory checksum sync, dynamic skill sandbox execution).
 - **Tier C (Live-Model Gating)**: Live adversarial probe tests against reachable model endpoints (e.g. Google Gemini, Kimi).
+
+### Built-in Tools & Deterministic Skills
+
+- **`task_verifier` Built-in Tool**: High-reliability AST syntax and import parsing, cryptographic file checksum validation, SQLite schema/row invariants, and structured error signature log clustering.
+- **`refactor-verifier` Skill**: Multi-file Python AST integrity and cross-import contract validation.
+- **`db-migrator` Skill**: SQLite database schema migration with automatic snapshot backup, invariant check, and rollback.
+- **`log-analyst` Skill**: Deep log triage clustering unique error signatures to eliminate context rot.
+- **`dependency-auditor` Skill**: Supply-chain security scanning for unencrypted and obfuscated dependency declarations.
 
 ### Running Red-Team Tests
 
@@ -525,7 +534,7 @@ Vibe Agent includes a comprehensive, multi-tiered adversarial red-team engine (`
 # Validate attack corpus definitions (6 suites, 30 entries)
 python scripts/validate_redteam_corpus.py
 
-# Run offline Tier A + Tier B red-team suite
+# Run offline Tier A + Tier B + Tier 3 red-team suite
 python scripts/run_redteam.py
 
 # Run with live Gemini endpoint verification
@@ -575,4 +584,4 @@ the current and planned increments — full study log with all sources in
 
 ---
 
-*Vibe Agent is currently in Phase 4.2 (Self-Improving Skill-Maker) + Phase 5.2 (Shadow Workspace). See the [Roadmap](docs/ROADMAP.md) for what's next. Test suite: **1,920+ tests passing**.*
+*Vibe Agent is currently in Phase 4.2 (Self-Improving Skill-Maker) + Phase 5.2 (Shadow Workspace). See the [Roadmap](docs/ROADMAP.md) for what's next. Test suite: **1,937+ tests passing**.*

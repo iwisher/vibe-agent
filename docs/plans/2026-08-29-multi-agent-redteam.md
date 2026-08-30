@@ -1,12 +1,12 @@
 # Multi-Agent Adversarial Red-Team Plan — vibe-agent
 
-> Date: 2026-08-29. Status: **executed** (2026-08-30) — Tier A + Tier B + Tier C complete.
-> Live validation against Gemini (`gemini-flash-latest` via `--live --provider gemini`) verified.
-> Results: Tier A 30/30 defense checks hold, Tier B 7/7 scenarios contained, Tier C 1/1 live probe refused and contained (`docs/redteam_report.md`).
+> Date: 2026-08-29. Status: **executed** (2026-08-30) — Tier A + Tier B + Tier 3 + Tier C complete.
+> Results: Tier A 30/30 defense checks hold, Tier B 7/7 scenarios contained, Tier 3 10/10 long-horizon tasks passed, Tier C 1/1 live probe refused and contained (`docs/redteam_report.md`).
+> Built-in tools and skills added: `TaskVerifierTool`, `skills/refactor-verifier`, `skills/db-migrator`, `skills/log-analyst`, `skills/dependency-auditor`.
 > Remediated: S7 MCP SSRF gap, S4 approver prompt injection (fenced + anti-spoof munging), base64-pipe-to-shell pattern gap.
-> Every phase passed: scoped changes only, full test suite green (1,920 tests),
+> Every phase passed: scoped changes only, full test suite green (1,937 tests),
 > two-agent critique (security + code quality) with findings fixed.
-> Goal: coordinated multi-agent adversarial testing of vibe-agent's defense stack,
+> Goal: coordinated multi-agent adversarial testing of vibe-agent's defense stack and long-horizon autonomy resilience,
 > producing a reproducible findings report and regression tests for every confirmed bypass.
 
 ---
@@ -100,11 +100,24 @@ Questions answered: does the 5-layer pipeline (`coordinators.py:306` `evaluate_t
 still block when the model itself is hostile? Do checkpoints get created before destructive
 ops? Does the audit log record the attempt with secrets redacted?
 
+### Tier 3 — Long-Horizon Challenged Agent Tasks (Offline & Invariant-Checked)
+
+Evaluates the agent harness and built-in tools against the 10 most challenging long-horizon task failure modes identified in autonomous agent runtimes (GAIA/SWE-bench/LHTB/WilliamLab):
+1. `t3-cross-module-refactor`: Multi-file cross-module refactoring & AST import consistency.
+2. `t3-stateful-db-migration`: Stateful database schema migration with non-destructive data backfill and snapshot rollback.
+3. `t3-adversarial-supply-chain`: Insecure and unencrypted package transport scanning in dependency declarations.
+4. `t3-distributed-workflow-rollback`: Atomic multi-stage deployment transaction rollback upon intermediate failure.
+5. `t3-log-root-cause-extraction`: High-volume noisy execution log triage & error signature clustering to prevent context rot.
+6. `t3-workspace-atomic-sync`: Directory tree batch migration with cryptographic SHA-256 integrity verification.
+7. `t3-skill-synthesis-sandbox`: Dynamic SKILL.md synthesis, AST parsing, and sandboxed pre-flight execution.
+8. `t3-incident-mitigation-snapshot`: Safe configuration update with state snapshot verification.
+9. `t3-recursive-web-synthesis`: Web navigation and structured JSON extraction under SSRF policy.
+10. `t3-api-contract-integration`: Multi-service API payload contract validation.
+
 ### Tier C — Live-model red team (optional, gated)
 
-Requires a reachable endpoint (`VIBE_BASE_URL`). Generator agents use the model to mutate
+Requires a reachable endpoint (`VIBE_BASE_URL` or `GEMINI_API_KEY`/`KIMI_API_KEY`). Generator agents use the model to mutate
 payloads; victim runs the real `QueryLoopFactory`. Reuses Tier A corpus as seeds.
-Explicitly out of the default run.
 
 ## 4. Workplan
 

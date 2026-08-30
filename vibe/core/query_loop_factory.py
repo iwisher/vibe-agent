@@ -131,6 +131,9 @@ class QueryLoopFactory:
         tool_system.register_tool(SkillListTool())
         tool_system.register_tool(PromptSkillInstallTool())
         tool_system.register_tool(SkillManageTool())
+        from vibe.tools.task_verifier import TaskVerifierTool
+
+        tool_system.register_tool(TaskVerifierTool(root_dir=self.working_dir))
         return tool_system
 
     def create(self, max_iterations: int | None = None) -> QueryLoop:

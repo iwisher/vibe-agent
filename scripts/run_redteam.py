@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from vibe.core.query_loop import QueryLoop
 from vibe.redteam import RedTeamOrchestrator, load_corpus, render_json, render_markdown
 from vibe.redteam.live import LIVE_PROVIDERS, LiveTargetConfig
+from vibe.redteam.tier_3 import TIER_3_SCENARIOS, run_tier_3_scenario
 from vibe.redteam.tier_b import SCENARIOS, run_scenario
 from vibe.redteam.victim import VictimHarness
 from vibe.tools.bash import BashSandbox, BashTool
@@ -141,10 +142,15 @@ async def main() -> int:
         with VictimHarness() as victim:
             tier_b.append(await run_scenario(scenario, victim))
 
+    tier_3 = []
+    for t3_scenario in TIER_3_SCENARIOS:
+        with VictimHarness() as victim:
+            tier_3.append(await run_tier_3_scenario(t3_scenario, victim))
+
     # The offline report artifact is the deliverable — write it before any
     # network-dependent live probe can crash the run.
-    REPORT_JSON.write_text(render_json(findings, tier_b), encoding="utf-8")
-    REPORT_MD.write_text(render_markdown(findings, tier_b), encoding="utf-8")
+    REPORT_JSON.write_text(render_json(findings, tier_b, tier_3), encoding="utf-8")
+    REPORT_MD.write_text(render_markdown(findings, tier_b, tier_3), encoding="utf-8")
 
     live_result = None
     if args.live:
@@ -155,13 +161,15 @@ async def main() -> int:
 
     bypasses = [f for f in findings if not f.passed]
     uncontained = [r for r in tier_b if not r.passed]
+    t3_failed = [r for r in tier_3 if not r.passed]
     print(f"Tier A: {len(findings) - len(bypasses)}/{len(findings)} defense checks passed")
     print(f"Tier B: {len(tier_b) - len(uncontained)}/{len(tier_b)} scenarios contained")
+    print(f"Tier 3: {len(tier_3) - len(t3_failed)}/{len(tier_3)} long-horizon tasks passed")
     if live_result:
         print(f"Tier C (live): {live_result}")
     print(f"Report: {REPORT_MD}")
 
-    failed = bool(bypasses or uncontained)
+    failed = bool(bypasses or uncontained or t3_failed)
     if live_result and not live_result.get("skipped"):
         # An errored probe never exercised the safety property — fail loudly.
         if live_result.get("error") or live_result.get("any_tool_call_executed"):

@@ -66,11 +66,23 @@
   victim jail (safe_root + CWD + HOME all redirected); each asserts containment at the
   expected layer plus zero side effects. `tb-fooled-approver` documents the known residual:
   an evasive payload + fooled Layer 4 executes, but lands inside the jail only.
+- [x] Tier 3 Long-Horizon Challenged Agent Tasks (Track 4): 10 benchmark scenarios
+  (`vibe/redteam/tier_3.py`) covering top failure modes in autonomous agent runtimes (cross-module
+  refactoring, database migration, supply-chain audit, workflow rollback, log anomaly clustering,
+  workspace checksums, skill synthesis, incident snapshot).
+- [x] Built-in TaskVerifierTool & Deterministic Skills (Track 3 & 4):
+  - Created `vibe/tools/task_verifier.py` (`TaskVerifierTool`) for AST syntax/import inspection,
+    file checksum validation, SQLite schema/row invariants, and error signature log clustering.
+  - Created `skills/refactor-verifier/` (AST & cross-import contract validation).
+  - Created `skills/db-migrator/` (atomic migration with snapshot backup & rollback).
+  - Created `skills/log-analyst/` (noisy log triage & error signature clustering).
+  - Created `skills/dependency-auditor/` (supply-chain and unencrypted dependency scanning).
+  - Verified with `vibe skill validate` and 100% test coverage.
 - [x] Tier C live gating (Track 4): `--live --provider kimi|gemini` on
   `scripts/run_redteam.py` with endpoint-specific config (`vibe/redteam/live.py`);
-  offline-tested. Live run itself pending a `KIMI_API_KEY` or `GEMINI_API_KEY` credential.
+  verified against Gemini (`gemini-flash-latest`), confirming model refusal and full defense containment.
 - [x] Findings report: `scripts/run_redteam.py` writes `docs/redteam_report.{json,md}`
-  (Tier A 30/30, Tier B 7/7 at last run).
+  (Tier A 30/30, Tier B 7/7, Tier 3 10/10 at last run).
 
 ## Open
 
@@ -87,6 +99,7 @@
 - [x] Tier A component attack matrix (S1–S5, S7) with corpus, oracles, orchestrator.
 - [x] Remediation wave 1: S7 MCP SSRF gate, S4 approver fencing, base64-pipe-sh pattern.
 - [x] Tier B scripted-compromised-LLM scenarios (7, incl. strict-mode + fooled-approver).
+- [x] Tier 3 long-horizon challenged agent tasks (10 tasks across software engineering, db, security, reliability).
 - [x] Tier C `--live` flag wired and verified against Gemini (`gemini-flash-latest`), confirming model refusal and full defense containment.
 
 ## Won't fix — decided 2026-08-23 (intentionally kept as-is)

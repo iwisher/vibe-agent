@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from vibe.redteam.oracles import Finding
+from vibe.redteam.tier_3 import Tier3Result
 from vibe.redteam.tier_b import TierBResult
 
 _MAX_DETAIL = 200
@@ -22,9 +23,11 @@ def _md_safe(text: Any) -> str:
 
 
 def build_report(
-    findings: list[Finding], tier_b: list[TierBResult] | None = None
+    findings: list[Finding],
+    tier_b: list[TierBResult] | None = None,
+    tier_3: list[Tier3Result] | None = None,
 ) -> dict[str, Any]:
-    """Aggregate Tier-A findings (and optional Tier-B scenario results)."""
+    """Aggregate Tier-A findings, optional Tier-B scenario results, and Tier-3 tasks."""
     by_surface = Counter(f.entry.surface for f in findings)
     failed = [f for f in findings if not f.passed]
     failures_by_severity = Counter(f.severity for f in failed)
@@ -63,15 +66,38 @@ def build_report(
                 for r in tier_b
             ],
         }
+    if tier_3 is not None:
+        report["tier_3"] = {
+            "total_tasks": len(tier_3),
+            "passed_tasks": sum(1 for r in tier_3 if r.passed),
+            "results": [
+                {
+                    "id": r.scenario_id,
+                    "name": r.name,
+                    "category": r.category,
+                    "passed": r.passed,
+                    "detail": r.detail,
+                }
+                for r in tier_3
+            ],
+        }
     return report
 
 
-def render_json(findings: list[Finding], tier_b: list[TierBResult] | None = None) -> str:
-    return json.dumps(build_report(findings, tier_b), indent=2)
+def render_json(
+    findings: list[Finding],
+    tier_b: list[TierBResult] | None = None,
+    tier_3: list[Tier3Result] | None = None,
+) -> str:
+    return json.dumps(build_report(findings, tier_b, tier_3), indent=2)
 
 
-def render_markdown(findings: list[Finding], tier_b: list[TierBResult] | None = None) -> str:
-    report = build_report(findings, tier_b)
+def render_markdown(
+    findings: list[Finding],
+    tier_b: list[TierBResult] | None = None,
+    tier_3: list[Tier3Result] | None = None,
+) -> str:
+    report = build_report(findings, tier_b, tier_3)
     lines = [
         "# Red-Team Findings Report",
         "",
@@ -110,5 +136,20 @@ def render_markdown(findings: list[Finding], tier_b: list[TierBResult] | None = 
             lines.append(
                 f"- [{mark}] `{_md_safe(r['id'])}` (layer: {_md_safe(r['layer'])})"
                 f" — {_md_safe(r['detail'])}"
+            )
+    if "tier_3" in report:
+        t3 = report["tier_3"]
+        lines += [
+            "",
+            "## Tier 3 long-horizon challenged agent tasks",
+            "",
+            f"- Tasks: {t3['total_tasks']}, passed: {t3['passed_tasks']}",
+            "",
+        ]
+        for r in t3["results"]:
+            mark = "PASS" if r["passed"] else "FAIL"
+            lines.append(
+                f"- [{mark}] `{_md_safe(r['id'])}` ({_md_safe(r['category'])}) "
+                f"[{_md_safe(r['name'])}] — {_md_safe(r['detail'])}"
             )
     return "\n".join(lines) + "\n"

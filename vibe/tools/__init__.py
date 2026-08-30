@@ -12,6 +12,7 @@ __all__ = [
     "MCPBridge",
     "MCPServerConfig",
     "SkillManageTool",
+    "TaskVerifierTool",
     "extract_tool_call_name",
     "extract_tool_call_arguments",
     "extract_tool_call_id",

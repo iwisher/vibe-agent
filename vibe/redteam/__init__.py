@@ -7,6 +7,12 @@ from vibe.redteam.corpus import CorpusEntry, CorpusValidationError, load_corpus
 from vibe.redteam.oracles import Finding, Observation
 from vibe.redteam.orchestrator import RedTeamOrchestrator
 from vibe.redteam.report import build_report, render_json, render_markdown
+from vibe.redteam.tier_3 import (
+    TIER_3_SCENARIOS,
+    Tier3Result,
+    Tier3Scenario,
+    run_tier_3_scenario,
+)
 from vibe.redteam.victim import VictimHarness
 
 __all__ = [
@@ -15,9 +21,13 @@ __all__ = [
     "Finding",
     "Observation",
     "RedTeamOrchestrator",
+    "TIER_3_SCENARIOS",
+    "Tier3Result",
+    "Tier3Scenario",
     "VictimHarness",
     "build_report",
     "load_corpus",
     "render_json",
     "render_markdown",
+    "run_tier_3_scenario",
 ]
