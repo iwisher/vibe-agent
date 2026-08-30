@@ -147,17 +147,16 @@ async def main() -> int:
         with VictimHarness() as victim:
             tier_3.append(await run_tier_3_scenario(t3_scenario, victim))
 
-    # The offline report artifact is the deliverable — write it before any
-    # network-dependent live probe can crash the run.
-    REPORT_JSON.write_text(render_json(findings, tier_b, tier_3), encoding="utf-8")
-    REPORT_MD.write_text(render_markdown(findings, tier_b, tier_3), encoding="utf-8")
-
     live_result = None
     if args.live:
         try:
             live_result = await run_tier_c_probe(args.provider, model=args.model)
         except Exception as e:
             live_result = {"error": f"{type(e).__name__}: {e}"}
+
+    # Write report artifacts with Tier A, Tier B, Tier 3, and optional Tier C findings
+    REPORT_JSON.write_text(render_json(findings, tier_b, tier_3, live_result), encoding="utf-8")
+    REPORT_MD.write_text(render_markdown(findings, tier_b, tier_3, live_result), encoding="utf-8")
 
     bypasses = [f for f in findings if not f.passed]
     uncontained = [r for r in tier_b if not r.passed]

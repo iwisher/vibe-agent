@@ -112,7 +112,7 @@ vibe dashboard start --port 8080 --no-auth
 
 ### 3. Verification & Testing
 ```bash
-# Run pytest with auto asyncio (1400+ tests)
+# Run pytest with auto asyncio (1930+ tests)
 pytest
 
 # Skip known-broken config signature tests during unrelated development:

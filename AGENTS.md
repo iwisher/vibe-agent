@@ -16,7 +16,7 @@ Key capabilities:
 - **Secure Tool Execution**: 5-layer security defense (pattern scanning, file safety, human approval, smart approver, checkpoints) with sandboxed Bash and jailed File tools.
 - **Context Management**: Automated compaction with 4 strategies (TRUNCATE, LLM_SUMMARIZE, OFFLOAD, DROP), plus adaptive iteration budgets and a DAG-based task planner for parallel sub-tasks.
 - **Session Durability**: `SessionRecoveryManager` with TTL-based checkpoints serializes QueryLoop state to SQLite for suspend/resume (`vibe session resume`).
-- **Eval-Driven Development**: 47 built-in YAML eval cases, adversarial testing, multi-model scorecards, and soak tests with degradation detection.
+- **Eval-Driven Development**: 50 built-in YAML eval cases, adversarial testing, multi-model scorecards, and soak tests with degradation detection.
 - **Skill System v2**: Native skill format with TOML frontmatter, validation, security scanning, atomic installation, typed variables, orchestration, marketplace, and dynamic tool declaration.
 - **Skill-Maker (Self-Improving)**: Auto-detects recurring task patterns from wiki extractions, generates SKILL.md drafts via LLM, validates through sandbox, and proposes installation.
 - **Tripartite Memory System**: Enabled by default. Automated async knowledge extraction (including failed sessions), post-session **trajectory reflection** (generality-gated lesson pages with usage-driven helpful/harmful counters), **lesson compaction** (`vibe memory wiki compact`), query-time injection on all planner tiers (confidence-gated, contradiction-aware), FlashLLM contradiction detection, telemetry-triggered RLM analysis (LoRA fine-tuning, AgentHER-style failure relabeling), vector search with sentence-transformers, wiki graph database, and per-tag novelty thresholds.
@@ -154,11 +154,11 @@ vibe-agent/
 │   │   ├── soak_test.py        # Long-running stress tests
 │   │   ├── multi_model_runner.py / multi_provider_benchmark.py / model_registry.py
 │   │   ├── judge.py / regression.py / dashboard.py / observability.py
-│   │   └── builtin/            # 47 YAML eval case definitions
+│   │   └── builtin/            # 50 YAML eval case definitions
 │   └── dashboard/              # FastAPI backend + React frontend
 │       ├── server.py           # FastAPI server (WebSocket, token auth)
 │       └── static/             # index.html, app.js, style.css (no build step)
-├── tests/                      # ~1820 test functions across 140+ files; mirrors vibe/ layout
+├── tests/                      # 1,930+ test functions across 150+ files; mirrors vibe/ layout
 ├── scripts/
 │   ├── ci_eval_report.py       # CI regression check + markdown report
 │   └── validate_eval_tags.py   # Eval YAML schema validator
@@ -269,7 +269,7 @@ python -m vibe.cli.main eval run --limit 20
 
 ## 6. Testing Strategy
 
-- **Test count**: ~1800 test functions across 150+ test files (`tests/`), with subdirectories mirroring `vibe/` (`tests/core/`, `tests/memory/`, `tests/evox/`, `tests/tools/security/`, ...).
+- **Test count**: 1,930+ test functions across 150+ test files (`tests/`), with subdirectories mirroring `vibe/` (`tests/core/`, `tests/memory/`, `tests/evox/`, `tests/tools/security/`, ...).
 - **Framework**: pytest with `pytest-asyncio` in auto mode (`asyncio_mode = "auto"` in `pyproject.toml`) — async test functions need no decorator.
 - **Structure**: Mirror the `vibe/` package under `tests/` (e.g. `vibe/core/config.py` → `tests/core/test_config.py`).
 - **Test types**:

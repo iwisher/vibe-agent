@@ -56,11 +56,11 @@
   - Untracked `logs/session_test-ses.log` from git index to prevent test runs from dirtying working tree.
 - [x] Multi-Agent Red-Team Scaffolding & Defense Remediations (Track 4):
   - Created `vibe/redteam/` harness: corpus loader with schema validation, victim isolation in tmpdir with shadow-branch cleanup, deterministic oracles (S1–S5, S7), orchestrator over asyncio + swarm `EventBroker`, and report generators.
-  - Authored 6 bundled YAML corpus suites in `vibe/redteam/corpus/` (31 attack entries) validated via `scripts/validate_redteam_corpus.py`.
+  - Authored 6 bundled YAML corpus suites in `vibe/redteam/corpus/` (30 attack entries) validated via `scripts/validate_redteam_corpus.py`.
   - Remediated S7 MCP Bridge HTTP SSRF gap with `await SSRFGuard.is_safe_async(url)` in `MCPBridge._invoke_http` (explicit `follow_redirects=False`; per-server `allow_private` opt-out for local MCP servers).
   - Remediated S4 SmartApprover prompt injection with `UNTRUSTED_*` fence delimiters plus fence-marker munging (anti-spoofing) in `SmartApprover._llm_risk_assessment`.
   - Added critical `base64-pipe-sh` pattern to `BUILTIN_PATTERNS` in `vibe/tools/security/patterns.py` (found by the red team's first run).
-  - Added 61 unit/integration tests in `tests/redteam/` (1,910 total repo tests pass).
+  - Added 61 unit/integration tests in `tests/redteam/` (1,920 total repo tests passed at phase completion; 1,937 at HEAD).
 - [x] Tier B compromised-model scenarios (Track 4): 7 scripted hostile-model scenarios
   (`vibe/redteam/tier_b.py`) run through a real QueryLoop + SecurityCoordinator inside the
   victim jail (safe_root + CWD + HOME all redirected); each asserts containment at the
@@ -77,7 +77,7 @@
   - Created `skills/db-migrator/` (atomic migration with snapshot backup & rollback).
   - Created `skills/log-analyst/` (noisy log triage & error signature clustering).
   - Created `skills/dependency-auditor/` (supply-chain and unencrypted dependency scanning).
-  - Verified with `vibe skill validate` and 100% test coverage.
+  - Verified with `vibe skill validate` and dedicated unit/integration tests (`tests/tools/test_task_verifier.py`, `tests/redteam/test_tier_3.py`).
 - [x] Tier C live gating (Track 4): `--live --provider kimi|gemini` on
   `scripts/run_redteam.py` with endpoint-specific config (`vibe/redteam/live.py`);
   verified against Gemini (`gemini-flash-latest`), confirming model refusal and full defense containment.

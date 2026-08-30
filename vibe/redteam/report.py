@@ -26,8 +26,9 @@ def build_report(
     findings: list[Finding],
     tier_b: list[TierBResult] | None = None,
     tier_3: list[Tier3Result] | None = None,
+    live_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Aggregate Tier-A findings, optional Tier-B scenario results, and Tier-3 tasks."""
+    """Aggregate Tier-A findings, Tier-B scenarios, Tier-3 tasks, and Tier-C live results."""
     by_surface = Counter(f.entry.surface for f in findings)
     failed = [f for f in findings if not f.passed]
     failures_by_severity = Counter(f.severity for f in failed)
@@ -36,16 +37,16 @@ def build_report(
         "total_attacks": len(findings),
         "defense_held": len(findings) - len(failed),
         "bypasses": len(failed),
-        "by_surface": dict(sorted(by_surface.items())),
-        "bypasses_by_severity": dict(sorted(failures_by_severity.items())),
+        "by_surface": dict(by_surface),
+        "bypasses_by_severity": dict(failures_by_severity),
         "findings": [
             {
                 "id": f.entry.id,
                 "surface": f.entry.surface,
+                "severity": f.severity,
+                "passed": f.passed,
                 "expected": f.entry.expected_outcome,
                 "observed": f.observed.outcome,
-                "passed": f.passed,
-                "severity": f.severity,
                 "detail": f.observed.detail,
             }
             for f in findings
@@ -81,6 +82,8 @@ def build_report(
                 for r in tier_3
             ],
         }
+    if live_result is not None:
+        report["tier_c"] = live_result
     return report
 
 
@@ -88,16 +91,18 @@ def render_json(
     findings: list[Finding],
     tier_b: list[TierBResult] | None = None,
     tier_3: list[Tier3Result] | None = None,
+    live_result: dict[str, Any] | None = None,
 ) -> str:
-    return json.dumps(build_report(findings, tier_b, tier_3), indent=2)
+    return json.dumps(build_report(findings, tier_b, tier_3, live_result), indent=2)
 
 
 def render_markdown(
     findings: list[Finding],
     tier_b: list[TierBResult] | None = None,
     tier_3: list[Tier3Result] | None = None,
+    live_result: dict[str, Any] | None = None,
 ) -> str:
-    report = build_report(findings, tier_b, tier_3)
+    report = build_report(findings, tier_b, tier_3, live_result)
     lines = [
         "# Red-Team Findings Report",
         "",
@@ -152,4 +157,17 @@ def render_markdown(
                 f"- [{mark}] `{_md_safe(r['id'])}` ({_md_safe(r['category'])}) "
                 f"[{_md_safe(r['name'])}] — {_md_safe(r['detail'])}"
             )
+    if "tier_c" in report:
+        tc = report["tier_c"]
+        lines += [
+            "",
+            "## Tier C live-model probe findings",
+            "",
+            f"- Provider: `{_md_safe(tc.get('provider', 'unknown'))}`",
+            f"- Model: `{_md_safe(tc.get('model', 'unknown'))}`",
+            f"- Model refused: `{tc.get('model_refused', False)}`",
+            f"- Dangerous tool executed: `{tc.get('any_tool_call_executed', False)}`",
+            f"- Dangerous call denied: `{tc.get('dangerous_call_denied', False)}`",
+            f"- Response preview: {_md_safe(tc.get('final_response_preview', ''))}",
+        ]
     return "\n".join(lines) + "\n"

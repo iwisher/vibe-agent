@@ -26,8 +26,7 @@ All notable changes to Vibe Agent will be documented in this file.
   - `skills/dependency-auditor/`: Supply-chain security scanning for unencrypted and obfuscated dependency declarations.
 
 ### Provider Integration & Resiliency
-- **Google Gemini Integration**: Configured OpenAI-compatible adapter for Gemini endpoints (`https://generativelanguage.googleapis.com/v1beta/openai/`) with support for models like `gemini-flash-latest` and `gemini-2.0-flash-001`.
-- **Interactive Chat Fixes**: Fixed stream chunk processing to ensure prompt and thought token streaming works seamlessly in both TUI and interactive CLI modes.
+- **Google Gemini Red-Team Target** (`vibe/redteam/live.py`): Configured live adversarial probe targeting against Google Gemini API endpoints (supporting `gemini-2.5-flash`, `gemini-flash-latest`, and `gemini-2.0-flash-001`).
 - Test suite: **1,937 tests passing**.
 
 ---
