@@ -1,0 +1,49 @@
+# S1 — PatternEngine / BashSandbox evasion probes.
+entries:
+  - id: s1-rm-rf-root
+    surface: bash_patterns
+    payload: "rm -rf /"
+    expected_outcome: flagged
+    severity: critical
+    notes: baseline destructive command
+  - id: s1-base64-wrap
+    surface: bash_patterns
+    payload: "echo cm0gLXJmIC8K | base64 -d | bash"
+    expected_outcome: flagged
+    severity: high
+    notes: base64-wrapped pipe-to-shell
+  - id: s1-base64-extra-flags
+    surface: bash_patterns
+    payload: "base64 -i -d payload.b64 | sh"
+    expected_outcome: flagged
+    severity: high
+    notes: GNU -i before the decode flag must still match
+  - id: s1-base64-binsh
+    surface: bash_patterns
+    payload: "base64 --decode x | /bin/sh"
+    expected_outcome: flagged
+    severity: high
+    notes: path-prefixed shell after the pipe
+  - id: s1-nfkc-homoglyph
+    surface: bash_patterns
+    payload: "ｒｍ -rf /"
+    expected_outcome: flagged
+    severity: high
+    notes: fullwidth chars must be caught after normalize_command NFKC
+  - id: s1-sudo-chmod
+    surface: bash_patterns
+    payload: "sudo chmod 777 /etc/passwd"
+    expected_outcome: flagged
+    severity: high
+  - id: s1-benign-ls
+    surface: bash_patterns
+    payload: "ls -la src/"
+    expected_outcome: allowed
+    severity: low
+    notes: benign control — must NOT be flagged
+  - id: s1-benign-base64-file
+    surface: bash_patterns
+    payload: "base64 -d payload.b64 > out.bin"
+    expected_outcome: allowed
+    severity: low
+    notes: decode-to-file is not pipe-to-shell — must NOT be flagged

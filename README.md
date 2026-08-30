@@ -18,6 +18,7 @@ Vibe Agent is an open, visual-first interactive CLI agent harness. It is designe
 - **EvoX Meta-Evolution (Offline Pipeline)**: Self-improving offline search that jointly evolves candidate solutions and the search strategies used to generate them. Uses AdaEvolve-style multi-objective proxy scoring, UCB parent selection, and a lightweight strategy-code sandbox.
 - **Shadow Workspace Rollbacks**: Auto-creates hidden git branch (`vibe/shadow-<session-id>`) before write-heavy operations. One-command restore if the session fails.
 - **Multi-Agent Swarm**: DAG-based orchestration of specialized sub-agents (Research, Coding, Critic, Planner) with Pub/Sub message bus, broadcast deduplication, and shared wiki.
+- **Multi-Agent Adversarial Red-Team**: Built-in 3-tier adversarial security testing framework (`vibe/redteam/` & `scripts/run_redteam.py`) testing 6 attack surfaces (S1 Bash patterns, S2 File jail, S3 SSRF, S4 SmartApprover prompt injection, S5 Skill supply chain, S7 MCP bridge). Validates offline defense layers, contains jailbroken mock LLMs (Tier B), and runs live model probes (Tier C).
 - **React Trace Dashboard**: Web UI for session observability — timeline, wiki graph, telemetry charts, system stats. Dark theme, real-time WebSocket updates.
 - **Preference Layer**: 8 persistent heuristics converting user feedback into agent behavior — tool defaults, approval rules, style, macros, recovery, compaction, provider routing, extraction.
 - **Secret Redaction**: Comprehensive pattern stripping of API keys (OpenAI, AWS, GitHub, Slack, Google, Stripe, Discord, JWTs, private keys) and passwords from trace stores and logs.
@@ -510,6 +511,32 @@ vibe eval update-baseline
 
 ---
 
+## 🛡️ Multi-Agent Adversarial Red-Team
+
+Vibe Agent includes a comprehensive, multi-tiered adversarial red-team engine (`vibe/redteam/`) to validate defenses against automated attacks, prompt injections, and rogue agent tool executions:
+
+- **Tier A (Offline Component Attack Matrix)**: 30 deterministic test vectors across S1 (Bash pattern scanning & base64 pipe evasions), S2 (File safety & symlink jail traversal), S3 (Browser fetch SSRF), S4 (SmartApprover prompt injection fencing), S5 (Skill supply chain), and S7 (MCP bridge HTTP SSRF).
+- **Tier B (Compromised-Model Containment)**: Scripted hostile-model jailbreak scenarios running through a real `QueryLoop` and `SecurityCoordinator` inside a strictly jailed environment.
+- **Tier C (Live-Model Gating)**: Live adversarial probe tests against reachable model endpoints (e.g. Google Gemini, Kimi).
+
+### Running Red-Team Tests
+
+```bash
+# Validate attack corpus definitions (6 suites, 30 entries)
+python scripts/validate_redteam_corpus.py
+
+# Run offline Tier A + Tier B red-team suite
+python scripts/run_redteam.py
+
+# Run with live Gemini endpoint verification
+export GEMINI_API_KEY="your-api-key"
+python scripts/run_redteam.py --live --provider gemini --model gemini-flash-latest
+```
+
+All findings and regression results are compiled to [`docs/redteam_report.md`](docs/redteam_report.md) and [`docs/redteam_report.json`](docs/redteam_report.json). Read the architecture in the [Red-Team Plan](docs/plans/2026-08-29-multi-agent-redteam.md).
+
+---
+
 ## 📖 Research Foundations
 
 The memory, skill, and self-improvement designs follow published, peer-reviewed or
@@ -548,4 +575,4 @@ the current and planned increments — full study log with all sources in
 
 ---
 
-*Vibe Agent is currently in Phase 4.2 (Self-Improving Skill-Maker) + Phase 5.2 (Shadow Workspace). See the [Roadmap](docs/ROADMAP.md) for what's next. Test suite: **1,823 tests passing**.*
+*Vibe Agent is currently in Phase 4.2 (Self-Improving Skill-Maker) + Phase 5.2 (Shadow Workspace). See the [Roadmap](docs/ROADMAP.md) for what's next. Test suite: **1,920+ tests passing**.*

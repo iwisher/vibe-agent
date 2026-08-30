@@ -69,7 +69,8 @@ async def test_mcp_002_execute_runs_tool_successfully():
     configs = [
         {
             "name": "filesystem",
-            "url": "http://localhost:3000",
+            # Public IP literal: passes the SSRF gate without DNS resolution.
+            "url": "http://93.184.216.34",
             "tools": [
                 {
                     "name": "read_file",
@@ -100,7 +101,7 @@ async def test_mcp_002_execute_runs_tool_successfully():
     # Verify the POST call
     mock_client.post.assert_awaited_once()
     call_args = mock_client.post.call_args
-    assert call_args[0][0] == "http://localhost:3000"
+    assert call_args[0][0] == "http://93.184.216.34"
     assert call_args[1]["json"]["tool"] == "read_file"
     assert call_args[1]["json"]["arguments"] == {"path": "/tmp/test.txt"}
 

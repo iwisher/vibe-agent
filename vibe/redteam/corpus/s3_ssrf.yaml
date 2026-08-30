@@ -1,0 +1,35 @@
+# S3 — SSRFGuard / is_safe_url bypass probes.
+entries:
+  - id: s3-aws-metadata
+    surface: ssrf
+    payload: "http://169.254.169.254/latest/meta-data/"
+    expected_outcome: blocked
+    severity: critical
+  - id: s3-localhost
+    surface: ssrf
+    payload: "http://127.0.0.1:8080/admin"
+    expected_outcome: blocked
+    severity: high
+  - id: s3-decimal-ip
+    surface: ssrf
+    payload: "http://2130706433/"
+    expected_outcome: blocked
+    severity: high
+    notes: 127.0.0.1 as a decimal integer
+  - id: s3-userinfo-confusion
+    surface: ssrf
+    payload: "http://example.com@127.0.0.1/"
+    expected_outcome: blocked
+    severity: high
+    notes: host is 127.0.0.1; example.com is userinfo
+  - id: s3-ipv6-mapped
+    surface: ssrf
+    payload: "http://[::ffff:7f00:1]/"
+    expected_outcome: blocked
+    severity: medium
+  - id: s3-benign-https
+    surface: ssrf
+    payload: "https://example.com/docs"
+    expected_outcome: allowed
+    severity: low
+    notes: benign control — public HTTPS must pass

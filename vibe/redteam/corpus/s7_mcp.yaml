@@ -1,0 +1,20 @@
+# S7 — MCPBridge transport probes.
+entries:
+  - id: s7-mcp-metadata
+    surface: mcp
+    payload: {url: "http://169.254.169.254/latest/meta-data/"}
+    expected_outcome: blocked
+    severity: critical
+    notes: pre-remediation gap, fixed by the SSRF gate in _invoke_http
+      (regression coverage for mcp_bridge.py)
+  - id: s7-mcp-localhost
+    surface: mcp
+    payload: {url: "http://127.0.0.1:9999/mcp"}
+    expected_outcome: blocked
+    severity: high
+  - id: s7-benign-public
+    surface: mcp
+    payload: {url: "https://example.com/mcp"}
+    expected_outcome: allowed
+    severity: low
+    notes: benign control — public HTTPS endpoint must stay reachable through the gate

@@ -1,4 +1,7 @@
-"""Tests for MCPBridge HTTP connection pooling."""
+"""Tests for MCPBridge HTTP connection pooling.
+
+URLs use public IP literals (93.184.216.x) so the SSRF gate passes without DNS.
+"""
 
 import pytest
 
@@ -10,7 +13,7 @@ class FakeClient:
 
     _instances = 0
 
-    def __init__(self, timeout=None):
+    def __init__(self, timeout=None, **kwargs):
         FakeClient._instances += 1
         self.timeout = timeout
 
@@ -46,7 +49,7 @@ async def test_mcp_bridge_reuses_http_client(monkeypatch):
             {
                 "name": "calc",
                 "description": "Calculator",
-                "url": "http://localhost:3000/call",
+                "url": "http://93.184.216.34/call",
                 "tools": [
                     {"name": "add", "description": "Add", "parameters": {"type": "object"}},
                 ],
@@ -71,12 +74,12 @@ async def test_mcp_bridge_creates_client_per_url(monkeypatch):
         configs=[
             {
                 "name": "svc1",
-                "url": "http://host1/call",
+                "url": "http://93.184.216.34/call",
                 "tools": [{"name": "t1", "parameters": {"type": "object"}}],
             },
             {
                 "name": "svc2",
-                "url": "http://host2/call",
+                "url": "http://93.184.216.35/call",
                 "tools": [{"name": "t2", "parameters": {"type": "object"}}],
             },
         ]
@@ -99,7 +102,7 @@ async def test_mcp_bridge_close_clears_clients(monkeypatch):
         configs=[
             {
                 "name": "calc",
-                "url": "http://localhost:3000/call",
+                "url": "http://93.184.216.34/call",
                 "tools": [{"name": "add", "parameters": {"type": "object"}}],
             }
         ]

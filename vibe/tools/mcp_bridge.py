@@ -20,6 +20,9 @@ class MCPServerConfig:
     command: str | None = None
     args: list[str] = field(default_factory=list)
     tools: list[dict[str, Any]] = field(default_factory=list)
+    # Explicit opt-in to reach private/loopback HTTP endpoints (e.g. a local MCP
+    # server). Default False keeps the SSRF gate enforced.
+    allow_private: bool = False
 
 
 class MCPBridge:
@@ -41,6 +44,7 @@ class MCPBridge:
                     command=cfg.get("command"),
                     args=cfg.get("args", []),
                     tools=cfg.get("tools", []),
+                    allow_private=bool(cfg.get("allow_private", False)),
                 )
             )
 
@@ -50,7 +54,9 @@ class MCPBridge:
             return self._http_clients[url]
         if httpx is None:
             raise RuntimeError("httpx is not installed")
-        client = httpx.AsyncClient(timeout=30.0)
+        # Redirects are never followed: a redirect target would bypass the SSRF
+        # gate applied to the original URL (unlike BrowserTool's per-hop checks).
+        client = httpx.AsyncClient(timeout=30.0, follow_redirects=False)
         self._http_clients[url] = client
         return client
 
@@ -87,7 +93,7 @@ class MCPBridge:
         self, cfg: MCPServerConfig, tool: dict[str, Any], arguments: dict[str, Any]
     ) -> ToolResult:
         if cfg.url:
-            return await self._invoke_http(cfg.url, tool, arguments)
+            return await self._invoke_http(cfg.url, tool, arguments, cfg.allow_private)
         if cfg.command:
             return await self._invoke_stdio(cfg, tool, arguments)
         return ToolResult(
@@ -97,10 +103,26 @@ class MCPBridge:
         )
 
     async def _invoke_http(
-        self, url: str, tool: dict[str, Any], arguments: dict[str, Any]
+        self,
+        url: str,
+        tool: dict[str, Any],
+        arguments: dict[str, Any],
+        allow_private: bool = False,
     ) -> ToolResult:
         if httpx is None:
             return ToolResult(success=False, content=None, error="httpx is not installed")
+        # SSRF gate: validate the target before any HTTP client is created or any
+        # request is attempted. Same guard the browser tool uses (fail-closed).
+        # allow_private is an explicit per-server opt-out for local MCP servers.
+        if not allow_private:
+            from vibe.tools.browser import SSRFGuard
+
+            if not await SSRFGuard.is_safe_async(url):
+                return ToolResult(
+                    success=False,
+                    content=None,
+                    error=f"MCP server URL blocked by SSRF policy: {url}",
+                )
         try:
             payload = {
                 "tool": tool.get("name"),

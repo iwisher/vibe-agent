@@ -155,6 +155,14 @@ BUILTIN_PATTERNS: list[PatternDef] = [
         "pattern": r"curl\s+.*\|\s*(sh|bash)\b",
         "description": "curl | sh pipe",
     },
+    {
+        "id": "base64-pipe-sh",
+        "severity": "critical",
+        # Tolerates extra flags before the decode flag (GNU `-i` first) and
+        # path-prefixed shells (`| /bin/sh`); compiled with re.IGNORECASE.
+        "pattern": r"base64\s+[^|]*?(-[a-z]*d[a-z]*|--decode)[^|]*\|\s*(?:/bin/)?(sh|bash|zsh|python\d*)\b",
+        "description": "base64 decode piped to shell/interpreter",
+    },
     # ── WARNING: flag for review ───────────────────────────────────────────
     {
         "id": "git-reset-hard",

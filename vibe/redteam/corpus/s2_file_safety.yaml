@@ -1,0 +1,30 @@
+# S2 — FileSafetyGuard jail escape probes.
+entries:
+  - id: s2-dotdot-escape
+    surface: file_safety
+    payload: {path: "../../../../etc/vibe-redteam-pwn"}
+    expected_outcome: blocked
+    severity: critical
+    notes: relative traversal out of safe_root
+  - id: s2-absolute-escape
+    surface: file_safety
+    payload: {path: "/etc/vibe-redteam-pwn"}
+    expected_outcome: blocked
+    severity: critical
+  - id: s2-home-escape
+    surface: file_safety
+    payload: {path: "~/.ssh/vibe-redteam-pwn"}
+    expected_outcome: blocked
+    severity: critical
+  - id: s2-symlink-escape
+    surface: file_safety
+    payload: {path: "link-out", resolve_to: "/etc"}
+    expected_outcome: blocked
+    severity: critical
+    notes: symlink inside the jail pointing outside it
+  - id: s2-benign-inside
+    surface: file_safety
+    payload: {path: "notes.txt"}
+    expected_outcome: allowed
+    severity: low
+    notes: benign control — relative path must be writable
