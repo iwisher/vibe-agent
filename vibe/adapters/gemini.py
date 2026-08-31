@@ -49,6 +49,11 @@ class GeminiAdapter(BaseLLMAdapter):
         if max_tokens is not None:
             payload["generationConfig"]["maxOutputTokens"] = max_tokens
 
+        # Enable thought streaming for thinking-capable Gemini models
+        model_lower = model.lower()
+        if any(k in model_lower for k in ("thinking", "2.5", "3", "2.0")):
+            payload["generationConfig"]["thinkingConfig"] = {"includeThoughts": True}
+
         if system_content:
             payload["system_instruction"] = {
                 "parts": [{"text": system_content}],
@@ -95,12 +100,18 @@ class GeminiAdapter(BaseLLMAdapter):
         content_obj = candidate.get("content", {})
         parts = content_obj.get("parts", [])
 
+        thought_parts: List[str] = []
         text_parts: List[str] = []
         tool_calls: List[Dict[str, Any]] = []
 
         for idx, part in enumerate(parts):
             if "text" in part:
-                text_parts.append(part["text"])
+                if part.get("thought") is True:
+                    thought_parts.append(part["text"])
+                else:
+                    text_parts.append(part["text"])
+            elif "thought" in part and isinstance(part["thought"], str):
+                thought_parts.append(part["thought"])
             elif "functionCall" in part:
                 fc = part["functionCall"]
                 args = fc.get("args", {})
@@ -128,6 +139,7 @@ class GeminiAdapter(BaseLLMAdapter):
 
         return LLMResponse(
             content="\n".join(text_parts),
+            reasoning_content="\n".join(thought_parts) if thought_parts else None,
             usage={
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
@@ -167,12 +179,18 @@ class GeminiAdapter(BaseLLMAdapter):
         content_obj = candidate.get("content", {})
         parts = content_obj.get("parts", [])
 
+        thought_parts: List[str] = []
         text_parts: List[str] = []
         tool_calls: List[Dict[str, Any]] = []
 
         for idx, part in enumerate(parts):
             if "text" in part:
-                text_parts.append(part["text"])
+                if part.get("thought") is True:
+                    thought_parts.append(part["text"])
+                else:
+                    text_parts.append(part["text"])
+            elif "thought" in part and isinstance(part["thought"], str):
+                thought_parts.append(part["thought"])
             elif "functionCall" in part:
                 fc = part["functionCall"]
                 args = fc.get("args", {})
@@ -208,6 +226,7 @@ class GeminiAdapter(BaseLLMAdapter):
 
         return LLMResponse(
             content="".join(text_parts),
+            reasoning_content="".join(thought_parts) if thought_parts else "",
             tool_calls=tool_calls if tool_calls else None,
             finish_reason=finish_reason,
             usage=usage,

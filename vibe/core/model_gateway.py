@@ -685,8 +685,9 @@ class LLMClient:
                     async with client.stream(
                         "POST", url, json=payload, headers=headers
                     ) as response:
-                        if response.status_code >= 400:
-                            await response.aread()
+                        if getattr(response, "status_code", 200) >= 400:
+                            if hasattr(response, "aread"):
+                                await response.aread()
                             response.raise_for_status()
 
                         async for line in response.aiter_lines():
@@ -798,9 +799,8 @@ class LLMClient:
                                     err_obj = parsed.get("error", parsed)
                                     if isinstance(err_obj, dict):
                                         msg = err_obj.get("message", "")
-                                        err_type = (
-                                            err_obj.get("type", "")
-                                            or err_obj.get("status", "")
+                                        err_type = err_obj.get("type", "") or err_obj.get(
+                                            "status", ""
                                         )
                                         if msg:
                                             error_msg = f"[{status}] {msg}"

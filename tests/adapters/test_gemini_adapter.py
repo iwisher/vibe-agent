@@ -482,3 +482,74 @@ class TestGeminiAdapter:
         assert contents[0]["role"] == "user"
         assert "text" in contents[0]["parts"][0]
 
+    def test_parse_response_with_thinking(self):
+        """Gemini thought parts must be extracted into reasoning_content."""
+        adapter = GeminiAdapter()
+        response_json = {
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {"text": "Let me think through this step by step...", "thought": True},
+                            {"text": "Here is the final answer."},
+                        ],
+                        "role": "model",
+                    },
+                    "finishReason": "STOP",
+                }
+            ],
+            "usageMetadata": {
+                "promptTokenCount": 15,
+                "candidatesTokenCount": 20,
+                "totalTokenCount": 35,
+            },
+        }
+        resp = adapter.parse_response(response_json)
+        assert resp.content == "Here is the final answer."
+        assert resp.reasoning_content == "Let me think through this step by step..."
+
+    def test_parse_stream_chunk_with_thinking(self):
+        """Streaming thought chunk must yield reasoning_content."""
+        adapter = GeminiAdapter()
+        thought_chunk = {
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {"text": "Thinking token...", "thought": True},
+                        ],
+                    },
+                }
+            ],
+        }
+        resp = adapter.parse_stream_chunk(thought_chunk)
+        assert resp is not None
+        assert resp.content == ""
+        assert resp.reasoning_content == "Thinking token..."
+
+        content_chunk = {
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {"text": "Output token", "thought": False},
+                        ],
+                    },
+                }
+            ],
+        }
+        resp2 = adapter.parse_stream_chunk(content_chunk)
+        assert resp2 is not None
+        assert resp2.content == "Output token"
+        assert resp2.reasoning_content == ""
+
+    def test_build_request_includes_thinking_config(self):
+        """Thinking-capable Gemini models must include thinkingConfig in generationConfig."""
+        adapter = GeminiAdapter()
+        _, _, payload = adapter.build_request(
+            base_url="https://generativelanguage.googleapis.com",
+            model="gemini-2.5-flash",
+            messages=[{"role": "user", "content": "Hello"}],
+        )
+        assert "thinkingConfig" in payload["generationConfig"]
+        assert payload["generationConfig"]["thinkingConfig"] == {"includeThoughts": True}
