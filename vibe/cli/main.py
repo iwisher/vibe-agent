@@ -141,6 +141,38 @@ def _make_pt_approval_hook():
     return hook
 
 
+def _handle_yolo_command(cmd: str, loop_or_controller: Any) -> str:
+    """Handle /yolo on|off|status and return user-facing status message."""
+    parts = cmd.strip().split()
+    sub = parts[1].lower() if len(parts) > 1 else "status"
+
+    def _get_approval_mode() -> str:
+        sec_cfg = getattr(loop_or_controller, "security_config", None)
+        if sec_cfg is None:
+            main_loop = getattr(loop_or_controller, "main_loop", None)
+            sec_cfg = getattr(main_loop, "security_config", None) if main_loop is not None else None
+        return getattr(sec_cfg, "approval_mode", "smart") if sec_cfg is not None else "smart"
+
+    if sub == "on":
+        if hasattr(loop_or_controller, "set_yolo_mode"):
+            loop_or_controller.set_yolo_mode(True)
+        return "⚡ YOLO mode enabled: all tool commands will be auto-approved."
+    elif sub == "off":
+        if hasattr(loop_or_controller, "set_yolo_mode"):
+            loop_or_controller.set_yolo_mode(False)
+        mode = _get_approval_mode()
+        return f"🛡️ YOLO mode disabled: safe approval mode restored ({mode})."
+    elif sub == "status":
+        is_yolo = getattr(loop_or_controller, "yolo_mode", False)
+        mode = _get_approval_mode()
+        if is_yolo:
+            return "⚡ YOLO mode is ON (auto-approving all commands)"
+        else:
+            return f"🛡️ YOLO mode is OFF (approval mode: {mode})"
+    else:
+        return "Usage: /yolo [on|off|status]"
+
+
 async def interactive_mode(controller: Any) -> None:
     if not isinstance(controller, SessionController):
         # Legacy QueryLoop mode for backward compatibility
@@ -153,7 +185,8 @@ async def interactive_mode(controller: Any) -> None:
             else True
         )
         console.print(
-            "[bold green]Vibe Agent[/bold green] ready. Type /exit to quit, /clear to reset."
+            "[bold green]Vibe Agent[/bold green] ready. "
+            "Type /exit to quit, /clear to reset, /yolo for YOLO mode."
         )
         if getattr(query_loop, "messages", None):
             non_sys = [m for m in query_loop.messages if getattr(m, "role", "") != "system"]
@@ -180,6 +213,15 @@ async def interactive_mode(controller: Any) -> None:
                 _save_readline_history()
                 console.print("Goodbye!")
                 break
+            if user_input.lower().startswith("/yolo"):
+                msg = _handle_yolo_command(user_input, query_loop)
+                if "enabled" in msg or "is ON" in msg:
+                    console.print(f"[bold yellow]{msg}[/bold yellow]")
+                elif "disabled" in msg or "is OFF" in msg:
+                    console.print(f"[bold green]{msg}[/bold green]")
+                else:
+                    console.print(f"[yellow]{msg}[/yellow]")
+                continue
             if user_input.lower() == "/clear":
                 query_loop.clear_history()
                 console.print("History cleared.")
@@ -378,6 +420,19 @@ async def interactive_mode(controller: Any) -> None:
                         controller.prompt_shown = True
                     continue
 
+                if user_input.lower().startswith("/yolo"):
+                    msg = _handle_yolo_command(user_input, controller)
+                    if "enabled" in msg or "is ON" in msg:
+                        console.print(f"[bold yellow]{msg}[/bold yellow]")
+                    elif "disabled" in msg or "is OFF" in msg:
+                        console.print(f"[bold green]{msg}[/bold green]")
+                    else:
+                        console.print(f"[yellow]{msg}[/yellow]")
+                    if controller.queue.pending_count == 0 and not controller.prompt_shown:
+                        console.print("[bold bright_blue]❯ [/bold bright_blue]", end="")
+                        controller.prompt_shown = True
+                    continue
+
                 if user_input.lower() == "/clear":
                     controller.main_loop.clear_history()
                     console.print("History cleared.")
@@ -516,6 +571,10 @@ async def interactive_mode_tui(controller: SessionController) -> None:
             return
         if text.lower() in ("/shortcuts", "/help", "/keys", "help"):
             tui.append_log(format_shortcuts_help())
+            return
+        if text.lower().startswith("/yolo"):
+            msg = _handle_yolo_command(text, controller)
+            tui.append_log(msg)
             return
         if text.lower() == "/clear":
             controller.main_loop.clear_history()

@@ -145,6 +145,39 @@ _TUI_STYLE = Style.from_dict(
 )
 
 
+class MouseAwareControl(FormattedTextControl):
+    """FormattedTextControl with mouse scroll and click callback support."""
+
+    def __init__(
+        self,
+        text: Any = "",
+        on_scroll_up: Callable[[], None] | None = None,
+        on_scroll_down: Callable[[], None] | None = None,
+        on_click: Callable[[], None] | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(text, **kwargs)
+        self.on_scroll_up = on_scroll_up
+        self.on_scroll_down = on_scroll_down
+        self.on_click = on_click
+
+    def mouse_handler(self, mouse_event: Any) -> Any:
+        from prompt_toolkit.mouse_events import MouseEventType
+
+        if mouse_event.event_type == MouseEventType.SCROLL_UP and self.on_scroll_up is not None:
+            self.on_scroll_up()
+            return None
+        elif (
+            mouse_event.event_type == MouseEventType.SCROLL_DOWN and self.on_scroll_down is not None
+        ):
+            self.on_scroll_down()
+            return None
+        elif mouse_event.event_type == MouseEventType.MOUSE_UP and self.on_click is not None:
+            self.on_click()
+            return None
+        return super().mouse_handler(mouse_event)
+
+
 class VibeTUI:
     """Full-screen tiled UI for Vibe Agent.
 
@@ -192,6 +225,26 @@ class VibeTUI:
             **input_kwargs,
         )
 
+        # Attach mouse scrolling and click focus to display & input areas
+        self._attach_mouse_scrolling(
+            self.thinking_area,
+            lambda: self.scroll_thinking_up(count=3),
+            lambda: self.scroll_thinking_down(count=3),
+            on_click=lambda: self.layout.focus(self.thinking_area),
+        )
+        self._attach_mouse_scrolling(
+            self.log_area,
+            lambda: self.scroll_log_up(count=3),
+            lambda: self.scroll_log_down(count=3),
+            on_click=lambda: self.layout.focus(self.log_area),
+        )
+        self._attach_mouse_scrolling(
+            self.input_area,
+            self._scroll_input_up,
+            self._scroll_input_down,
+            on_click=lambda: self.layout.focus(self.input_area),
+        )
+
         # Status shown across top bar and input section divider
         self._model_name = "default"
         self._system_state = "READY"
@@ -205,28 +258,51 @@ class VibeTUI:
         self.container = HSplit(
             [
                 Window(
-                    FormattedTextControl(self._get_top_header),
+                    MouseAwareControl(
+                        self._get_top_header,
+                        on_click=lambda: self.layout.focus(self.input_area),
+                    ),
                     height=1,
                     style="class:header.system",
                 ),
                 Window(
-                    FormattedTextControl(" 🧠 💭 AGENT THINKING STREAM "),
+                    MouseAwareControl(
+                        " 🧠 💭 AGENT THINKING STREAM ",
+                        on_scroll_up=lambda: self.scroll_thinking_up(count=3),
+                        on_scroll_down=lambda: self.scroll_thinking_down(count=3),
+                        on_click=lambda: self.layout.focus(self.thinking_area),
+                    ),
                     height=1,
                     style="class:header.thinking",
                 ),
                 self.thinking_area,
-                self._make_divider("⚡ 🛠️ WORKING LOG & TOOL ACTIONS", "class:border.log"),
+                self._make_divider(
+                    "⚡ 🛠️ WORKING LOG & TOOL ACTIONS",
+                    "class:border.log",
+                    on_scroll_up=lambda: self.scroll_log_up(count=3),
+                    on_scroll_down=lambda: self.scroll_log_down(count=3),
+                    on_click=lambda: self.layout.focus(self.log_area),
+                ),
                 self.log_area,
                 Window(
-                    FormattedTextControl(self._get_input_header),
+                    MouseAwareControl(
+                        self._get_input_header,
+                        on_scroll_up=self._scroll_input_up,
+                        on_scroll_down=self._scroll_input_down,
+                        on_click=lambda: self.layout.focus(self.input_area),
+                    ),
                     height=1,
                     style="class:border.input",
                 ),
                 self.input_area,
                 Window(
-                    FormattedTextControl(
+                    MouseAwareControl(
                         " 🚪 [Ctrl-C] Exit  │  📜 [↑/↓] History  │  🧹 [/clear] Reset  │"
-                        "  ⤢ [Ctrl-T] Expand  │  📜 [PgUp/PgDn] Log  │  💭 [Alt-PgUp/PgDn] Thinking"
+                        "  ⤢ [Ctrl-T] Expand  │  📜 [PgUp/PgDn] Log  │"
+                        "  💭 [Alt-PgUp/PgDn] Thinking",
+                        on_scroll_up=lambda: self.scroll_log_up(count=3),
+                        on_scroll_down=lambda: self.scroll_log_down(count=3),
+                        on_click=lambda: self.layout.focus(self.input_area),
                     ),
                     height=1,
                     style="class:header.shortcuts",
@@ -241,6 +317,47 @@ class VibeTUI:
         self._submit_callback: Callable[[str], None] | None = None
         self._history_index: int | None = None
         self._current_input: str = ""
+
+    def _attach_mouse_scrolling(
+        self,
+        area: TextArea,
+        on_scroll_up: Callable[[], None],
+        on_scroll_down: Callable[[], None],
+        on_click: Callable[[], None] | None = None,
+    ) -> None:
+        """Attach mouse wheel scrolling and click focus to a TextArea control."""
+        from prompt_toolkit.mouse_events import MouseEventType
+
+        original_handler = area.control.mouse_handler
+
+        def custom_mouse_handler(mouse_event: Any) -> Any:
+            if mouse_event.event_type == MouseEventType.SCROLL_UP:
+                on_scroll_up()
+                return None
+            elif mouse_event.event_type == MouseEventType.SCROLL_DOWN:
+                on_scroll_down()
+                return None
+            elif mouse_event.event_type == MouseEventType.MOUSE_UP and on_click is not None:
+                on_click()
+            return original_handler(mouse_event)
+
+        area.control.mouse_handler = custom_mouse_handler
+
+    def _scroll_input_up(self) -> None:
+        """Scroll multiline input up or browse command history backward."""
+        if self._input_expanded or "\n" in self.input_area.text:
+            self.input_area.buffer.cursor_up(count=1)
+            self._invalidate()
+        else:
+            self._history_backward()
+
+    def _scroll_input_down(self) -> None:
+        """Scroll multiline input down or browse command history forward."""
+        if self._input_expanded or "\n" in self.input_area.text:
+            self.input_area.buffer.cursor_down(count=1)
+            self._invalidate()
+        else:
+            self._history_forward()
 
     def _input_height(self) -> int:
         """Input area height: 1 line collapsed, half the screen when expanded.
@@ -415,10 +532,22 @@ class VibeTUI:
 
         return kb
 
-    def _make_divider(self, label: str, style: str = "class:border") -> Window:
+    def _make_divider(
+        self,
+        label: str,
+        style: str = "class:border",
+        on_scroll_up: Callable[[], None] | None = None,
+        on_scroll_down: Callable[[], None] | None = None,
+        on_click: Callable[[], None] | None = None,
+    ) -> Window:
         """Return a 1-line labeled unicode divider marking a section boundary."""
         return Window(
-            FormattedTextControl(f"╞══ {label} " + "═" * 200 + "╡"),
+            MouseAwareControl(
+                f"╞══ {label} " + "═" * 200 + "╡",
+                on_scroll_up=on_scroll_up,
+                on_scroll_down=on_scroll_down,
+                on_click=on_click,
+            ),
             height=1,
             style=style,
         )
@@ -552,7 +681,7 @@ class VibeTUI:
         self._app = Application(
             layout=self.layout,
             full_screen=True,
-            mouse_support=False,
+            mouse_support=True,
             style=_TUI_STYLE,
         )
         return self._app

@@ -52,6 +52,19 @@ UNTRUSTED_CONTEXT_END = "END_UNTRUSTED_CONTEXT>>>"
 _FENCE_TOKENS = ("UNTRUSTED_TOOL_ARGUMENTS", "UNTRUSTED_CONTEXT")
 
 
+def _strip_json_fence(text: str) -> str:
+    """Strip markdown code fences around a JSON response, if present."""
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.split("\n")
+        if lines[0].startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip() == "```":
+            lines = lines[:-1]
+        text = "\n".join(lines).strip()
+    return text
+
+
 def _munge_fence_markers(text: str) -> str:
     """Neutralize fence-marker lookalikes inside untrusted content.
 
@@ -245,8 +258,17 @@ Respond in JSON format:
 }}"""
 
         try:
-            response = _resolve_sync(self.llm_client.complete(prompt))
-            parsed = json.loads(response)
+            # LLMClient.complete expects a message list; passing a bare string
+            # crashes adapters that iterate messages as dicts.
+            response = _resolve_sync(
+                self.llm_client.complete(messages=[{"role": "user", "content": prompt}])
+            )
+            # ModelGateway.complete returns an LLMResponse; simple test doubles
+            # return a plain string.
+            content = getattr(response, "content", response)
+            if not isinstance(content, str):
+                raise TypeError(f"Unexpected LLM response type: {type(content).__name__}")
+            parsed = json.loads(_strip_json_fence(content))
 
             risk_level = RiskLevel(parsed.get("risk_level", "medium").lower())
             reasoning = parsed.get("reasoning", "LLM assessment completed")
@@ -314,5 +336,5 @@ class MockLLMClient:
             }
         )
 
-    def complete(self, prompt: str) -> str:
+    def complete(self, messages: list) -> str:
         return self.response

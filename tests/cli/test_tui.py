@@ -717,3 +717,162 @@ def test_vibe_tui_tab_focus_cycle_and_escape():
     # Escape: returns immediately to input
     escape.handler(None)
     assert tui.layout.has_focus(tui.input_area)
+
+
+# ---------------------------------------------------------------------------
+# Mouse interaction and scrolling tests
+# ---------------------------------------------------------------------------
+
+
+def test_vibe_tui_mouse_support_enabled_in_app():
+    """Application must have mouse support enabled."""
+    tui = VibeTUI()
+    app = tui.create_app()
+    assert app.mouse_support() is True or bool(app.mouse_support)
+
+
+def test_vibe_tui_mouse_scroll_thinking_area():
+    """Mouse wheel scrolling on thinking area moves cursor position up/down."""
+    from prompt_toolkit.data_structures import Point
+    from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
+
+    tui = VibeTUI()
+    for i in range(30):
+        tui.append_thinking(f"thinking trace {i}\n")
+    bottom_pos = tui.thinking_area.buffer.cursor_position
+    assert bottom_pos > 0
+
+    scroll_up = MouseEvent(
+        position=Point(0, 0),
+        event_type=MouseEventType.SCROLL_UP,
+        button=MouseButton.NONE,
+        modifiers=frozenset(),
+    )
+    scroll_down = MouseEvent(
+        position=Point(0, 0),
+        event_type=MouseEventType.SCROLL_DOWN,
+        button=MouseButton.NONE,
+        modifiers=frozenset(),
+    )
+
+    tui.thinking_area.control.mouse_handler(scroll_up)
+    assert tui.thinking_area.buffer.cursor_position < bottom_pos
+    scrolled_pos = tui.thinking_area.buffer.cursor_position
+
+    tui.thinking_area.control.mouse_handler(scroll_down)
+    assert tui.thinking_area.buffer.cursor_position > scrolled_pos
+
+
+def test_vibe_tui_mouse_scroll_log_area():
+    """Mouse wheel scrolling on log area moves cursor position up/down."""
+    from prompt_toolkit.data_structures import Point
+    from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
+
+    tui = VibeTUI()
+    for i in range(30):
+        tui.append_log(f"log entry {i}")
+    bottom_pos = tui.log_area.buffer.cursor_position
+    assert bottom_pos > 0
+
+    scroll_up = MouseEvent(
+        position=Point(0, 0),
+        event_type=MouseEventType.SCROLL_UP,
+        button=MouseButton.NONE,
+        modifiers=frozenset(),
+    )
+    scroll_down = MouseEvent(
+        position=Point(0, 0),
+        event_type=MouseEventType.SCROLL_DOWN,
+        button=MouseButton.NONE,
+        modifiers=frozenset(),
+    )
+
+    tui.log_area.control.mouse_handler(scroll_up)
+    assert tui.log_area.buffer.cursor_position < bottom_pos
+    scrolled_pos = tui.log_area.buffer.cursor_position
+
+    tui.log_area.control.mouse_handler(scroll_down)
+    assert tui.log_area.buffer.cursor_position > scrolled_pos
+
+
+def test_vibe_tui_mouse_scroll_and_click_headers():
+    """Mouse wheel scrolling on section headers/dividers scrolls areas, and click focuses them."""
+    from prompt_toolkit.data_structures import Point
+    from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
+
+    tui = VibeTUI()
+    for i in range(30):
+        tui.append_thinking(f"thinking trace {i}\n")
+        tui.append_log(f"log entry {i}")
+
+    scroll_up = MouseEvent(
+        position=Point(0, 0),
+        event_type=MouseEventType.SCROLL_UP,
+        button=MouseButton.NONE,
+        modifiers=frozenset(),
+    )
+    click = MouseEvent(
+        position=Point(0, 0),
+        event_type=MouseEventType.MOUSE_UP,
+        button=MouseButton.LEFT,
+        modifiers=frozenset(),
+    )
+
+    # Thinking header: child[1]
+    thinking_header_ctrl = tui.container.children[1].content
+    thinking_bottom = tui.thinking_area.buffer.cursor_position
+    thinking_header_ctrl.mouse_handler(scroll_up)
+    assert tui.thinking_area.buffer.cursor_position < thinking_bottom
+    thinking_header_ctrl.mouse_handler(click)
+    assert tui.layout.has_focus(tui.thinking_area)
+
+    # Log divider: child[3]
+    log_divider_ctrl = tui.container.children[3].content
+    log_bottom = tui.log_area.buffer.cursor_position
+    log_divider_ctrl.mouse_handler(scroll_up)
+    assert tui.log_area.buffer.cursor_position < log_bottom
+    log_divider_ctrl.mouse_handler(click)
+    assert tui.layout.has_focus(tui.log_area)
+
+    # Input divider: child[5]
+    input_divider_ctrl = tui.container.children[5].content
+    input_divider_ctrl.mouse_handler(click)
+    assert tui.layout.has_focus(tui.input_area)
+
+    # Top header: child[0]
+    top_header_ctrl = tui.container.children[0].content
+    top_header_ctrl.mouse_handler(click)
+    assert tui.layout.has_focus(tui.input_area)
+
+
+def test_vibe_tui_mouse_scroll_input_history():
+    """Mouse wheel scrolling on single-line input scrolls history backward/forward."""
+    from prompt_toolkit.data_structures import Point
+    from prompt_toolkit.mouse_events import MouseButton, MouseEvent, MouseEventType
+
+    tui = VibeTUI()
+    tui.set_submit_callback(lambda text: None)
+    tui.input_area.buffer.history.append_string("cmd alpha")
+    tui.input_area.buffer.history.append_string("cmd beta")
+
+    scroll_up = MouseEvent(
+        position=Point(0, 0),
+        event_type=MouseEventType.SCROLL_UP,
+        button=MouseButton.NONE,
+        modifiers=frozenset(),
+    )
+    scroll_down = MouseEvent(
+        position=Point(0, 0),
+        event_type=MouseEventType.SCROLL_DOWN,
+        button=MouseButton.NONE,
+        modifiers=frozenset(),
+    )
+
+    tui.input_area.control.mouse_handler(scroll_up)
+    assert tui.input_area.text == "cmd beta"
+
+    tui.input_area.control.mouse_handler(scroll_up)
+    assert tui.input_area.text == "cmd alpha"
+
+    tui.input_area.control.mouse_handler(scroll_down)
+    assert tui.input_area.text == "cmd beta"

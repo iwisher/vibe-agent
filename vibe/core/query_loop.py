@@ -266,6 +266,24 @@ class QueryLoop:
     def state(self) -> QueryState:
         return self._state
 
+    @property
+    def yolo_mode(self) -> bool:
+        """True if YOLO mode (auto-approval of commands) is active."""
+        if self.security_coord is not None:
+            return self.security_coord.yolo_mode
+        if self.security_config is not None:
+            if hasattr(self.security_config, "is_auto_approve"):
+                return self.security_config.is_auto_approve()
+            return getattr(self.security_config, "approval_mode", "smart") == "auto"
+        return False
+
+    def set_yolo_mode(self, enabled: bool) -> None:
+        """Set YOLO mode on the query loop and security coordinator."""
+        if self.security_coord is not None:
+            self.security_coord.set_yolo_mode(enabled)
+        elif self.security_config is not None and hasattr(self.security_config, "approval_mode"):
+            self.security_config.approval_mode = "auto" if enabled else "smart"
+
     def _set_state(self, state: QueryState) -> None:
         self._state = state
         self._checkpoint()
@@ -297,6 +315,7 @@ class QueryLoop:
                 "tool_calls": m.tool_calls,
                 "tool_call_id": m.tool_call_id,
                 "model_version": m.model_version,
+                "metadata": m.metadata,
             }
             for m in self.messages
         ]
@@ -882,6 +901,11 @@ class QueryLoop:
                     content=m.get("content", ""),
                     tool_calls=m.get("tool_calls"),
                     tool_call_id=m.get("tool_call_id"),
+                    metadata=(
+                        {"tool_name": m["name"]}
+                        if m.get("role") == "tool" and m.get("name")
+                        else m.get("metadata")
+                    ),
                 )
                 for m in compacted_msgs
             ]
@@ -1306,6 +1330,14 @@ class QueryLoop:
                 "content": msg.content,
                 **({"tool_calls": msg.tool_calls} if msg.tool_calls else {}),
                 **({"tool_call_id": msg.tool_call_id} if msg.tool_call_id else {}),
+                # Tool-result messages must carry the function name; the
+                # Gemini adapter maps it to functionResponse.name, which the
+                # API validates against the matching functionCall.
+                **(
+                    {"name": msg.metadata["tool_name"]}
+                    if msg.role == "tool" and (msg.metadata or {}).get("tool_name")
+                    else {}
+                ),
             }
             for msg in self.messages
         ]
@@ -1364,7 +1396,7 @@ class QueryLoop:
             if idx is None:
                 continue
             if idx not in assembled:
-                assembled[idx] = {
+                entry = {
                     "id": tc.get("id"),
                     "type": "function",
                     "function": {
@@ -1372,6 +1404,9 @@ class QueryLoop:
                         "arguments": tc.get("function", {}).get("arguments") or "",
                     },
                 }
+                if tc.get("thought_signature"):
+                    entry["thought_signature"] = tc.get("thought_signature")
+                assembled[idx] = entry
             else:
                 tc_id = tc.get("id")
                 if tc_id:
@@ -1382,6 +1417,8 @@ class QueryLoop:
                 args = tc.get("function", {}).get("arguments")
                 if args:
                     assembled[idx]["function"]["arguments"] += args
+                if tc.get("thought_signature"):
+                    assembled[idx]["thought_signature"] = tc.get("thought_signature")
 
         return list(assembled.values()) if assembled else None
 
@@ -1836,6 +1873,7 @@ class QueryLoop:
                 tool_calls=m.get("tool_calls"),
                 tool_call_id=m.get("tool_call_id"),
                 model_version=m.get("model_version"),
+                metadata=m.get("metadata"),
             )
             for m in checkpoint["messages"]
         ]

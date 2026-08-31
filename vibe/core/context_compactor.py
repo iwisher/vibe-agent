@@ -154,8 +154,12 @@ class ContextCompactor:
             self._record_compaction_telemetry(result, messages)
             return result
 
-        to_summarize = non_system[: -self.preserve_recent]
-        keep_intact = non_system[-self.preserve_recent :]
+        preserve = self.preserve_recent
+        if preserve < len(non_system) and non_system[-preserve].get("role") in ("tool", "function"):
+            preserve += 1
+
+        to_summarize = non_system[:-preserve]
+        keep_intact = non_system[-preserve:]
 
         if self.strategy == SummarizationStrategy.DROP:
             compacted = system_messages + keep_intact
@@ -214,8 +218,12 @@ class ContextCompactor:
             self._record_compaction_telemetry(result, messages)
             return result
 
-        to_summarize = non_system[: -self.preserve_recent]
-        keep_intact = non_system[-self.preserve_recent :]
+        preserve = self.preserve_recent
+        if preserve < len(non_system) and non_system[-preserve].get("role") in ("tool", "function"):
+            preserve += 1
+
+        to_summarize = non_system[:-preserve]
+        keep_intact = non_system[-preserve:]
 
         if self.strategy == SummarizationStrategy.LLM_SUMMARIZE and self.summarize_fn is not None:
             start = time.monotonic()

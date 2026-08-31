@@ -35,6 +35,12 @@ class AnthropicAdapter(BaseLLMAdapter):
             headers["x-api-key"] = api_key
 
         system_content, remaining_messages = self.extract_system_messages(messages)
+        if not remaining_messages:
+            remaining_messages = [{"role": "user", "content": "Hello"}]
+        elif remaining_messages[0].get("role") != "user":
+            remaining_messages = [
+                {"role": "user", "content": "Please continue the task."}
+            ] + remaining_messages
 
         payload: Dict[str, Any] = {
             "model": model,

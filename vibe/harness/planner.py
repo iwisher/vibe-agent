@@ -7,6 +7,7 @@ Four-tier planner:
 4. Return all tools (safety fallback)
 """
 
+import asyncio
 import hashlib
 import json
 import re
@@ -358,9 +359,13 @@ Respond in JSON format:
 Only select tools that are clearly relevant. Return empty array if none match."""
 
         try:
-            response = self.llm_client.complete(prompt)
+            if asyncio.iscoroutinefunction(getattr(self.llm_client, "complete", None)):
+                # In synchronous plan() flow, avoid unawaited coroutines
+                return None
+            res = self.llm_client.complete(prompt)
+            content = res.content if hasattr(res, "content") else str(res)
             # Extract JSON from response
-            json_match = re.search(r"\{.*\}", response, re.DOTALL)
+            json_match = re.search(r"\{.*\}", content, re.DOTALL)
             if json_match:
                 parsed = json.loads(json_match.group())
                 selected_names = parsed.get("selected_tools", [])

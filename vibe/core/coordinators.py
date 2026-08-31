@@ -265,7 +265,47 @@ class SecurityCoordinator:
         self._human_approver: Any | None = None
         self._smart_approver: Any | None = None
         self._checkpoint_manager = checkpoint_manager
+        self._saved_approval_mode: str | None = None
         self._init_layers(llm_client)
+
+    @property
+    def yolo_mode(self) -> bool:
+        """Return True if YOLO mode (auto-approval) is active."""
+        if hasattr(self.config, "is_auto_approve"):
+            return self.config.is_auto_approve()
+        return getattr(self.config, "approval_mode", "smart") == "auto"
+
+    def set_yolo_mode(self, enabled: bool) -> None:
+        """Enable or disable YOLO mode (auto-approve all commands)."""
+        from vibe.tools.security.human_approval import ApprovalMode
+
+        if enabled:
+            if self._saved_approval_mode is None:
+                self._saved_approval_mode = getattr(self.config, "approval_mode", "smart")
+            if hasattr(self.config, "approval_mode"):
+                self.config.approval_mode = "auto"
+            if self._human_approver is not None:
+                self._human_approver.mode = ApprovalMode.AUTO
+            if self._smart_approver is not None:
+                self._smart_approver.auto_mode = True
+        else:
+            prev = self._saved_approval_mode or "smart"
+            if prev == "auto":
+                prev = "smart"
+            if hasattr(self.config, "approval_mode"):
+                self.config.approval_mode = prev
+            self._saved_approval_mode = None
+
+            mode_map = {
+                "manual": ApprovalMode.INTERACTIVE,
+                "smart": ApprovalMode.INTERACTIVE,
+                "auto": ApprovalMode.AUTO,
+                "strict": ApprovalMode.STRICT,
+            }
+            if self._human_approver is not None:
+                self._human_approver.mode = mode_map.get(prev, ApprovalMode.INTERACTIVE)
+            if self._smart_approver is not None:
+                self._smart_approver.auto_mode = prev == "auto"
 
     def _init_layers(self, llm_client: Any | None) -> None:
         """Lazy-initialize security layers based on config."""

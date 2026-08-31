@@ -182,3 +182,22 @@ class SessionController:
             {"id": aid, "done": r.is_done(), "result_count": len(r.results)}
             for aid, r in self.bg_agents.items()
         ]
+
+    @property
+    def yolo_mode(self) -> bool:
+        """True if YOLO mode is active in the session."""
+        return getattr(self.main_loop, "yolo_mode", False)
+
+    def set_yolo_mode(self, enabled: bool) -> None:
+        """Enable or disable YOLO mode across main loop and subagents."""
+        if hasattr(self.main_loop, "set_yolo_mode"):
+            self.main_loop.set_yolo_mode(enabled)
+        for runner in self.bg_agents.values():
+            if hasattr(runner, "loop") and hasattr(runner.loop, "set_yolo_mode"):
+                runner.loop.set_yolo_mode(enabled)
+        if (
+            self.btw_agent
+            and hasattr(self.btw_agent, "loop")
+            and hasattr(self.btw_agent.loop, "set_yolo_mode")
+        ):
+            self.btw_agent.loop.set_yolo_mode(enabled)

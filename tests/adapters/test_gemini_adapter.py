@@ -186,6 +186,38 @@ class TestGeminiAdapter:
             }
         }
 
+    def test_tool_message_name_recovered_from_tool_call_id(self):
+        """Regression: tool results without a name must recover the function
+        name from Gemini-style tool_call_id (call_{idx}_{name}) so
+        functionResponse.name matches its functionCall (API 400 otherwise)."""
+        adapter = GeminiAdapter()
+        messages = [
+            {"role": "user", "content": "Check status"},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_0_check_status",
+                        "type": "function",
+                        "function": {"name": "check_status", "arguments": "{}"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call_0_check_status",
+                "content": "ok",
+            },
+        ]
+        _, _, payload = adapter.build_request(
+            base_url="https://generativelanguage.googleapis.com",
+            model="gemini-2.5-flash",
+            messages=messages,
+        )
+        contents = payload["contents"]
+        assert contents[2]["parts"][0]["functionResponse"]["name"] == "check_status"
+
     def test_build_stream_request(self):
         adapter = GeminiAdapter()
         url, headers, payload = adapter.build_stream_request(
@@ -299,3 +331,154 @@ class TestGeminiAdapter:
             is True
         )
         assert adapter.parse_health_response("GET", url, {"models": []}) is False
+
+    def test_thought_signature_parsed_and_preserved_in_request(self):
+        adapter = GeminiAdapter()
+        # Parse stream chunk with thoughtSignature
+        chunk_json = {
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {
+                                "functionCall": {
+                                    "name": "bash",
+                                    "args": {"command": "ls"},
+                                },
+                                "thoughtSignature": "ErYCCrMCARFNMg...",
+                            }
+                        ],
+                        "role": "model",
+                    }
+                }
+            ]
+        }
+        res = adapter.parse_stream_chunk(chunk_json)
+        assert res is not None
+        assert res.tool_calls is not None
+        assert res.tool_calls[0]["thought_signature"] == "ErYCCrMCARFNMg..."
+
+        # Now build next turn request with this tool call
+        messages = [
+            {"role": "user", "content": "list directory"},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": res.tool_calls,
+            },
+            {
+                "role": "tool",
+                "tool_call_id": res.tool_calls[0]["id"],
+                "name": "bash",
+                "content": "file1.txt\nfile2.txt",
+            },
+        ]
+        _, _, payload = adapter.build_request(
+            base_url="https://generativelanguage.googleapis.com",
+            model="gemini-flash-latest",
+            messages=messages,
+        )
+        contents = payload["contents"]
+        assert len(contents) == 3
+        # Model turn should have functionCall and thoughtSignature
+        assert contents[1]["role"] == "model"
+        assert contents[1]["parts"][0]["functionCall"]["name"] == "bash"
+        assert contents[1]["parts"][0]["thoughtSignature"] == "ErYCCrMCARFNMg..."
+        # User turn should have functionResponse
+        assert contents[2]["role"] == "user"
+        assert contents[2]["parts"][0]["functionResponse"]["name"] == "bash"
+
+    def test_compacted_history_starting_with_assistant_has_user_turn(self):
+        """Compacted history starting with an assistant message must prepend a user turn
+
+        so Gemini API does not reject with 400 'First content should be with role user'.
+        """
+        adapter = GeminiAdapter()
+        messages = [
+            {"role": "system", "content": "[Context summarized: 2 earlier messages omitted]"},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_0_bash",
+                        "type": "function",
+                        "function": {"name": "bash", "arguments": '{"command": "ls"}'},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "tool_call_id": "call_0_bash",
+                "name": "bash",
+                "content": "output.txt",
+            },
+        ]
+        _, _, payload = adapter.build_request(
+            base_url="https://generativelanguage.googleapis.com",
+            model="gemini-flash-latest",
+            messages=messages,
+        )
+        contents = payload["contents"]
+        assert len(contents) == 3
+        # Turn 0 must be user
+        assert contents[0]["role"] == "user"
+        assert "text" in contents[0]["parts"][0]
+        # Turn 1 is model with functionCall
+        assert contents[1]["role"] == "model"
+        assert contents[1]["parts"][0]["functionCall"]["name"] == "bash"
+        # Turn 2 is user with functionResponse
+        assert contents[2]["role"] == "user"
+        assert contents[2]["parts"][0]["functionResponse"]["name"] == "bash"
+
+    def test_orphaned_tool_message_converted_to_text(self):
+        """Tool responses without preceding model functionCall must be converted to text."""
+        adapter = GeminiAdapter()
+        messages = [
+            {"role": "tool", "name": "browser", "content": "<html>page</html>"},
+        ]
+        _, _, payload = adapter.build_request(
+            base_url="https://generativelanguage.googleapis.com",
+            model="gemini-flash-latest",
+            messages=messages,
+        )
+        contents = payload["contents"]
+        assert len(contents) == 1
+        assert contents[0]["role"] == "user"
+        assert "Tool Output (browser)" in contents[0]["parts"][0]["text"]
+
+    def test_consecutive_same_role_messages_merged(self):
+        """Consecutive user or model messages must be merged for strict alternation."""
+        adapter = GeminiAdapter()
+        messages = [
+            {"role": "user", "content": "Part 1"},
+            {"role": "user", "content": "Part 2"},
+            {"role": "assistant", "content": "Ans 1"},
+            {"role": "assistant", "content": "Ans 2"},
+        ]
+        _, _, payload = adapter.build_request(
+            base_url="https://generativelanguage.googleapis.com",
+            model="gemini-flash-latest",
+            messages=messages,
+        )
+        contents = payload["contents"]
+        assert len(contents) == 2
+        assert contents[0]["role"] == "user"
+        assert len(contents[0]["parts"]) == 2
+        assert contents[1]["role"] == "model"
+        assert len(contents[1]["parts"]) == 2
+
+    def test_empty_or_system_only_messages_produces_valid_user_turn(self):
+        """Only system messages must still produce a valid non-empty user turn."""
+        adapter = GeminiAdapter()
+        messages = [{"role": "system", "content": "You are helpful."}]
+        _, _, payload = adapter.build_request(
+            base_url="https://generativelanguage.googleapis.com",
+            model="gemini-flash-latest",
+            messages=messages,
+        )
+        contents = payload["contents"]
+        assert len(contents) == 1
+        assert contents[0]["role"] == "user"
+        assert "text" in contents[0]["parts"][0]
+

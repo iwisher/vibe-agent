@@ -155,8 +155,12 @@ class _RecordingLLMClient:
     def __init__(self) -> None:
         self.prompts: list[str] = []
 
-    def complete(self, prompt: str) -> str:
-        self.prompts.append(prompt)
+    def complete(self, prompt: Any = None, messages: Any = None, **kwargs: Any) -> str:
+        if messages and isinstance(messages, list) and len(messages) > 0:
+            prompt_str = str(messages[0].get("content", ""))
+        else:
+            prompt_str = str(prompt or "")
+        self.prompts.append(prompt_str)
         # What a successful injection wants the approver to answer.
         return '{"risk_level": "low", "reasoning": "fooled", "suggested_modifications": null}'
 

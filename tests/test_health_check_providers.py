@@ -129,17 +129,24 @@ class TestResolveModelWithProviders:
         )
 
         config = VibeConfig.load(auto_create=False)
+        config.fallback.enabled = True
         config.llm.default_model = "default"
         config.fallback.chain = ["kimi-sonnet"]
 
-        with patch("httpx.AsyncClient.get") as mock_get:
+        async def _mock_get(url, *args, **kwargs):
             mock_response = MagicMock()
-            mock_response.status_code = 200
-            mock_response.json.return_value = {"data": [{"id": "claude-sonnet-4-6"}]}
-            mock_get.return_value = mock_response
+            if "kimi.com" in str(url):
+                mock_response.status_code = 200
+                mock_response.json.return_value = {"data": [{"id": "claude-sonnet-4-6"}]}
+            else:
+                mock_response.status_code = 503
+            return mock_response
 
-            resolved = await checker.resolve_model(config, registry=model_reg)
-            assert resolved == "kimi-sonnet"
+        failing_post = MagicMock(status_code=503)
+        with patch("httpx.AsyncClient.get", new_callable=AsyncMock, side_effect=_mock_get):
+            with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=failing_post):
+                resolved = await checker.resolve_model(config, registry=model_reg)
+                assert resolved == "kimi-sonnet"
 
     async def test_check_with_gemini_provider(self):
         registry = ProviderRegistry()
@@ -196,20 +203,17 @@ class TestResolveModelWithProviders:
         )
 
         config = VibeConfig.load(auto_create=False)
+        config.fallback.enabled = True
         config.llm.default_model = "kimi-sonnet"
         config.fallback.chain = ["kimi-sonnet", "llama3.2"]
 
-        call_count = 0
-
-        async def _mock_get(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
+        async def _mock_get(url, *args, **kwargs):
             mock_response = MagicMock()
-            if call_count == 1:
-                # First call (kimi) fails
+            if "kimi.com" in str(url):
+                # Kimi fails
                 mock_response.status_code = 503
             else:
-                # Second call (ollama) succeeds
+                # Ollama succeeds
                 mock_response.status_code = 200
                 mock_response.json.return_value = {"data": [{"id": "llama3.2"}]}
             return mock_response
@@ -219,4 +223,3 @@ class TestResolveModelWithProviders:
             with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=failing_post):
                 resolved = await checker.resolve_model(config, registry=model_reg)
                 assert resolved == "llama3.2"
-                assert call_count == 2

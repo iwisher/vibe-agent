@@ -186,7 +186,7 @@ class TestAsyncLLMClient:
         import warnings
 
         class AsyncClient:
-            async def complete(self, prompt: str) -> str:
+            async def complete(self, messages: list) -> str:
                 return json.dumps({"risk_level": "low", "reasoning": "async ok"})
 
         approver = SmartApprover(llm_client=AsyncClient())
@@ -208,7 +208,7 @@ class TestAsyncLLMClient:
         import warnings
 
         class AsyncClient:
-            async def complete(self, prompt: str) -> str:
+            async def complete(self, messages: list) -> str:
                 return json.dumps({"risk_level": "low", "reasoning": "async ok"})
 
         approver = SmartApprover(llm_client=AsyncClient())
@@ -231,8 +231,8 @@ class TestUntrustedArgsFencing:
         prompts: list[str] = []
 
         class RecordingClient:
-            def complete(self, prompt: str) -> str:
-                prompts.append(prompt)
+            def complete(self, messages: list) -> str:
+                prompts.append(messages[-1]["content"])
                 return json.dumps({"risk_level": "low", "reasoning": "ok"})
 
         SmartApprover(llm_client=RecordingClient()).assess_tool_call("write_file", tool_args)

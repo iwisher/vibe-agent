@@ -318,6 +318,7 @@ Control:
 
 Slash Commands:
   • /shortcuts, /help, /keys     Display this cheat sheet
+  • /yolo on|off|status          Toggle or check YOLO mode (auto-approve all commands)
   • /clear                       Clear session history and reset buffers
   • /verbose                     Toggle verbose metrics and debug traces
   • /reasoning                   Toggle streaming of thinking tokens

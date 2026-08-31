@@ -296,8 +296,10 @@ class KnowledgeExtractor:
         total_chars = 0
         for i, msg in enumerate(messages):
             role = getattr(msg, "role", "unknown")
-            content = getattr(msg, "content", "")
-            if not content or not content.strip():
+            content = getattr(msg, "content", "") or ""
+            if not isinstance(content, str):
+                content = str(content)
+            if not content.strip():
                 continue
             # Skip system messages (too noisy)
             if role == "system":

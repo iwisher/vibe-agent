@@ -105,16 +105,18 @@ class GeminiAdapter(BaseLLMAdapter):
                 fc = part["functionCall"]
                 args = fc.get("args", {})
                 arguments_str = json.dumps(args) if isinstance(args, dict) else str(args)
-                tool_calls.append(
-                    {
-                        "id": f"call_{idx}_{fc.get('name', 'tool')}",
-                        "type": "function",
-                        "function": {
-                            "name": fc.get("name", ""),
-                            "arguments": arguments_str,
-                        },
-                    }
-                )
+                tc_item = {
+                    "id": fc.get("id") or f"call_{idx}_{fc.get('name', 'tool')}",
+                    "type": "function",
+                    "function": {
+                        "name": fc.get("name", ""),
+                        "arguments": arguments_str,
+                    },
+                }
+                thought_sig = part.get("thoughtSignature") or part.get("thought_signature")
+                if thought_sig:
+                    tc_item["thought_signature"] = thought_sig
+                tool_calls.append(tc_item)
 
         usage_meta = response_json.get("usageMetadata", {})
         prompt_tokens = usage_meta.get("promptTokenCount", 0)
@@ -175,17 +177,19 @@ class GeminiAdapter(BaseLLMAdapter):
                 fc = part["functionCall"]
                 args = fc.get("args", {})
                 arguments_str = json.dumps(args) if isinstance(args, dict) else str(args)
-                tool_calls.append(
-                    {
-                        "index": idx,
-                        "id": f"call_{idx}_{fc.get('name', 'tool')}",
-                        "type": "function",
-                        "function": {
-                            "name": fc.get("name", ""),
-                            "arguments": arguments_str,
-                        },
-                    }
-                )
+                tc_item = {
+                    "index": idx,
+                    "id": fc.get("id") or f"call_{idx}_{fc.get('name', 'tool')}",
+                    "type": "function",
+                    "function": {
+                        "name": fc.get("name", ""),
+                        "arguments": arguments_str,
+                    },
+                }
+                thought_sig = part.get("thoughtSignature") or part.get("thought_signature")
+                if thought_sig:
+                    tc_item["thought_signature"] = thought_sig
+                tool_calls.append(tc_item)
 
         usage_meta = chunk_json.get("usageMetadata")
         usage = None
@@ -237,15 +241,24 @@ class GeminiAdapter(BaseLLMAdapter):
         return system_content, remaining
 
     def _convert_messages(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Convert standard OpenAI-style messages to Gemini contents array."""
-        contents: List[Dict[str, Any]] = []
+        """Convert standard OpenAI-style messages to Gemini contents array.
+
+        Enforces Gemini API requirements:
+        1. contents[0] MUST have role: 'user' with non-empty text/parts.
+        2. Strict turn alternation (user -> model -> user -> model). Consecutive
+           turns of the same role are merged.
+        3. Every functionResponse MUST follow a model turn containing a matching functionCall.
+           Orphaned tool responses (caller truncated/compacted) are converted to user text.
+        4. Empty text parts are stripped or replaced with valid fallback.
+        """
+        raw_turns: List[Dict[str, Any]] = []
 
         for msg in messages:
             role = msg.get("role")
             content = msg.get("content")
 
             if role == "user":
-                contents.append(
+                raw_turns.append(
                     {
                         "role": "user",
                         "parts": [{"text": str(content or "")}],
@@ -259,9 +272,21 @@ class GeminiAdapter(BaseLLMAdapter):
                 tool_calls = msg.get("tool_calls")
                 if tool_calls:
                     for tc in tool_calls:
-                        func = tc.get("function", {})
-                        func_name = func.get("name", "")
-                        raw_args = func.get("arguments", {})
+                        func = (
+                            tc.get("function", {})
+                            if isinstance(tc, dict)
+                            else getattr(tc, "function", {})
+                        )
+                        func_name = (
+                            func.get("name", "")
+                            if isinstance(func, dict)
+                            else getattr(func, "name", "")
+                        )
+                        raw_args = (
+                            func.get("arguments", {})
+                            if isinstance(func, dict)
+                            else getattr(func, "arguments", {})
+                        )
                         if isinstance(raw_args, str):
                             try:
                                 args_dict = json.loads(raw_args)
@@ -272,45 +297,146 @@ class GeminiAdapter(BaseLLMAdapter):
                         else:
                             args_dict = {}
 
-                        parts.append(
-                            {
-                                "functionCall": {
-                                    "name": func_name,
-                                    "args": args_dict,
-                                }
+                        fc_part: Dict[str, Any] = {
+                            "functionCall": {
+                                "name": func_name,
+                                "args": args_dict,
                             }
+                        }
+                        thought_sig = (
+                            tc.get("thought_signature") or tc.get("thoughtSignature")
+                            if isinstance(tc, dict)
+                            else getattr(tc, "thought_signature", None)
                         )
+                        if thought_sig:
+                            fc_part["thoughtSignature"] = thought_sig
+
+                        parts.append(fc_part)
 
                 if not parts:
                     parts.append({"text": ""})
 
-                contents.append(
+                raw_turns.append(
                     {
                         "role": "model",
                         "parts": parts,
                     }
                 )
             elif role in ("tool", "function"):
-                func_name = msg.get("name") or "tool_result"
+                func_name = msg.get("name")
+                tcid = msg.get("tool_call_id") or ""
+                if not func_name and tcid:
+                    # 1. Recover from previous assistant messages
+                    for prev_msg in reversed(messages):
+                        if prev_msg.get("role") == "assistant":
+                            for tc in prev_msg.get("tool_calls") or []:
+                                tc_id = (
+                                    tc.get("id")
+                                    if isinstance(tc, dict)
+                                    else getattr(tc, "id", None)
+                                )
+                                if tc_id == tcid:
+                                    func = (
+                                        tc.get("function", {})
+                                        if isinstance(tc, dict)
+                                        else getattr(tc, "function", {})
+                                    )
+                                    func_name = (
+                                        func.get("name", "")
+                                        if isinstance(func, dict)
+                                        else getattr(func, "name", "")
+                                    )
+                                    break
+                        if func_name:
+                            break
+                    # 2. Recover from "call_{idx}_{name}" format if not found above
+                    if not func_name:
+                        id_parts = tcid.split("_", 2)
+                        if len(id_parts) == 3 and id_parts[0] == "call" and id_parts[1].isdigit():
+                            func_name = id_parts[2]
+                func_name = func_name or "tool_result"
                 tool_content = content if content is not None else ""
-                contents.append(
-                    {
-                        "role": "user",
-                        "parts": [
-                            {
-                                "functionResponse": {
-                                    "name": func_name,
-                                    "response": {
-                                        "name": func_name,
-                                        "content": tool_content,
-                                    },
-                                }
-                            }
-                        ],
-                    }
-                )
 
-        return contents
+                # Check if preceding turns in raw_turns contain a model turn with functionCall
+                is_paired = False
+                for prev_turn in reversed(raw_turns):
+                    if prev_turn.get("role") == "model":
+                        prev_parts = prev_turn.get("parts", [])
+                        for p in prev_parts:
+                            if "functionCall" in p:
+                                is_paired = True
+                                break
+                        break
+                    elif prev_turn.get("role") == "user":
+                        # If this user turn only contains functionResponse, continue looking back
+                        if all("functionResponse" in p for p in prev_turn.get("parts", [])):
+                            continue
+                        break
+
+                if is_paired:
+                    resp_part = {
+                        "functionResponse": {
+                            "name": func_name,
+                            "response": {
+                                "name": func_name,
+                                "content": tool_content,
+                            },
+                        }
+                    }
+                    raw_turns.append(
+                        {
+                            "role": "user",
+                            "parts": [resp_part],
+                        }
+                    )
+                else:
+                    # Orphaned tool response (preceding functionCall truncated/compacted)
+                    # Send as plain text observation so Gemini API does not reject with 400.
+                    raw_turns.append(
+                        {
+                            "role": "user",
+                            "parts": [{"text": f"[Tool Output ({func_name})]:\n{tool_content}"}],
+                        }
+                    )
+
+        if not raw_turns:
+            return [{"role": "user", "parts": [{"text": "Hello"}]}]
+
+        # Step 2: Merge adjacent turns of the same role (user-user or model-model)
+        merged_turns: List[Dict[str, Any]] = []
+        for turn in raw_turns:
+            if not merged_turns:
+                merged_turns.append(turn)
+            else:
+                last_turn = merged_turns[-1]
+                if last_turn["role"] == turn["role"]:
+                    last_turn["parts"].extend(turn["parts"])
+                else:
+                    merged_turns.append(turn)
+
+        # Step 3: Ensure conversation starts with role "user"
+        if merged_turns[0]["role"] != "user":
+            merged_turns.insert(
+                0,
+                {
+                    "role": "user",
+                    "parts": [{"text": "Please continue the task with the following context."}],
+                },
+            )
+
+        # Step 4: Clean up parts (remove empty text strings if other parts present;
+        # ensure non-empty)
+        for turn in merged_turns:
+            cleaned_parts = []
+            for p in turn["parts"]:
+                if "text" in p and not p["text"] and len(turn["parts"]) > 1:
+                    continue  # skip empty text part if other parts exist
+                cleaned_parts.append(p)
+            if not cleaned_parts:
+                cleaned_parts = [{"text": " "}]
+            turn["parts"] = cleaned_parts
+
+        return merged_turns
 
     def _clean_schema(self, schema: Any) -> Any:
         """Recursively strip JSON schema fields unsupported by Gemini API."""

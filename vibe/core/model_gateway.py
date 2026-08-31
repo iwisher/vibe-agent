@@ -1,7 +1,10 @@
+import asyncio
 import json
 import os
 import sys
 import time
+import traceback
+from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional
 
@@ -71,6 +74,14 @@ class StreamExecutionError(Exception):
     pass
 
 
+class StreamPayloadError(Exception):
+    """Raised when a provider delivers an API error as an SSE data payload (HTTP 200)."""
+
+    def __init__(self, message: str, code: Optional[int] = None):
+        super().__init__(message)
+        self.code = code
+
+
 class LLMClient:
     """Gateway for communicating with LLM models."""
 
@@ -123,6 +134,10 @@ class LLMClient:
         self.recovery = ErrorRecovery(retry_policy)
         self.client = client or httpx.AsyncClient(timeout=self.timeout)
         self._owns_client = client is None
+        # The loop the pooled client is bound to (set on first use). httpx
+        # connection pools bind asyncio primitives to the loop of first use,
+        # so a shared client cannot serve requests from a different loop.
+        self._client_loop: Optional[asyncio.AbstractEventLoop] = None
         self.fallback_chain = fallback_chain or []
         self.auto_fallback = auto_fallback
         self.circuit_breaker = circuit_breaker or CircuitBreaker(
@@ -140,15 +155,40 @@ class LLMClient:
             adapter = OpenAIAdapter()
         self.adapter = adapter
 
+    def _client_for_current_loop(self) -> tuple[httpx.AsyncClient, bool]:
+        """Return (client, is_temporary) safe to use on the running loop.
+
+        The pooled client binds to the event loop of its first request. A
+        caller on a different loop (e.g. SmartApprover running the coroutine
+        via asyncio.run on a worker thread) would crash with "bound to a
+        different event loop", so it gets a short-lived client instead.
+        """
+        if self._owns_client:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            if loop is not None:
+                if self._client_loop is None:
+                    self._client_loop = loop
+                elif self._client_loop is not loop:
+                    return httpx.AsyncClient(timeout=self.timeout), True
+        return self.client, False
+
     async def complete(
         self,
-        messages: List[Dict[str, Any]],
+        messages: List[Dict[str, Any]] | str,
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_choice: str = "auto",
     ) -> LLMResponse:
         """Sends a completion request with built-in retry and optional model fallback."""
+
+        # Several callers (memory extraction, reflection, planner, ...) pass a
+        # bare prompt string; normalize it to a single user message.
+        if isinstance(messages, str):
+            messages = [{"role": "user", "content": messages}]
 
         models_to_try = [self.model] + [m for m in self.fallback_chain if m != self.model]
 
@@ -162,6 +202,23 @@ class LLMClient:
                         f"[vibe-debug] SKIP model={attempt_model} reason=circuit_breaker_open",
                         file=sys.stderr,
                     )
+                if self.logger:
+                    self.logger.warning(
+                        f"LLM Request Skipped: model={attempt_model} "
+                        "circuit breaker open after repeated failures "
+                        f"(cooldown {self.circuit_breaker.cooldown_seconds}s)"
+                    )
+                last_error = LLMResponse(
+                    content="",
+                    error=(
+                        f"Model '{attempt_model}' temporarily disabled by circuit breaker "
+                        f"after repeated failures; retry after the cooldown "
+                        f"({self.circuit_breaker.cooldown_seconds}s) or check the "
+                        "session log for the underlying error"
+                    ),
+                    error_type=ErrorType.MODEL_UNAVAILABLE,
+                    model_used=attempt_model,
+                )
                 continue
 
             # Resolve connection details for this model attempt
@@ -308,7 +365,12 @@ class LLMClient:
             if self.on_request:
                 self.on_request(payload, model)
 
-            response = await self.client.post(url, json=payload, headers=headers)
+            client, temporary = self._client_for_current_loop()
+            if temporary:
+                async with client:
+                    response = await client.post(url, json=payload, headers=headers)
+            else:
+                response = await client.post(url, json=payload, headers=headers)
             response.raise_for_status()
             data = response.json()
 
@@ -442,7 +504,8 @@ class LLMClient:
             )
             if self.logger:
                 self.logger.warning(
-                    f"LLM Request Failed: model={model} error_type=UNKNOWN_ERROR error={detail}"
+                    f"LLM Request Failed: model={model} error_type=UNKNOWN_ERROR "
+                    f"error={detail}\n{traceback.format_exc()}"
                 )
             if self.on_response:
                 self.on_response(result, model)
@@ -502,7 +565,7 @@ class LLMClient:
 
     async def complete_stream(
         self,
-        messages: List[Dict[str, Any]],
+        messages: List[Dict[str, Any]] | str,
         temperature: float = 0.7,
         max_tokens: Optional[int] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
@@ -517,6 +580,10 @@ class LLMClient:
         Yields LLMResponse chunks with partial content/reasoning.
         On fatal error, yields a single error LLMResponse and stops.
         """
+        # Accept a bare prompt string for symmetry with complete().
+        if isinstance(messages, str):
+            messages = [{"role": "user", "content": messages}]
+
         models_to_try = [self.model] + [m for m in self.fallback_chain if m != self.model]
 
         last_error: Optional[LLMResponse] = None
@@ -529,6 +596,23 @@ class LLMClient:
                         f"[vibe-debug] SKIP model={attempt_model} reason=circuit_breaker_open",
                         file=sys.stderr,
                     )
+                if self.logger:
+                    self.logger.warning(
+                        f"LLM Stream Skipped: model={attempt_model} "
+                        "circuit breaker open after repeated failures "
+                        f"(cooldown {self.circuit_breaker.cooldown_seconds}s)"
+                    )
+                last_error = LLMResponse(
+                    content="",
+                    error=(
+                        f"Model '{attempt_model}' temporarily disabled by circuit breaker "
+                        f"after repeated failures; retry after the cooldown "
+                        f"({self.circuit_breaker.cooldown_seconds}s) or check the "
+                        "session log for the underlying error"
+                    ),
+                    error_type=ErrorType.MODEL_UNAVAILABLE,
+                    model_used=attempt_model,
+                )
                 continue
 
             # Resolve connection details for this model attempt
@@ -594,39 +678,84 @@ class LLMClient:
 
             yielded_any = False
             try:
-                async with self.client.stream(
-                    "POST", url, json=payload, headers=headers
-                ) as response:
-                    response.raise_for_status()
+                async with AsyncExitStack() as stack:
+                    client, temporary = self._client_for_current_loop()
+                    if temporary:
+                        client = await stack.enter_async_context(client)
+                    async with client.stream(
+                        "POST", url, json=payload, headers=headers
+                    ) as response:
+                        if response.status_code >= 400:
+                            await response.aread()
+                            response.raise_for_status()
 
-                    async for line in response.aiter_lines():
-                        if not line.strip():
-                            continue
-                        if not line.startswith("data: "):
-                            continue
-                        data_str = line[len("data: ") :].strip()
-                        if data_str == "[DONE]":
-                            break
+                        async for line in response.aiter_lines():
+                            if not line.strip():
+                                continue
+                            if not line.startswith("data: "):
+                                continue
+                            data_str = line[len("data: ") :].strip()
+                            if data_str == "[DONE]":
+                                break
 
-                        try:
-                            chunk_json = json.loads(data_str)
-                        except json.JSONDecodeError:
-                            continue
+                            try:
+                                chunk_json = json.loads(data_str)
+                            except json.JSONDecodeError:
+                                continue
 
-                        chunk_res = adapter.parse_stream_chunk(chunk_json)
-                        if chunk_res is None:
-                            continue
+                            # Some providers (e.g. Gemini) deliver API errors as SSE
+                            # data payloads with HTTP 200 instead of an error status.
+                            if isinstance(chunk_json, dict) and "error" in chunk_json:
+                                err_obj = chunk_json["error"]
+                                if isinstance(err_obj, dict):
+                                    err_msg = err_obj.get("message", "")
+                                    raw_code = err_obj.get("code") or err_obj.get("status")
+                                    err_code = raw_code if isinstance(raw_code, int) else None
+                                    raise StreamPayloadError(
+                                        f"[{raw_code}] {err_msg}" if err_msg else str(err_obj),
+                                        code=err_code,
+                                    )
+                                raise StreamPayloadError(f"Stream error payload: {err_obj}")
 
-                        chunk_res.model_used = attempt_model
+                            chunk_res = adapter.parse_stream_chunk(chunk_json)
+                            if chunk_res is None:
+                                continue
 
-                        if not yielded_any:
-                            self.circuit_breaker.record_success(attempt_model)
-                            yielded_any = True
+                            chunk_res.model_used = attempt_model
 
-                        yield chunk_res
+                            if not yielded_any:
+                                self.circuit_breaker.record_success(attempt_model)
+                                yielded_any = True
+
+                            yield chunk_res
 
                 # Successful streaming finished, exit complete_stream
                 if yielded_any:
+                    if self.logger:
+                        self.logger.debug(f"LLM Stream Complete: model={attempt_model} url={url}")
+                    return
+
+                # Stream ended without any usable chunk and without an
+                # exception (e.g. empty candidates, blocked prompt). Log it
+                # and fall back instead of silently skipping the model.
+                self.circuit_breaker.record_failure(attempt_model)
+                last_error = LLMResponse(
+                    content="",
+                    error=(
+                        f"Empty stream from model '{attempt_model}': "
+                        "connection succeeded but no parseable chunks were received"
+                    ),
+                    error_type=ErrorType.SERVER_ERROR,
+                    model_used=attempt_model,
+                )
+                if self.logger:
+                    self.logger.warning(
+                        f"LLM Stream Empty: model={attempt_model} url={url} "
+                        "stream completed with no parseable chunks; trying next model"
+                    )
+
+                if not self.auto_fallback:
+                    yield last_error
                     return
 
             except Exception as e:
@@ -644,12 +773,6 @@ class LLMClient:
                     # Pre-stream failure: record failure and try fallback if configured
                     self.circuit_breaker.record_failure(attempt_model)
 
-                    if self.debug:
-                        print(
-                            f"[vibe-debug] PRE-STREAM FAIL model={attempt_model} error={str(e)}",
-                            file=sys.stderr,
-                        )
-
                     error_type = ErrorType.UNKNOWN_ERROR
                     error_msg = str(e)
                     if isinstance(e, httpx.HTTPStatusError):
@@ -662,7 +785,12 @@ class LLMClient:
                         elif status >= 500:
                             error_type = ErrorType.SERVER_ERROR
 
+                        error_msg = (
+                            f"Client error '{status} {e.response.reason_phrase}' "
+                            f"for url '{e.request.url}'"
+                        )
                         try:
+                            # In streaming mode the error body was loaded via aread()
                             body = e.response.text
                             if body:
                                 parsed = json.loads(body)
@@ -670,13 +798,28 @@ class LLMClient:
                                     err_obj = parsed.get("error", parsed)
                                     if isinstance(err_obj, dict):
                                         msg = err_obj.get("message", "")
-                                        err_type = err_obj.get("type", "")
+                                        err_type = (
+                                            err_obj.get("type", "")
+                                            or err_obj.get("status", "")
+                                        )
                                         if msg:
                                             error_msg = f"[{status}] {msg}"
                                             if err_type:
                                                 error_msg += f" (type: {err_type})"
                                     else:
                                         error_msg = f"[{status}] {err_obj}"
+                                elif (
+                                    isinstance(parsed, list)
+                                    and parsed
+                                    and isinstance(parsed[0], dict)
+                                ):
+                                    err_obj = parsed[0].get("error", parsed[0])
+                                    if isinstance(err_obj, dict):
+                                        msg = err_obj.get("message", "")
+                                        if msg:
+                                            error_msg = f"[{status}] {msg}"
+                                else:
+                                    error_msg = f"[{status}] {body[:500]}"
                         except Exception:
                             pass
                     elif isinstance(e, httpx.TimeoutException):
@@ -685,6 +828,23 @@ class LLMClient:
                         error_type = ErrorType.CONNECTION_ERROR
                     elif isinstance(e, httpx.NetworkError):
                         error_type = ErrorType.NETWORK_ERROR
+                    elif isinstance(e, StreamPayloadError):
+                        # API error delivered inside the SSE stream; treat like
+                        # its HTTP equivalent so fallback behavior matches.
+                        if e.code == 429:
+                            error_type = ErrorType.RATE_LIMIT_ERROR
+                        elif e.code in (401, 403):
+                            error_type = ErrorType.AUTHENTICATION_ERROR
+                        elif e.code is not None and e.code >= 500:
+                            error_type = ErrorType.SERVER_ERROR
+                        else:
+                            error_type = ErrorType.HTTP_ERROR
+
+                    if self.debug:
+                        print(
+                            f"[vibe-debug] PRE-STREAM FAIL model={attempt_model} error={error_msg}",
+                            file=sys.stderr,
+                        )
 
                     last_error = LLMResponse(
                         content="",
@@ -694,9 +854,14 @@ class LLMClient:
                     )
 
                     if self.logger:
+                        tb = ""
+                        if error_type == ErrorType.UNKNOWN_ERROR:
+                            # Include the traceback so unexpected adapter/parsing
+                            # bugs are debuggable from the session log alone.
+                            tb = "\n" + traceback.format_exc()
                         self.logger.warning(
                             f"LLM Stream Failed: model={attempt_model} url={url} "
-                            f"error_type={error_type.name} error={error_msg}"
+                            f"error_type={error_type.name} error={error_msg}{tb}"
                         )
 
                     # If auto_fallback is enabled and the error is recoverable, continue

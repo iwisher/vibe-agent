@@ -83,6 +83,15 @@
   verified against Gemini (`gemini-flash-latest`), confirming model refusal and full defense containment.
 - [x] Findings report: `scripts/run_redteam.py` writes `docs/redteam_report.{json,md}`
   (Tier A 30/30, Tier B 7/7, Tier 3 10/10 at last run).
+- [x] Google Gemini native protocol adapter: direct integration with `google-genai` SDK
+  supporting streaming tokens, thinking tags, tool calling, and circuit-breaker integration.
+- [x] Observability enrichment: detailed HTTP error logging, provider fallback transition traces,
+  and comprehensive tool execution start/finish diagnostics in session logs.
+- [x] YOLO Mode interactive command (`/yolo on|off|status`): dynamic auto-approval of all
+  tool commands without prompting, supported in CLI readline, TUI, and SessionController.
+- [x] Mouse wheel scrolling & interaction in TUI (`VibeTUI`): enabled mouse support across all
+  sections (agent thinking stream, working log, user prompt, dividers, and headers) on top
+  of existing keyboard shortcuts.
 
 ## Open
 
@@ -94,13 +103,6 @@
 
 ### Track 3: Swarm Workflow Expansion
 - [ ] Enhance Swarm Multi-Agent orchestrator (`vibe/swarm/`) with dynamic sub-agent role pipelines and trace reporting.
-
-### Track 4: Multi-Agent Red-Team (Complete)
-- [x] Tier A component attack matrix (S1–S5, S7) with corpus, oracles, orchestrator.
-- [x] Remediation wave 1: S7 MCP SSRF gate, S4 approver fencing, base64-pipe-sh pattern.
-- [x] Tier B scripted-compromised-LLM scenarios (7, incl. strict-mode + fooled-approver).
-- [x] Tier 3 long-horizon challenged agent tasks (10 tasks across software engineering, db, security, reliability).
-- [x] Tier C `--live` flag wired and verified against Gemini (`gemini-flash-latest`), confirming model refusal and full defense containment.
 
 ## Won't fix — decided 2026-08-23 (intentionally kept as-is)
 
