@@ -312,21 +312,34 @@ class GeminiAdapter(BaseLLMAdapter):
 
         return contents
 
+    def _clean_schema(self, schema: Any) -> Any:
+        """Recursively strip JSON schema fields unsupported by Gemini API."""
+        if isinstance(schema, dict):
+            return {
+                k: self._clean_schema(v)
+                for k, v in schema.items()
+                if k not in ("additionalProperties", "$schema", "$id")
+            }
+        elif isinstance(schema, list):
+            return [self._clean_schema(i) for i in schema]
+        return schema
+
     def _convert_tools(self, tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Convert OpenAI-style tool definitions to Gemini function_declarations."""
         declarations: List[Dict[str, Any]] = []
         for tool in tools:
             if tool.get("type") == "function" or "function" in tool:
                 func = tool.get("function", {})
+                raw_params = func.get("parameters", {"type": "object", "properties": {}})
                 declarations.append(
                     {
                         "name": func.get("name"),
                         "description": func.get("description", ""),
-                        "parameters": func.get("parameters", {"type": "object", "properties": {}}),
+                        "parameters": self._clean_schema(raw_params),
                     }
                 )
             elif "name" in tool:
-                declarations.append(tool)
+                declarations.append(self._clean_schema(tool))
 
         if not declarations:
             return []

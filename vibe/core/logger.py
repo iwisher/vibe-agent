@@ -63,6 +63,9 @@ class SessionLogger:
     def info(self, message: str):
         self.log(logging.INFO, message)
 
+    def warning(self, message: str):
+        self.log(logging.WARNING, message)
+
     def error(self, message: str):
         self.log(logging.ERROR, message)
 

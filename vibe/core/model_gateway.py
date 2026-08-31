@@ -379,6 +379,11 @@ class LLMClient:
                 error_type=error_type,
                 actionable_hint=self.recovery.handle_error(e),
             )
+            if self.logger:
+                self.logger.warning(
+                    f"LLM Request Failed: model={model} error_type={error_type.name} "
+                    f"status={status} error={detail}"
+                )
             if self.on_response:
                 self.on_response(result, model)
             return result
@@ -395,6 +400,10 @@ class LLMClient:
                 error_type=ErrorType.TIMEOUT_ERROR,
                 actionable_hint=self.recovery.handle_error(e),
             )
+            if self.logger:
+                self.logger.warning(
+                    f"LLM Request Failed: model={model} error_type=TIMEOUT_ERROR error={detail}"
+                )
             if self.on_response:
                 self.on_response(result, model)
             return result
@@ -411,6 +420,10 @@ class LLMClient:
                 error_type=ErrorType.NETWORK_ERROR,
                 actionable_hint=self.recovery.handle_error(e),
             )
+            if self.logger:
+                self.logger.warning(
+                    f"LLM Request Failed: model={model} error_type=NETWORK_ERROR error={detail}"
+                )
             if self.on_response:
                 self.on_response(result, model)
             return result
@@ -427,6 +440,10 @@ class LLMClient:
                 error_type=ErrorType.UNKNOWN_ERROR,
                 actionable_hint=self.recovery.handle_error(e),
             )
+            if self.logger:
+                self.logger.warning(
+                    f"LLM Request Failed: model={model} error_type=UNKNOWN_ERROR error={detail}"
+                )
             if self.on_response:
                 self.on_response(result, model)
             return result
@@ -676,6 +693,12 @@ class LLMClient:
                         model_used=attempt_model,
                     )
 
+                    if self.logger:
+                        self.logger.warning(
+                            f"LLM Stream Failed: model={attempt_model} url={url} "
+                            f"error_type={error_type.name} error={error_msg}"
+                        )
+
                     # If auto_fallback is enabled and the error is recoverable, continue
                     if (
                         self.auto_fallback
@@ -691,6 +714,18 @@ class LLMClient:
                         )
                         and error_type != ErrorType.RATE_LIMIT_ERROR
                     ):
+                        try:
+                            next_idx = models_to_try.index(attempt_model) + 1
+                            next_model = (
+                                models_to_try[next_idx] if next_idx < len(models_to_try) else None
+                            )
+                            if self.logger and next_model:
+                                self.logger.info(
+                                    f"Fallback triggered: '{attempt_model}' failed "
+                                    f"({error_type.name}) -> next in chain: '{next_model}'"
+                                )
+                        except Exception:
+                            pass
                         continue
                     else:
                         yield last_error

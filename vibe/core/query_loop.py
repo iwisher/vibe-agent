@@ -178,6 +178,7 @@ class QueryLoop:
             mcp_bridge=mcp_bridge,
             tool_prefs=tool_prefs,
             shadow_manager=shadow_manager,
+            logger=logger,
         )
         self.instruction_set = instruction_set
         self.mcp_bridge = mcp_bridge
@@ -618,6 +619,12 @@ class QueryLoop:
                         )
 
                         actionable_hint = getattr(response, "actionable_hint", None)
+                        if self.logger:
+                            self.logger.error(
+                                f"QueryLoop LLM Error: model={failed_model} "
+                                f"base_url={failed_base_url} error={response.error} "
+                                f"hint={actionable_hint}"
+                            )
 
                         yield QueryResult(
                             response="",
@@ -631,6 +638,11 @@ class QueryLoop:
 
                     model_used = getattr(response, "model_used", None)
                     if model_used and model_used != self.llm.model:
+                        if self.logger:
+                            self.logger.info(
+                                f"QueryLoop Fallback Active: responded via '{model_used}' "
+                                f"(configured default: '{self.llm.model}')"
+                            )
                         yield QueryResult(
                             is_status=True,
                             status_message=f"Responded via fallback model: {model_used}",
@@ -919,11 +931,20 @@ class QueryLoop:
             )
             if check.allowed:
                 if check.modified_args:
+                    if self.logger:
+                        self.logger.info(
+                            f"Security Modified: tool={call_name} modified={check.modified_args}"
+                        )
                     arguments.update(check.modified_args)
                     self._apply_modified_args_to_call(call, arguments)
                 allowed_calls.append(call)
                 allowed_indices.append(i)
             else:
+                if self.logger:
+                    self.logger.warning(
+                        f"Security Blocked: tool={call_name} "
+                        f"layer={check.layer} reason={check.reason}"
+                    )
                 results[i] = ToolResult(
                     success=False,
                     content=None,

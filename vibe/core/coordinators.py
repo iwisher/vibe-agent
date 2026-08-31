@@ -10,6 +10,7 @@ This separation allows QueryLoop.run() to remain a thin orchestrator
 (< 40 lines) and makes each component independently testable.
 """
 
+import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,12 +49,14 @@ class ToolExecutor:
         mcp_bridge: MCPBridge | None = None,
         tool_prefs: Any | None = None,
         shadow_manager: Any | None = None,
+        logger: Any | None = None,
     ):
         self.tools = tool_system
         self.hook_pipeline = hook_pipeline
         self.mcp_bridge = mcp_bridge
         self.tool_prefs = tool_prefs
         self.shadow_manager = shadow_manager
+        self.logger = logger
         self._shadow_created = False
         self._handlers: dict[str, Callable] = {}
 
@@ -103,6 +106,15 @@ class ToolExecutor:
                     call_name = getattr(call, "name", None)
                     arguments = getattr(call, "arguments", {})
 
+                if self.logger:
+                    try:
+                        arg_preview = json.dumps(arguments, default=str)
+                    except Exception:
+                        arg_preview = str(arguments)
+                    if len(arg_preview) > 300:
+                        arg_preview = arg_preview[:300] + "..."
+                    self.logger.debug(f"Tool Execution Start: tool={call_name} args={arg_preview}")
+
                 # Phase A: Apply tool preferences (default arg overrides)
                 if self.tool_prefs is not None:
                     arguments = self.tool_prefs.apply(call_name, arguments)
@@ -141,10 +153,26 @@ class ToolExecutor:
                 # Record per-call duration for CLI rendering. Only stamp the
                 # result appended by this iteration.
                 if len(results) > prev_len:
+                    dur = time.monotonic() - start
+                    last_res = results[-1]
                     try:
-                        results[-1].metadata.setdefault("duration_s", time.monotonic() - start)
+                        last_res.metadata.setdefault("duration_s", dur)
                     except AttributeError:
                         pass
+                    if self.logger:
+                        if last_res.success:
+                            out_preview = str(last_res.content or "")
+                            if len(out_preview) > 300:
+                                out_preview = out_preview[:300] + "..."
+                            self.logger.debug(
+                                f"Tool Execution Success: tool={call_name} duration={dur:.2f}s "
+                                f"output={out_preview}"
+                            )
+                        else:
+                            self.logger.warning(
+                                f"Tool Execution Failed: tool={call_name} duration={dur:.2f}s "
+                                f"error={last_res.error}"
+                            )
         return results
 
 
