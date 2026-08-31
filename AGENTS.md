@@ -10,7 +10,7 @@
 **Vibe Agent** is an open, visual-first interactive CLI agent harness platform. It provides a resilient, secure, and model-agnostic environment for LLM-based autonomous tasks.
 
 Key capabilities:
-- **Multi-Provider Fallback**: Seamlessly switches between OpenAI, Anthropic, Kimi, OpenRouter, and Ollama via an adapter-based gateway with circuit breakers, latency-aware routing, and cost tracking.
+- **Multi-Provider Fallback**: Seamlessly switches between OpenAI, Anthropic, Google Gemini (native protocol), Kimi, OpenRouter, and Ollama via an adapter-based gateway with circuit breakers, latency-aware routing, and cost tracking.
 - **Streaming Responses**: Real-time token streaming (`--stream`) with native reasoning/thinking token display.
 - **Interactive CLI + TUI**: Readline-based chat with persistent history, plus a `prompt_toolkit`-based TUI (`vibe/cli/tui.py`).
 - **Secure Tool Execution**: 5-layer security defense (pattern scanning, file safety, human approval, smart approver, checkpoints) with sandboxed Bash and jailed File tools.

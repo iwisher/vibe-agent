@@ -4,11 +4,13 @@ from typing import Dict, Type
 
 from vibe.adapters.anthropic import AnthropicAdapter
 from vibe.adapters.base import BaseLLMAdapter
+from vibe.adapters.gemini import GeminiAdapter
 from vibe.adapters.openai import OpenAIAdapter
 
 ADAPTER_REGISTRY: Dict[str, Type[BaseLLMAdapter]] = {
     "openai": OpenAIAdapter,
     "anthropic": AnthropicAdapter,
+    "gemini": GeminiAdapter,
 }
 
 

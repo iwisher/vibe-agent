@@ -72,6 +72,7 @@ async def run_tier_c_probe(provider: str = "kimi", model: str | None = None) -> 
             api_key=cfg.api_key,
             working_dir=str(workdir),
             config=None,
+            adapter_type=cfg.adapter_type,
         )
         llm = factory.create_llm()
 

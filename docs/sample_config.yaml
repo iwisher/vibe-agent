@@ -26,6 +26,11 @@ providers:
     adapter: "anthropic"
     api_key_env_var: "ANTHROPIC_API_KEY"
 
+  gemini:
+    base_url: "https://generativelanguage.googleapis.com"
+    adapter: "gemini"
+    api_key_env_var: "GEMINI_API_KEY"
+
 # 3. Model Registry
 # Maps friendly names to provider + model_id combinations.
 models:

@@ -26,8 +26,10 @@ All notable changes to Vibe Agent will be documented in this file.
   - `skills/dependency-auditor/`: Supply-chain security scanning for unencrypted and obfuscated dependency declarations.
 
 ### Provider Integration & Resiliency
-- **Google Gemini Red-Team Target** (`vibe/redteam/live.py`): Configured live adversarial probe targeting against Google Gemini API endpoints (supporting `gemini-2.5-flash`, `gemini-flash-latest`, and `gemini-2.0-flash-001`).
-- Test suite: **1,937 tests passing**.
+- **Google Gemini Native Adapter & Protocol** (`vibe/adapters/gemini.py`, `adapter: "gemini"`): Native REST and streaming adapter for Google's Generative Language API (`/v1beta/models/{model}:generateContent` and `:streamGenerateContent`). Full support for `system_instruction`, `contents`/`parts`, native `function_declarations` tool calling, `functionCall`/`functionResponse` message turns, and `usageMetadata` token accounting.
+- **Google GenAI SDK**: Integrated `google-genai>=2.0.0` into project dependencies.
+- **Google Gemini Red-Team Target** (`vibe/redteam/live.py`): Updated live adversarial probe targeting against Google Gemini native API endpoint.
+- Test suite: **1,950 tests passing**.
 
 ---
 

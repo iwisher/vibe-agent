@@ -17,11 +17,8 @@ from dataclasses import dataclass, field
 KIMI_CODE_BASE_URL = "https://api.kimi.com/coding/v1"
 KIMI_CODE_DEFAULT_MODEL = "k3"
 
-# Google AI Studio's OpenAI-compatible endpoint (rejects unauthenticated
-# requests out-of-band). Default model chosen on cost/quota grounds for
-# red-team probing; override via gemini_config(model=...).
-GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
-GEMINI_DEFAULT_MODEL = "gemini-2.5-flash"
+GEMINI_BASE_URL = "https://generativelanguage.googleapis.com"
+GEMINI_DEFAULT_MODEL = "gemini-flash-latest"
 
 
 @dataclass(frozen=True)
@@ -32,18 +29,23 @@ class LiveTargetConfig:
     base_url: str
     model: str
     api_key: str = field(repr=False)  # never leak the key into logs via repr
+    adapter_type: str = "openai"
 
 
 def kimi_code_config(model: str = KIMI_CODE_DEFAULT_MODEL) -> LiveTargetConfig:
     """Build the live target config for the Kimi Code managed endpoint."""
     api_key = os.environ.get("KIMI_API_KEY", "").strip()
     return LiveTargetConfig(
-        provider="kimi", base_url=KIMI_CODE_BASE_URL, model=model, api_key=api_key
+        provider="kimi",
+        base_url=KIMI_CODE_BASE_URL,
+        model=model,
+        api_key=api_key,
+        adapter_type="openai",
     )
 
 
 def gemini_config(model: str = GEMINI_DEFAULT_MODEL) -> LiveTargetConfig:
-    """Build the live target config for Google AI Studio (OpenAI-compatible).
+    """Build the live target config for Google AI Studio (native Gemini protocol).
 
     Honors ``GEMINI_API_KEY`` first, then ``GOOGLE_API_KEY`` — both are
     Gemini-specific, so no cross-provider credential leak is possible.
@@ -52,7 +54,11 @@ def gemini_config(model: str = GEMINI_DEFAULT_MODEL) -> LiveTargetConfig:
         os.environ.get("GOOGLE_API_KEY") or ""
     ).strip()
     return LiveTargetConfig(
-        provider="gemini", base_url=GEMINI_BASE_URL, model=model, api_key=api_key
+        provider="gemini",
+        base_url=GEMINI_BASE_URL,
+        model=model,
+        api_key=api_key,
+        adapter_type="gemini",
     )
 
 

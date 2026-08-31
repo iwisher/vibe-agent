@@ -37,7 +37,15 @@ class ModelProfile:
     def resolve_api_key(self) -> str | None:
         if self.api_key:
             return self.api_key
-        return os.getenv(self.api_key_env_var)
+        if self.api_key_env_var:
+            val = os.getenv(self.api_key_env_var)
+            if val:
+                return val
+        if self.adapter_type == "gemini" or self.provider == "gemini":
+            return os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        if self.adapter_type == "anthropic" or self.provider == "anthropic":
+            return os.getenv("ANTHROPIC_API_KEY")
+        return None
 
 
 class ModelRegistry:

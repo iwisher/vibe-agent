@@ -52,7 +52,7 @@ Providers define connection endpoints and API formats. If no providers are confi
 providers:
   openrouter:
     base_url: "https://openrouter.ai/api/v1"
-    adapter: "openai"                    # "openai" or "anthropic"
+    adapter: "openai"                    # "openai", "anthropic", or "gemini"
     api_key_env_var: "OPENROUTER_API_KEY"
     extra_headers:
       "HTTP-Referer": "https://github.com/vibe-agent"
@@ -62,6 +62,11 @@ providers:
     base_url: "https://api.anthropic.com"
     adapter: "anthropic"
     api_key_env_var: "ANTHROPIC_API_KEY"
+  
+  gemini:
+    base_url: "https://generativelanguage.googleapis.com"
+    adapter: "gemini"                    # Google Gemini native protocol (/v1beta/models)
+    api_key_env_var: "GEMINI_API_KEY"
   
   local_ollama:
     base_url: "http://localhost:11434"
@@ -74,7 +79,7 @@ providers:
 | Field | Description |
 |-------|-------------|
 | `base_url` | Root URL of the API. Required. |
-| `adapter` | `openai` or `anthropic`. Determines request/response format. |
+| `adapter` | `openai`, `anthropic`, or `gemini`. Determines request/response protocol. |
 | `api_key_env_var` | Name of the env var holding the API key (not the key itself). |
 | `extra_headers` | Custom headers sent with every request (e.g., OpenRouter attribution). |
 | `timeout` | Per-provider request timeout in seconds. |

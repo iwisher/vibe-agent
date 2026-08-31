@@ -50,7 +50,7 @@ Drives the thought-action loop using `QueryState` transitions inside `QueryLoop`
 
 ### 2. Model Gateway & Resiliency (`vibe/core/model_gateway.py`)
 Acts as a multi-provider adapter gateway shielding the agent from upstream LLM outages.
-*   **Providers & Models**: Resolves endpoints dynamically via `ProviderRegistry`. Fully supports OpenAI, Anthropic, OpenRouter, Ollama, and Kimi.
+*   **Providers & Models**: Resolves endpoints dynamically via `ProviderRegistry`. Fully supports OpenAI, Anthropic, Google Gemini (native protocol), OpenRouter, Ollama, and Kimi.
 *   **Circuit Breakers**: State-aware circuit breaking (opens after 5 consecutive failures, 60s cooldown). Shared with FlashLLM via `SharedCircuitBreaker`.
 *   **Fallback Chains**: Lazily switches to the next model in a chain on model error (rate-limiting `429` errors do **not** trip fallbacks).
 *   **Cost & Latency Routing**: Includes a `CostTracker` enforcing budget limits and a `LatencyAwareRouter` selecting models using rolling p50/p95 statistics.

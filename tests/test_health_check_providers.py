@@ -141,6 +141,29 @@ class TestResolveModelWithProviders:
             resolved = await checker.resolve_model(config, registry=model_reg)
             assert resolved == "kimi-sonnet"
 
+    async def test_check_with_gemini_provider(self):
+        registry = ProviderRegistry()
+        registry.register(
+            ProviderProfile(
+                name="gemini",
+                base_url="https://generativelanguage.googleapis.com",
+                adapter_type="gemini",
+                api_key="test-gemini-key",
+            )
+        )
+        checker = ModelHealthChecker(provider_registry=registry)
+
+        with patch("httpx.AsyncClient.get") as mock_get:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {"models": [{"name": "models/gemini-2.5-flash"}]}
+            mock_get.return_value = mock_response
+
+            result = await checker.check_available("gemini-2.5-flash", provider_name="gemini")
+            assert result is True
+            call_kwargs = mock_get.call_args.kwargs
+            assert call_kwargs["headers"]["x-goog-api-key"] == "test-gemini-key"
+
     async def test_resolve_fallback_cross_provider(self):
         """Fallback chain can cross providers (e.g., kimi fails, ollama succeeds)."""
         provider_reg = ProviderRegistry()
@@ -191,7 +214,9 @@ class TestResolveModelWithProviders:
                 mock_response.json.return_value = {"data": [{"id": "llama3.2"}]}
             return mock_response
 
+        failing_post = MagicMock(status_code=503)
         with patch("httpx.AsyncClient.get", new_callable=AsyncMock, side_effect=_mock_get):
-            resolved = await checker.resolve_model(config, registry=model_reg)
-            assert resolved == "llama3.2"
-            assert call_count == 2
+            with patch("httpx.AsyncClient.post", new_callable=AsyncMock, return_value=failing_post):
+                resolved = await checker.resolve_model(config, registry=model_reg)
+                assert resolved == "llama3.2"
+                assert call_count == 2

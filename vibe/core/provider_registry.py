@@ -43,11 +43,17 @@ class ProviderProfile:
             )
 
     def resolve_api_key(self) -> Optional[str]:
-        """Resolve API key: explicit value > env var > None."""
+        """Resolve API key: explicit value > env var > provider defaults > None."""
         if self.api_key:
             return self.api_key
         if self.api_key_env_var:
-            return os.getenv(self.api_key_env_var)
+            val = os.getenv(self.api_key_env_var)
+            if val:
+                return val
+        if self.adapter_type == "gemini" or self.name == "gemini":
+            return os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        if self.adapter_type == "anthropic" or self.name == "anthropic":
+            return os.getenv("ANTHROPIC_API_KEY")
         return None
 
     def create_adapter(self) -> BaseLLMAdapter:

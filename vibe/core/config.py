@@ -132,15 +132,31 @@ def _parse_providers(raw: dict[str, Any], llm_config: "LLMConfig") -> ProviderRe
             raise ValueError(
                 f"Provider '{name}' config must be a mapping, got {type(cfg).__name__}"
             )
+        adapter_type = cfg.get("adapter") or cfg.get("adapter_type", "openai")
         base_url = cfg.get("base_url")
         if not base_url:
-            raise ValueError(f"Provider '{name}' is missing required 'base_url'")
+            if adapter_type == "gemini" or name == "gemini":
+                base_url = "https://generativelanguage.googleapis.com"
+            elif adapter_type == "anthropic" or name == "anthropic":
+                base_url = "https://api.anthropic.com"
+            else:
+                raise ValueError(f"Provider '{name}' is missing required 'base_url'")
+
+        api_key_env = cfg.get("api_key_env_var")
+        if not api_key_env:
+            if adapter_type == "gemini" or name == "gemini":
+                api_key_env = "GEMINI_API_KEY"
+            elif adapter_type == "anthropic" or name == "anthropic":
+                api_key_env = "ANTHROPIC_API_KEY"
+            else:
+                api_key_env = "LLM_API_KEY"
+
         providers[name] = ProviderProfile(
             name=name,
             base_url=base_url,
-            adapter_type=cfg.get("adapter", "openai"),
+            adapter_type=adapter_type,
             api_key=cfg.get("api_key"),
-            api_key_env_var=cfg.get("api_key_env_var", "LLM_API_KEY"),
+            api_key_env_var=api_key_env,
             timeout=float(cfg.get("timeout", 120.0)),
             default_model=cfg.get("default_model"),
             extra_headers=cfg.get("extra_headers", {}),
