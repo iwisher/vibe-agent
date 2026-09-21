@@ -251,9 +251,29 @@ security:
     log_path: "~/.vibe/logs/security.log"
     max_events: 10000
     redact_in_logs: true
+
+  fast_gate:
+    enabled: false                     # low-latency veto-only pre-filter
+    transport: "http"                  # http (OpenAI-compatible server) | mlx (in-process Apple Silicon)
+    base_url: "http://localhost:11434/v1"
+    model: "qwen3.5:4b"                # http: server model id; mlx: HF repo id or local dir
+    model_revision: ""                 # mlx: pinned 40-char HF revision (required for remote)
+    quantize_bits: null                # mlx: 4 | 8 (in-memory affine quantization)
+    max_prompt_tokens: 4096            # mlx: longer prompts escalate (bounds in-process latency)
+    timeout_ms: 500
+    reject_confidence: 0.85
+    mode: "auto"                       # http only: "auto" (startup probe), "logit" (single-token logprobs), or "json"
 ```
 
 **Environment override:** `VIBE_APPROVAL_MODE`
+
+### Fast Veto Gate (`fast_gate`)
+
+An optional, low-latency System 1 pre-filter running in front of SmartApprover on Layer 4:
+- **Veto-Only:** Only early-rejects high-confidence malicious calls ($P \ge$ `reject_confidence`). Benign or uncertain calls always fall through to the full LLM risk assessment. The gate never early-approves.
+- **Transports:** `http` (default) talks to any OpenAI-compatible local server (`llama-server`, Ollama, omlx). `mlx` runs the readout in-process via mlx-lm on Apple Silicon — true 0-token prefill readout with full-vocabulary logit access (no server, no RTT); requires `pip install mlx mlx-lm` and, for remote checkpoints, a pinned `model_revision`.
+- **Mode probe (http only):** With `mode: "auto"` (default) the gate probes the endpoint once for logprobs support — `logit` when present (e.g. llama-server), `json` otherwise (e.g. Ollama's OpenAI layer, omlx ≤ 0.6.4). Probe failures escalate and are retried. Ignored under `transport: "mlx"`.
+- **Direct-Logit Readout:** Evaluates single-token candidate logits (`A: Safe` vs `B: Dangerous`) with thinking disabled; readouts with missing candidates or an out-of-candidate argmax escalate instead of guessing.
 
 ### Approval Modes
 

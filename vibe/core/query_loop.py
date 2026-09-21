@@ -1937,6 +1937,7 @@ class QueryLoop:
             self.wiki,
             getattr(self, "feedback_coord", None),
             self.compactor,
+            getattr(self, "security_coord", None),
         ]:
             if subsystem is not None and hasattr(subsystem, "close"):
                 try:

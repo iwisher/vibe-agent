@@ -38,4 +38,5 @@ uv.lock
 
 # Development artifacts
 .tmp/
-.hermes/plans/
+.claude/
+.hermes/

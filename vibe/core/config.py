@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -356,11 +356,28 @@ class AuditConfig(BaseModel):
         return v
 
 
+class FastGateConfig(BaseModel):
+    """Configuration for fast veto pre-filter gate."""
+
+    enabled: bool = False
+    transport: Literal["http", "mlx"] = "http"
+    base_url: str = "http://localhost:11434/v1"
+    model: str = "qwen3.5:4b"
+    # MLX transport only: pinned 40-char HF revision for remote checkpoints,
+    # optional in-memory quantization (4/8), and prompt length bound.
+    model_revision: str = ""
+    quantize_bits: Literal[4, 8] | None = None
+    max_prompt_tokens: int = Field(default=4096, gt=0)
+    timeout_ms: int = Field(default=500, gt=0)
+    reject_confidence: float = Field(default=0.85, ge=0.0, le=1.0)
+    mode: Literal["auto", "logit", "json"] = "auto"
+
+
 class SecurityConfig(BaseModel):
     """Full security configuration for vibe-agent tools.
 
     Controls approval mode, file safety, env sanitization, sandbox, audit,
-    smart approver, and checkpointing.
+    smart approver, checkpointing, and fast veto gate.
     """
 
     approval_mode: str = Field(default="smart")
@@ -379,6 +396,7 @@ class SecurityConfig(BaseModel):
     env_sanitization: EnvSanitizationConfig = Field(default_factory=EnvSanitizationConfig)
     sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
     audit: AuditConfig = Field(default_factory=AuditConfig)
+    fast_gate: FastGateConfig = Field(default_factory=FastGateConfig)
 
     # Legacy flat fields (kept for backward compat with old SecurityConfig users)
     enable_constraints: bool = True
@@ -882,6 +900,20 @@ def _parse_security_config(raw: dict[str, Any]) -> SecurityConfig:
         redact_in_logs=audit_raw.get("redact_in_logs", True),
     )
 
+    fg_raw = raw.get("fast_gate", {})
+    fast_gate = FastGateConfig(
+        enabled=fg_raw.get("enabled", False),
+        transport=fg_raw.get("transport", "http"),
+        base_url=fg_raw.get("base_url", "http://localhost:11434/v1"),
+        model=fg_raw.get("model", "qwen3.5:4b"),
+        model_revision=fg_raw.get("model_revision", ""),
+        quantize_bits=fg_raw.get("quantize_bits"),
+        max_prompt_tokens=int(fg_raw.get("max_prompt_tokens", 4096)),
+        timeout_ms=int(fg_raw.get("timeout_ms", 500)),
+        reject_confidence=float(fg_raw.get("reject_confidence", 0.85)),
+        mode=fg_raw.get("mode", "auto"),
+    )
+
     # approval_mode: VIBE_APPROVAL_MODE env var overrides file value
     approval_mode = os.environ.get("VIBE_APPROVAL_MODE") or raw.get("approval_mode", "smart")
 
@@ -895,4 +927,5 @@ def _parse_security_config(raw: dict[str, Any]) -> SecurityConfig:
         env_sanitization=env_sanitization,
         sandbox=sandbox,
         audit=audit,
+        fast_gate=fast_gate,
     )

@@ -119,6 +119,18 @@ security:
     max_events: 10000
     redact_in_logs: true
 
+  fast_gate:
+    enabled: false                     # low-latency veto-only pre-filter
+    transport: "http"                  # http (OpenAI-compatible server) | mlx (in-process Apple Silicon)
+    base_url: "http://localhost:11434/v1"
+    model: "qwen3.5:4b"                # http: server model id; mlx: HF repo id or local dir
+    model_revision: ""                 # mlx: pinned 40-char HF revision (required for remote)
+    quantize_bits: null                # mlx: 4 | 8 (in-memory affine quantization)
+    max_prompt_tokens: 4096            # mlx: longer prompts escalate
+    timeout_ms: 500
+    reject_confidence: 0.85
+    mode: "auto"                       # http only: auto (startup probe) | logit | json
+
 # 11. Skill Maker
 skill_maker:
   enabled: false

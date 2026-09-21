@@ -11,6 +11,7 @@ This separation allows QueryLoop.run() to remain a thin orchestrator
 """
 
 import json
+import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +23,8 @@ from vibe.harness.feedback import FeedbackEngine, FeedbackStatus
 from vibe.tools._utils import extract_tool_call_arguments, extract_tool_call_name
 from vibe.tools.mcp_bridge import MCPBridge
 from vibe.tools.tool_system import ToolResult, ToolSystem
+
+logger = logging.getLogger(__name__)
 
 # Phase A: Tool preference registry (lazy import to avoid cycles)
 ToolPreferenceRegistry = Any
@@ -346,9 +349,30 @@ class SecurityCoordinator:
         if getattr(self.config, "smart_approver_enabled", True):
             from vibe.tools.security.smart_approver import SmartApprover
 
+            fast_gate_client = None
+            fg_cfg = getattr(self.config, "fast_gate", None)
+            if fg_cfg is not None and getattr(fg_cfg, "enabled", False):
+                try:
+                    from vibe.tools.security.fast_gate import FastGateClient
+
+                    fast_gate_client = FastGateClient(
+                        base_url=getattr(fg_cfg, "base_url", "http://localhost:11434/v1"),
+                        model=getattr(fg_cfg, "model", "qwen3.5:4b"),
+                        timeout=getattr(fg_cfg, "timeout_ms", 500) / 1000.0,
+                        reject_confidence=getattr(fg_cfg, "reject_confidence", 0.85),
+                        mode=getattr(fg_cfg, "mode", "auto"),
+                        transport=getattr(fg_cfg, "transport", "http"),
+                        model_revision=getattr(fg_cfg, "model_revision", ""),
+                        quantize_bits=getattr(fg_cfg, "quantize_bits", None),
+                        max_prompt_tokens=getattr(fg_cfg, "max_prompt_tokens", 4096),
+                    )
+                except Exception as e:
+                    logger.debug("Failed to initialize FastGateClient: %s", e)
+
             self._smart_approver = SmartApprover(
                 llm_client=llm_client,
                 auto_mode=getattr(self.config, "is_auto_approve", lambda: False)(),
+                fast_gate=fast_gate_client,
             )
 
         # Phase C: Approval policy DB (learned rules)
@@ -509,6 +533,16 @@ class SecurityCoordinator:
             reason=result.reason or "Approval denied",
             layer="human_approval",
         )
+
+    def close(self) -> None:
+        """Close owned subsystems (the fast gate's pooled HTTP client)."""
+        approver = getattr(self, "_smart_approver", None)
+        close = getattr(approver, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                logger.debug("SmartApprover.close failed", exc_info=True)
 
     def _check_smart_approver(
         self, tool_name: str, tool_args: dict[str, Any]
